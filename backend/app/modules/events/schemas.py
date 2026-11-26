@@ -10,7 +10,7 @@ from uuid import UUID
 from pydantic import Field, field_validator, model_validator
 
 from app.core.schemas import ORMModel, StrictModel
-from app.services.normalization.ocsf import identify_ip, severity_to_id
+from app.services.normalization.ocsf import identify_ip
 
 _SEVERITY_WORDS = {
     "unknown",
@@ -313,5 +313,4 @@ __all__ = [
     "RetentionPolicyOut",
     "RetentionPolicyUpdate",
     "RetentionPurgeResult",
-    "severity_to_id",
 ]

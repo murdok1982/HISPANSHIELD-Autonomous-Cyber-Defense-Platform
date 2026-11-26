@@ -13,8 +13,10 @@ Invariants (the reason this file exists):
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
 import sqlite3
 import threading
 import time
@@ -103,14 +105,19 @@ class DurableQueue:
         self._closed = False
         self._configure(busy_timeout_ms)
         self._initialize()
+        with contextlib.suppress(OSError):
+            os.chmod(self.path, 0o600)
+        with contextlib.suppress(OSError):
+            if str(self.path.parent) not in {"", "."}:
+                os.chmod(self.path.parent, 0o700)
 
     # ------------------------------------------------------------------ #
     # Setup
     # ------------------------------------------------------------------ #
     def _configure(self, busy_timeout_ms: int) -> None:
         cur = self._conn
-        cur.execute("PRAGMA journal_mode=WAL")
         cur.execute(f"PRAGMA busy_timeout={int(busy_timeout_ms)}")
+        cur.execute("PRAGMA journal_mode=WAL")
         cur.execute("PRAGMA foreign_keys=ON")
         cur.execute("PRAGMA synchronous=FULL")
         cur.execute("PRAGMA wal_autocheckpoint=1000")
@@ -200,29 +207,57 @@ class DurableQueue:
     def trim(self, max_events: int) -> int:
         """Drop the oldest *unsent* events when the backlog exceeds the limit.
 
+        The limit is expressed in events (``buffer_max_events``), not envelopes.
         This is the last-resort disk guard. It is intentionally loud: silent
         trimming would turn a bounded-disk policy into invisible data loss.
+        Returns the number of events dropped.
         """
         if max_events < 1:
             raise QueueError("max_events must be >= 1")
         with self._write() as conn:
-            pending = int(conn.execute("SELECT COUNT(*) FROM envelope WHERE sent_at IS NULL").fetchone()[0])
-            if pending <= max_events:
-                return 0
-            overflow = pending - max_events
             rows = conn.execute(
-                "SELECT sequence FROM envelope WHERE sent_at IS NULL ORDER BY sequence ASC LIMIT ?", (overflow,)
+                "SELECT sequence, payload_json FROM envelope WHERE sent_at IS NULL ORDER BY sequence ASC"
             ).fetchall()
-            sequences = [int(row["sequence"]) for row in rows]
+            counts = [(int(row["sequence"]), self._event_count(row["payload_json"])) for row in rows]
+            total = sum(count for _sequence, count in counts)
+            if total <= max_events:
+                return 0
+            dropped_events = 0
+            sequences: list[int] = []
+            for sequence, count in counts:
+                if total - dropped_events <= max_events:
+                    break
+                sequences.append(sequence)
+                dropped_events += count
             conn.executemany("DELETE FROM envelope WHERE sequence=?", [(seq,) for seq in sequences])
         logger.error(
-            "queue backlog exceeded buffer_max_events: dropped_oldest_unsent=%d sequences=%s..%s max_events=%d",
+            "queue backlog exceeded buffer_max_events: dropped_oldest_unsent_events=%d "
+            "dropped_envelopes=%d sequences=%s..%s max_events=%d",
+            dropped_events,
             len(sequences),
             sequences[0] if sequences else None,
             sequences[-1] if sequences else None,
             max_events,
         )
-        return len(sequences)
+        return dropped_events
+
+    @staticmethod
+    def _event_count(payload_json: str) -> int:
+        try:
+            events = json.loads(payload_json)
+        except (TypeError, json.JSONDecodeError):
+            return 0
+        return len(events) if isinstance(events, list) else 0
+
+    def _pending_event_count(self) -> int:
+        try:
+            value = self._conn.execute(
+                "SELECT COALESCE(SUM(json_array_length(payload_json)), 0) FROM envelope WHERE sent_at IS NULL"
+            ).fetchone()[0]
+            return int(value or 0)
+        except sqlite3.DatabaseError:
+            rows = self._conn.execute("SELECT payload_json FROM envelope WHERE sent_at IS NULL").fetchall()
+            return sum(self._event_count(row["payload_json"]) for row in rows)
 
     # ------------------------------------------------------------------ #
     # Read path
@@ -294,6 +329,7 @@ class DurableQueue:
         return {
             "path": str(self.path),
             "pending_envelopes": int(pending_row["count"]),
+            "pending_events": self._pending_event_count(),
             "pending_bytes": int(pending_row["bytes"]),
             "oldest_age_s": round(max(0.0, now - float(oldest)), 3) if oldest is not None else 0.0,
             "max_attempts": int(pending_row["max_attempts"] or 0),
@@ -317,10 +353,8 @@ class DurableQueue:
         with self._lock:
             if self._closed:
                 return
-            try:
+            with contextlib.suppress(sqlite3.Error):
                 self._conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
-            except sqlite3.Error:  # pragma: no cover - best effort on close
-                pass
             self._conn.close()
             self._closed = True
 

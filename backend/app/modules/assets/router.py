@@ -399,7 +399,7 @@ def asset_vulnerabilities(
 
 
 router = APIRouter()
-router.include_router(assets_router)
 router.include_router(zones_router)
+router.include_router(assets_router)
 
 __all__ = ["assets_router", "router", "zones_router"]

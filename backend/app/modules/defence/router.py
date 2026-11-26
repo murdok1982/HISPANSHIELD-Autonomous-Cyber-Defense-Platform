@@ -37,6 +37,7 @@ from app.modules.defence.service import (
     catalogue_payload,
     connector_preview,
     effective_kill_switches,
+    ot_asset_violation,
     rollback_action_for,
 )
 from app.services.actions import ACTIONS, get_action, level_index
@@ -82,28 +83,31 @@ def _exceeds_ceiling(ctx: RequestContext, requested_level: str | None) -> bool:
     return bool(requested_level and level_index(requested_level) > level_index(ctx.org.autonomy_level))
 
 
-def _ceiling_denial(ctx: RequestContext, requested_level: str, action_type: str) -> dict[str, Any]:
+def _denial(ctx: RequestContext, action_type: str, reason: str, effective_level: str) -> dict[str, Any]:
     definition = get_action(action_type)
     return {
         "allowed": False,
-        "reason": (
-            f"Requested autonomy level {requested_level} exceeds the organization ceiling {ctx.org.autonomy_level}"
-        ),
+        "reason": reason,
         "action": definition.key if definition else None,
-        "effective_level": requested_level,
+        "effective_level": effective_level,
         "org_max_level": ctx.org.autonomy_level,
         "requires_approval": True,
         "approved": False,
         "kill_switch_engaged": False,
         "risk": definition.risk if definition else "unknown",
         "reversible": definition.reversible if definition else False,
-        "constraints": {
-            "target_type": None,
-            "target_id": None,
-            "requested_level": requested_level,
-        },
+        "constraints": {"requested_level": effective_level},
         "policy_id": None,
     }
+
+
+def _ceiling_denial(ctx: RequestContext, requested_level: str, action_type: str) -> dict[str, Any]:
+    return _denial(
+        ctx,
+        action_type,
+        f"Requested autonomy level {requested_level} exceeds the organization ceiling {ctx.org.autonomy_level}",
+        requested_level,
+    )
 
 
 def _audit_denial(ctx: RequestContext, payload: ExecuteRequest, reason: str) -> None:
@@ -141,6 +145,15 @@ def evaluate_action(
     _validate_incident(ctx, payload.incident_id)
     if payload.requested_level and _exceeds_ceiling(ctx, payload.requested_level):
         return _ceiling_denial(ctx, payload.requested_level, payload.action_type)
+    violation = ot_asset_violation(ctx.db, ctx.org.id, payload.action_type, payload.target_id)
+    if violation:
+        definition = get_action(payload.action_type)
+        return _denial(
+            ctx,
+            payload.action_type,
+            violation,
+            definition.min_level if definition else "A4",
+        )
     decision = evaluate(
         ctx.db,
         ctx.org,
@@ -158,6 +171,7 @@ def simulate_action(
     payload: SimulateRequest, ctx: RequestContext = Depends(require_permission("defence:read"))
 ) -> dict[str, Any]:
     _validate_incident(ctx, payload.incident_id)
+    ot_violation = ot_asset_violation(ctx.db, ctx.org.id, payload.action_type, payload.target_id)
     if payload.requested_level and _exceeds_ceiling(ctx, payload.requested_level):
         decision_payload = _ceiling_denial(ctx, payload.requested_level, payload.action_type)
         return {
@@ -171,6 +185,28 @@ def simulate_action(
                 "target_id": payload.target_id,
                 "parameters": payload.parameters,
                 "reason": decision_payload["reason"],
+                "note": "Simulation only; no connector request is sent",
+            },
+        }
+    if ot_violation:
+        definition = get_action(payload.action_type)
+        decision_payload = _denial(
+            ctx,
+            payload.action_type,
+            ot_violation,
+            definition.min_level if definition else "A4",
+        )
+        return {
+            "decision": decision_payload,
+            "plan": {
+                "would_execute": False,
+                "requires_approval": True,
+                "approval_satisfied": False,
+                "connector": connector_preview(ctx.db, ctx.org.id, payload.action_type),
+                "target_type": payload.target_type,
+                "target_id": payload.target_id,
+                "parameters": payload.parameters,
+                "reason": ot_violation,
                 "note": "Simulation only; no connector request is sent",
             },
         }
@@ -220,6 +256,11 @@ def execute_defensive_action(
     if action is None or action.internal:
         _audit_denial(ctx, payload, "Unknown or internal action; only catalogue actions can be executed")
         raise PolicyDenied("Unknown action; only catalogue actions can be executed")
+
+    violation = ot_asset_violation(ctx.db, ctx.org.id, payload.action_type, payload.target_id)
+    if violation:
+        _audit_denial(ctx, payload, violation)
+        raise PolicyDenied(violation)
 
     actor = _actor(ctx)
     decision = evaluate(

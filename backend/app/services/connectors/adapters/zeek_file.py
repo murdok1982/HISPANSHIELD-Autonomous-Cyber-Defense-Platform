@@ -16,6 +16,13 @@ from app.services.connectors.base import READ, AdapterResult, CapabilitySpec, Co
 DEFAULT_LOG_FILES = ("notice.log", "weird.log", "conn.log")
 
 
+def _record_timestamp(item: dict[str, Any]) -> float:
+    try:
+        return float(item.get("ts") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 @register_adapter
 class ZeekFileAdapter(FileLogAdapter):
     connector_type = "zeek_file"
@@ -82,7 +89,7 @@ class ZeekFileAdapter(FileLogAdapter):
                 records.append(record)
         if not records and missing == len(self._log_files()):
             raise ConnectorError("No readable Zeek log files were found")
-        records.sort(key=lambda item: float(item.get("ts") or 0), reverse=True)
+        records.sort(key=_record_timestamp, reverse=True)
         return AdapterResult(
             ok=True,
             data={"items": records[:limit], "skipped": skipped, "missing_files": missing, "format": "zeek-json"},

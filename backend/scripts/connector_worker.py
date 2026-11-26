@@ -164,9 +164,7 @@ def run_once(
         for connector in connectors:
             try:
                 results.append(
-                    process_connector(
-                        db, connector, limit=limit, health_only=health_only, request_id=request_id
-                    )
+                    process_connector(db, connector, limit=limit, health_only=health_only, request_id=request_id)
                 )
             except Exception as exc:  # pragma: no cover - last-resort worker isolation
                 db.rollback()

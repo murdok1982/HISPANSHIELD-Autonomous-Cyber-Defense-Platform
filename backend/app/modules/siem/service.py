@@ -27,6 +27,7 @@ from app.services.detection import (
     group_values,
     validate_definition,
 )
+from app.services.normalization import sanitize_text
 
 MITRE_NAMES: dict[str, str] = {
     "T1041": "Exfiltration Over C2 Channel",
@@ -170,8 +171,8 @@ def create_rule(
         raise Conflict("A detection rule with this name already exists in this scope")
     rule = DetectionRule(
         org_id=target_org,
-        name=payload.name,
-        description=payload.description,
+        name=sanitize_text(payload.name, max_length=200),
+        description=sanitize_text(payload.description, max_length=2000) or None,
         severity=payload.severity,
         status=payload.status,
         enabled=payload.enabled,
@@ -208,8 +209,13 @@ def update_rule(
         ).scalar_one_or_none():
             raise Conflict("A detection rule with this name already exists in this scope")
     for field, value in changes.items():
-        if value is not None:
-            setattr(rule, field, value)
+        if value is None:
+            continue
+        if field == "name":
+            value = sanitize_text(value, max_length=200)
+        elif field == "description":
+            value = sanitize_text(value, max_length=2000) or None
+        setattr(rule, field, value)
     rule.version = int(rule.version or 1) + 1
     db.add(rule)
     db.flush()
@@ -570,10 +576,11 @@ def apply_triage(
     if assignee_set and assignee_id != alert.assignee_id:
         alert.assignee_id = assignee_id
         changed = True
+    note = sanitize_text(note, max_length=4000) if note else None
     if note:
         evidence = dict(alert.evidence or {})
         notes = list(evidence.get("notes") or [])
-        notes.append({"at": utcnow().isoformat(), "actor": actor, "note": note[:4000]})
+        notes.append({"at": utcnow().isoformat(), "actor": actor, "note": note})
         evidence["notes"] = notes[-50:]
         alert.evidence = evidence
         changed = True
@@ -713,12 +720,14 @@ def promote_alert(ctx: RequestContext, alert: Alert, title: str | None, descript
     numbers = [int(ref.rsplit("-", 1)[-1]) for ref in refs if ref.rsplit("-", 1)[-1].isdigit()]
     ref = f"HS-{year}-{max(numbers, default=0) + 1:04d}"
 
-    incident_title = (title or alert.title)[:300]
+    incident_title = sanitize_text(title or alert.title, max_length=300)
     incident = Incident(
         org_id=ctx.org.id,
         ref=ref,
         title=incident_title,
-        description=(description or alert.description or f"Promoted from alert {alert.id}")[:4000],
+        description=sanitize_text(
+            description or alert.description or f"Promoted from alert {alert.id}", max_length=4000
+        ),
         severity=alert.severity
         if alert.severity in {"informational", "low", "medium", "high", "critical"}
         else "medium",

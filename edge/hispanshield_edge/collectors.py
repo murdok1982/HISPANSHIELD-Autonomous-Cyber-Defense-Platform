@@ -11,6 +11,7 @@ Hard rules:
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import re
@@ -31,7 +32,9 @@ MAX_SPOOL_FILE_BYTES = 8 * 1024 * 1024
 MAX_SYSLOG_DATAGRAM_BYTES = 64 * 1024
 MAX_SYSLOG_MESSAGE_CHARS = 60_000
 _PRI_RE = re.compile(r"^<(?P<pri>\d{1,3})>")
-_RFC5424_RE = re.compile(r"^1\s+(?P<ts>\S+)\s+(?P<host>\S+)\s+(?P<app>\S+)\s+(?P<proc>\S+)\s+(?P<msgid>\S+)\s(?P<rest>.*)$")
+_RFC5424_RE = re.compile(
+    r"^1\s+(?P<ts>\S+)\s+(?P<host>\S+)\s+(?P<app>\S+)\s+(?P<proc>\S+)\s+(?P<msgid>\S+)\s(?P<rest>.*)$"
+)
 _RFC3164_RE = re.compile(
     r"^(?P<ts>[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2})\s+(?P<host>\S+)\s+"
     r"(?P<app>[^\s:\[]+)(?:\[(?P<proc>\d+)\])?:\s?(?P<msg>.*)$"
@@ -495,10 +498,8 @@ class SyslogUDPCollector:
     def stop(self) -> None:
         self._stop.set()
         if self._socket is not None:
-            try:
+            with contextlib.suppress(OSError):
                 self._socket.close()
-            except OSError:  # pragma: no cover
-                pass
             self._socket = None
         if self._thread is not None:
             self._thread.join(timeout=5.0)
@@ -612,15 +613,24 @@ class OtSpoolCollector:
             self._record_error(f"cannot list OT spool: {exc}")
             return 0
         for path in candidates:
-            if path.suffix.lower() not in {".jsonl", ".json"} or path.name.startswith("."):
+            if path.suffix.lower() != ".jsonl" or path.name.startswith("."):
                 continue
             try:
-                events, advanced = self._read_new(path)
-                changed = changed or advanced
+                events, key, new_state = self._read_new(path)
             except (OSError, CollectorError) as exc:
                 self._record_error(f"{path.name}: {exc}")
                 continue
-            total += self._enqueue(events)
+            if events:
+                enqueued = self._enqueue(events)
+                if enqueued != len(events):
+                    # Keep the previous offset: on the next poll the file is
+                    # re-read, duplicating at most a partial batch. The backend
+                    # dedupes by event_uid, so this is at-least-once, not loss.
+                    continue
+                total += enqueued
+            if new_state is not None:
+                self._files[key] = new_state
+                changed = True
         if changed:
             try:
                 self._save_state()
@@ -631,7 +641,7 @@ class OtSpoolCollector:
             self._stats["last_scan_at"] = _now_iso()
         return total
 
-    def _read_new(self, path: Path) -> tuple[list[dict[str, Any]], bool]:
+    def _read_new(self, path: Path) -> tuple[list[dict[str, Any]], str, dict[str, Any] | None]:
         stat = path.stat()
         key = f"{path.name}:{stat.st_ino}"
         state = self._files.get(key, {"offset": 0, "size": 0})
@@ -669,9 +679,10 @@ class OtSpoolCollector:
                 self._stats["last_error"] = f"{rejected} malformed OT observation(s) in {path.name}"
             logger.error("OT spool rejected_lines=%d file=%s", rejected, path.name)
         new_offset = offset + consumed
-        if new_offset != offset:
-            self._files[key] = {"offset": new_offset, "size": stat.st_size, "updated_at": _now_iso()}
-        return events, new_offset != offset
+        new_state = (
+            {"offset": new_offset, "size": stat.st_size, "updated_at": _now_iso()} if new_offset != offset else None
+        )
+        return events, key, new_state
 
     def _enqueue(self, events: list[dict[str, Any]]) -> int:
         if not events:

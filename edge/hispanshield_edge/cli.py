@@ -29,6 +29,7 @@ from hispanshield_edge.client import (
     RetryableHTTPError,
     TransportError,
 )
+from hispanshield_edge.collectors import CollectorError
 from hispanshield_edge.config import (
     ConfigError,
     GatewayConfig,
@@ -62,12 +63,14 @@ def _map_error(exc: BaseException) -> int:
         return EXIT_AUTH
     if isinstance(exc, InvalidBundleError):
         return EXIT_BAD_BUNDLE
-    if isinstance(exc, (ConfigError, ValueError)):
+    if isinstance(exc, ConfigError | ValueError):
         return EXIT_CONFIG
-    if isinstance(exc, (TransportError, RetryableHTTPError, ConfigFetchUnavailable)):
+    if isinstance(exc, TransportError | RetryableHTTPError | ConfigFetchUnavailable):
         return EXIT_UNAVAILABLE
     if isinstance(exc, PermanentHTTPError):
         return EXIT_ERROR
+    if isinstance(exc, CollectorError):
+        return EXIT_CONFIG
     if isinstance(exc, EdgeClientError):
         return EXIT_UNAVAILABLE
     return EXIT_ERROR
@@ -167,7 +170,9 @@ def cmd_run(args: argparse.Namespace) -> int:
             config_path=args.config,
         )
         if args.once:
+            agent.start_collectors()
             summary = agent.once()
+            agent.stop_collectors()
             _print_json(summary)
             if summary.get("blocked"):
                 return EXIT_ERROR
@@ -187,6 +192,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     except (TransportError, RetryableHTTPError, ConfigFetchUnavailable) as exc:
         _error(str(exc))
         return EXIT_UNAVAILABLE
+    except CollectorError as exc:
+        _error(f"collector error: {exc}")
+        return EXIT_CONFIG
     except OSError as exc:
         _error(f"filesystem error: {exc}")
         return EXIT_ERROR

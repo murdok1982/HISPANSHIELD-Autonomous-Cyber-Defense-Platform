@@ -85,6 +85,19 @@ def test_create_source_returns_token_once_and_hides_secrets(auth_client, seeded,
     assert source.hmac_secret_encrypted != created["hmac_secret"]
 
 
+def test_source_enable_disable_endpoints(auth_client):
+    created = _create_source(auth_client, name="Toggle source")
+    disabled = auth_client.post(f"/api/v1/ingest-sources/{created['id']}/disable")
+    assert disabled.status_code == 200
+    assert disabled.json()["enabled"] is False
+    assert _ingest(auth_client, created["token"], b'{"message":"while disabled"}').status_code == 401
+
+    enabled = auth_client.post(f"/api/v1/ingest-sources/{created['id']}/enable")
+    assert enabled.status_code == 200
+    assert enabled.json()["enabled"] is True
+    assert _ingest(auth_client, created["token"], b'{"message":"while enabled"}').status_code == 200
+
+
 def test_rotate_token_invalidates_previous_token(auth_client):
     created = _create_source(auth_client, name="Rotation")
     old_token = created["token"]

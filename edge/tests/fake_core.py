@@ -41,6 +41,7 @@ class FakeCoreState:
         self.fail_status = 503
         self.signature_mode = "valid"  # valid | invalid
         self.config_mode = "signed"  # signed | tampered | tenant_only
+        self.revoked = False
         self.server_time_offset = 0.0
         self.config: dict[str, Any] = {
             "batch_size": 50,
@@ -51,13 +52,13 @@ class FakeCoreState:
             "_internal_secret": "must-never-appear",
         }
 
-    def bundle(self) -> dict[str, Any]:
+    def bundle(self, *, fingerprint: str | None = None, gateway_id: str | None = None) -> dict[str, Any]:
         issued = datetime.now(UTC)
         bundle = {
-            "gateway_id": self.gateway_id,
+            "gateway_id": gateway_id or self.gateway_id,
             "org_id": self.org_id,
             "name": "edge-test",
-            "fingerprint": self.fingerprint,
+            "fingerprint": fingerprint or self.fingerprint,
             "version": "0.1.0",
             "config": {key: value for key, value in self.config.items() if not key.startswith("_")},
             "issued_at": issued.isoformat(),
@@ -152,11 +153,16 @@ class FakeCore:
                             "status": "active",
                             "enrolled_at": _now_iso(),
                             "shared_key": core.state.secret,
-                            "config_bundle": core.state.bundle(),
+                            "config_bundle": core.state.bundle(
+                                fingerprint=payload.get("fingerprint", core.state.fingerprint)
+                            ),
                         },
                     )
                     return
                 if self.path == f"/api/v1/edge/gateways/{core.state.gateway_id}/heartbeat":
+                    if core.state.revoked:
+                        self._send(404, {"detail": "Gateway"})
+                        return
                     if not self._authorized(body):
                         self._send(401, {"detail": "Gateway signature is invalid or expired"})
                         return
@@ -174,6 +180,9 @@ class FakeCore:
                     )
                     return
                 if self.path == f"/api/v1/edge/gateways/{core.state.gateway_id}/events":
+                    if core.state.revoked:
+                        self._send(404, {"detail": "Gateway"})
+                        return
                     if not self._authorized(body):
                         self._send(401, {"detail": "Gateway signature is invalid or expired"})
                         return

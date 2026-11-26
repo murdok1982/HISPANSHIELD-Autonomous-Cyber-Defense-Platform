@@ -69,6 +69,17 @@ _CATASTROPHIC_RE = re.compile(r"\([^)]*[+*][^)]*\)\s*(?:[+*]|\{\d*,?\d*\})|\(\.[
 
 _FIELD_ALIASES = {
     "severity": "severity_id",
+    "status": "status_id",
+    "user": "user_name",
+    "username": "user_name",
+    "host": "host_name",
+    "hostname": "host_name",
+    "process": "process_name",
+    "src": "src_ip",
+    "dst": "dst_ip",
+    "sport": "src_port",
+    "dport": "dst_port",
+    "proto": "protocol",
     "src_endpoint.ip": "src_ip",
     "source.ip": "src_ip",
     "srcip": "src_ip",
@@ -101,6 +112,53 @@ _EXTRA_FIELDS = {
     "status_text",
     "file_name",
 }
+
+# Fields a rule may reference directly. Vendor-specific attributes remain
+# addressable through the ``unmapped.`` / ``normalized.`` / ``raw.`` prefixes.
+KNOWN_FIELDS = (
+    {
+        "class_uid",
+        "class_name",
+        "category_uid",
+        "activity_id",
+        "severity",
+        "severity_id",
+        "status",
+        "status_id",
+        "message",
+        "src_ip",
+        "dst_ip",
+        "src_port",
+        "dst_port",
+        "protocol",
+        "user_name",
+        "host_name",
+        "process_name",
+        "file_hash_sha256",
+        "url",
+        "domain",
+        "ioc_matches",
+        "mitre_techniques",
+        "event_uid",
+        "raw_format",
+        "source_id",
+        "org_id",
+        "occurred_at",
+        "received_at",
+        "is_demo",
+        "action",
+        "outcome",
+        "category",
+        "bytes_in",
+        "bytes_out",
+        "external_id",
+        "event_category",
+        "status_text",
+        "file_name",
+    }
+    | set(_FIELD_ALIASES)
+    | set(_FIELD_ALIASES.values())
+)
 
 _ORM_FIELDS = {
     "class_uid",
@@ -182,7 +240,7 @@ def _validate_matcher(value: Any, path: str, errors: list[dict[str, str]]) -> No
                 errors.append({"path": path, "message": "regex contains a nested quantifier (ReDoS risk)"})
                 return
             try:
-                re.compile(operand)
+                re.compile(operand, re.IGNORECASE)
             except re.error as exc:
                 errors.append({"path": path, "message": f"Invalid regex: {exc.msg}"})
             return
@@ -256,6 +314,9 @@ def validate_definition(definition: Any) -> None:
             if not isinstance(field_name, str) or not _FIELD_RE.match(field_name) or "__" in field_name:
                 errors.append({"path": "definition.selection", "message": f"Invalid field name: {field_name}"})
                 continue
+            if not _field_is_known(field_name):
+                errors.append({"path": f"definition.selection.{field_name}", "message": "Unknown field"})
+                continue
             _validate_matcher(matcher, f"definition.selection.{field_name}", errors)
 
     condition = definition.get("condition", "and")
@@ -312,6 +373,15 @@ def validate_definition(definition: Any) -> None:
         raise DefinitionError(errors)
 
 
+def _field_is_known(field_name: str) -> bool:
+    if field_name in KNOWN_FIELDS:
+        return True
+    for prefix in ("unmapped.", "normalized.", "raw."):
+        if field_name.startswith(prefix) and len(field_name) > len(prefix):
+            return True
+    return False
+
+
 def _validate_group_by(value: Any, path: str, errors: list[dict[str, str]]) -> None:
     if not isinstance(value, list) or not 1 <= len(value) <= 5:
         errors.append({"path": path, "message": "group_by must be a list of 1..5 field names"})
@@ -319,6 +389,8 @@ def _validate_group_by(value: Any, path: str, errors: list[dict[str, str]]) -> N
     for item in value:
         if not isinstance(item, str) or not _FIELD_RE.match(item):
             errors.append({"path": path, "message": f"Invalid group_by field: {item}"})
+        elif not _field_is_known(item):
+            errors.append({"path": path, "message": f"Unknown group_by field: {item}"})
 
 
 # ---------------------------------------------------------------------------
@@ -423,7 +495,7 @@ def _haystack(actual: Any) -> str:
 def _compile_regex(pattern: str) -> re.Pattern[str]:
     if len(pattern) > MAX_REGEX_LENGTH or _CATASTROPHIC_RE.search(pattern):
         raise ValueError("unsafe regex")
-    return re.compile(pattern)
+    return re.compile(pattern, re.IGNORECASE)
 
 
 def _match_operator(actual: Any, operator: str, operand: Any) -> bool:

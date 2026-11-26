@@ -776,7 +776,7 @@ def sync_feed(db: Session, ctx: RequestContext, feed: TIFeed) -> dict[str, Any]:
     feed.last_sync_at = started_at
     feed.status = "error" if errors and not summary.total else "success"
     feed.last_error = "; ".join(str(item.get("message", ""))[:200] for item in errors[:5]) or None
-    if feed.kind == "taxii":
+    if feed.kind == "taxii" and not errors:
         config = dict(feed.config or {})
         config["added_after"] = started_at.isoformat()
         feed.config = config

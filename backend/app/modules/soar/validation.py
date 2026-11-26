@@ -319,7 +319,7 @@ def validate_definition(
 
     normalised_steps: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
-    approval_available = False
+    approval_scope: dict[str, Any] | None = None
     for index, raw_step in enumerate(steps):
         prefix = f"definition.steps[{index}]"
         if not isinstance(raw_step, dict):
@@ -363,16 +363,61 @@ def validate_definition(
         if action == DEFENCE_ACTION:
             action_type = params.get("action_type")
             if isinstance(action_type, str) and _defence_requires_approval(action_type):
-                if not approval_available:
+                defence_definition = ACTIONS.get(action_type)
+                defence_target_type = params.get("target_type") or (
+                    defence_definition.target_type if defence_definition else None
+                )
+                if approval_scope is None:
                     _fail(
                         details,
                         f"{prefix}.params.action_type",
                         f"Defence action '{action_type}' requires a preceding internal.request_approval step",
                     )
-                approval_available = False
+                elif approval_scope.get("action_type") != action_type:
+                    _fail(
+                        details,
+                        f"{prefix}.params.action_type",
+                        "The approval step authorizes a different action type",
+                    )
+                elif str(approval_scope.get("target_type")) != str(defence_target_type) or str(
+                    approval_scope.get("target_id")
+                ) != str(params.get("target_id")):
+                    _fail(
+                        details,
+                        f"{prefix}.params.target_id",
+                        "The approval step authorizes a different target",
+                    )
+                approval_scope = None
 
         if action == "internal.request_approval":
-            approval_available = True
+            approval_action = params.get("action_type")
+            approval_definition = ACTIONS.get(approval_action) if isinstance(approval_action, str) else None
+            if approval_definition is None or approval_definition.internal:
+                _fail(
+                    details,
+                    f"{prefix}.params.action_type",
+                    "internal.request_approval requires a catalogue defensive action_type",
+                )
+            else:
+                approval_target_type = params.get("target_type", approval_definition.target_type)
+                approval_target_id = params.get("target_id")
+                if approval_target_type != approval_definition.target_type:
+                    _fail(
+                        details,
+                        f"{prefix}.params.target_type",
+                        f"Approval target type must be '{approval_definition.target_type}'",
+                    )
+                if not isinstance(approval_target_id, str) or not approval_target_id:
+                    _fail(
+                        details,
+                        f"{prefix}.params.target_id",
+                        "The approval step must bind a target_id",
+                    )
+                approval_scope = {
+                    "action_type": approval_action,
+                    "target_type": approval_target_type,
+                    "target_id": approval_target_id,
+                }
 
         normalised_steps.append(
             {

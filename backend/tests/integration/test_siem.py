@@ -9,9 +9,9 @@ from sqlalchemy import select
 
 from app.core.db import utcnow
 from app.models.core import AuditRecord
-from app.models.events import Alert, DetectionRule, SecurityEvent
+from app.models.events import Alert, DetectionRule, IngestSource, SecurityEvent
 from app.models.incidents import Incident, IncidentTimeline
-from scripts.seed_siem import seed_builtin_rules
+from scripts.seed_siem import seed_builtin_rules, seed_siem
 
 
 def _definition(**overrides):
@@ -143,6 +143,13 @@ def test_rule_validation_rejects_bad_definitions(auth_client):
     )
     assert bad_regex.status_code == 422
     assert any("nested quantifier" in item["message"] for item in bad_regex.json()["error"]["details"])
+
+    unknown_field = auth_client.post(
+        "/api/v1/siem/rules",
+        json={"name": "Unknown field", "definition": {"selection": {"not_a_real_field": "x"}}},
+    )
+    assert unknown_field.status_code == 422
+    assert any("Unknown field" in item["message"] for item in unknown_field.json()["error"]["details"])
 
     assert auth_client.get("/api/v1/siem/rules").json()["meta"]["total"] == 0
 
@@ -418,6 +425,23 @@ def test_rule_templates_catalog(auth_client):
     for template in templates:
         assert template["definition"]["selection"]
         assert template["severity"] in {"informational", "low", "medium", "high", "critical"}
+
+
+def test_seed_siem_is_idempotent(db, seeded):
+    org = seeded["org"]
+    first = seed_siem(db, org=org, with_source=True, commit=False)
+    second = seed_siem(db, org=org, with_source=True, commit=False)
+    db.commit()
+
+    assert first["rules_created"] == 6
+    assert second["rules_created"] == 0
+    assert first["source_token"].startswith("hs_ing_")
+    assert second["source_token"] is None
+    assert second["source_created"] is False
+    global_rules = list(db.execute(select(DetectionRule).where(DetectionRule.org_id.is_(None))).scalars())
+    assert len(global_rules) == 6
+    sources = list(db.execute(select(IngestSource).where(IngestSource.org_id == org.id)).scalars())
+    assert len(sources) == 1
 
 
 def test_alert_detail_exposes_evidence_and_rule_name(auth_client, seeded, db):

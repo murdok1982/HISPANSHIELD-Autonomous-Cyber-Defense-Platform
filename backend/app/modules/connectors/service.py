@@ -376,6 +376,7 @@ def build_catalog(db: Session, org_id: UUID) -> ConnectorCatalogOut:
         adapters=adapters,
         configured=configured,
         missing=missing,
+        unconfigured=missing,
         generated_at=utcnow(),
     )
 
@@ -420,7 +421,7 @@ def build_health_summary(db: Session, org_id: UUID) -> ConnectorHealthSummaryOut
         stale_count=len(stale),
         stale=stale[:50],
         errors=errors,
-        catalog_size=len(ADAPTER_MODULES),
+        catalog_size=len(adapter_catalog()),
     )
 
 

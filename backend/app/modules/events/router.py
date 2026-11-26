@@ -33,7 +33,7 @@ from app.modules.events.schemas import (
     RetentionPolicyUpdate,
     RetentionPurgeResult,
 )
-from app.services.normalization import ParseError, parse_payload
+from app.services.normalization import ParseError, parse_payload, sanitize_text
 
 router = APIRouter(tags=["Security Events & SIEM Ingest"])
 
@@ -159,6 +159,10 @@ def update_ingest_source(
     source = _source_or_404(ctx.db, ctx.org.id, source_id)
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
+        if value is None:
+            continue
+        if field == "name":
+            value = sanitize_text(value, max_length=160)
         setattr(source, field, value)
     ctx.audit(
         action="ingest_source.update",
@@ -188,6 +192,42 @@ def delete_ingest_source(source_id: UUID, ctx: RequestContext = Depends(_sources
     ctx.db.delete(source)
     ctx.db.commit()
     return Response(status_code=204)
+
+
+@router.post(
+    "/ingest-sources/{source_id}/enable",
+    response_model=IngestSourceOut,
+    summary="Enable an ingestion source",
+)
+def enable_ingest_source(source_id: UUID, ctx: RequestContext = Depends(_sources_write)) -> IngestSourceOut:
+    source = _source_or_404(ctx.db, ctx.org.id, source_id)
+    source.enabled = True
+    ctx.audit(
+        action="ingest_source.enable",
+        resource_type="ingest_source",
+        resource_id=str(source.id),
+    )
+    ctx.db.commit()
+    ctx.db.refresh(source)
+    return IngestSourceOut(**service.serialize_source(source))
+
+
+@router.post(
+    "/ingest-sources/{source_id}/disable",
+    response_model=IngestSourceOut,
+    summary="Disable an ingestion source without deleting it",
+)
+def disable_ingest_source(source_id: UUID, ctx: RequestContext = Depends(_sources_write)) -> IngestSourceOut:
+    source = _source_or_404(ctx.db, ctx.org.id, source_id)
+    source.enabled = False
+    ctx.audit(
+        action="ingest_source.disable",
+        resource_type="ingest_source",
+        resource_id=str(source.id),
+    )
+    ctx.db.commit()
+    ctx.db.refresh(source)
+    return IngestSourceOut(**service.serialize_source(source))
 
 
 @router.post(
@@ -403,7 +443,9 @@ def event_stats(
         "generated_at": utcnow().isoformat(),
         "window_hours": hours,
         "total": int(total),
-        "by_severity": {str(row[0]): int(row[1]) for row in severity_rows},
+        "by_severity": {
+            str(level): int(next((row[1] for row in severity_rows if int(row[0]) == level), 0)) for level in range(6)
+        },
         "by_class": [{"class_uid": int(row[0]), "class_name": row[1], "count": int(row[2])} for row in class_rows],
         "top_sources": [
             {

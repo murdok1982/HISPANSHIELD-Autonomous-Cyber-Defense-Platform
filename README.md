@@ -1,199 +1,384 @@
+<div align="center">
+
+<img src="frontend/public/shield.svg" alt="HISPANSHIELD" width="96" height="96" />
+
 # HISPANSHIELD
 
-**Plataforma de ciberdefensa autónoma para administraciones públicas y operadores de infraestructuras críticas.**
+**European Autonomous Cyber Defence Platform**
 
-HISPANSHIELD unifica inventario, superficie de exposición, vulnerabilidades, SIEM, SOAR, threat intelligence, gestión de incidentes, forense digital y cumplimiento normativo europeo (NIS2, CRA, GDPR, ENS, ISO/IEC 27001/27002, IEC 62443, ETSI EN 303 645) sobre un despliegue **on-premise o air-gapped**, con **respuesta autónoma gobernada por política** y **IA local opcional**.
+*Plataforma europea de ciberdefensa autónoma gobernada por políticas, para administraciones públicas, empresas privadas e infraestructuras críticas.*
 
-> **Estado del repositorio:** fase de **especificación (SDD)**. Los contratos, criterios de aceptación y backlog están congelados; la implementación se ejecuta contra `.factory/TASKS.md`. Ninguna funcionalidad está marcada como `VERIFIED` todavía. Ver `docs/implementation-status.md`.
+[![Release](https://img.shields.io/badge/release-0.1.0-38BDF8?style=for-the-badge)](CHANGELOG.md)
+[![Backend](https://img.shields.io/badge/backend-Python%203.12%20·%20FastAPI-3776AB?style=for-the-badge&logo=python&logoColor=white)](backend/)
+[![Frontend](https://img.shields.io/badge/frontend-React%2019%20·%20TypeScript-3178C6?style=for-the-badge&logo=react&logoColor=white)](frontend/)
+[![Data](https://img.shields.io/badge/data-PostgreSQL%2018-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](backend/migrations/)
+[![AI](https://img.shields.io/badge/AI-local--first%20·%20offline--ready-F5A524?style=for-the-badge)](docs/manual-uso-integracion.md#8-integración-de-ia-local-y-modelo-recomendado)
+[![Security](https://img.shields.io/badge/security-Zero%20Trust%20·%20audit%20chain-34D399?style=for-the-badge)](SECURITY.md)
+[![License](https://img.shields.io/badge/license-proprietary%20evaluation-93A6BA?style=for-the-badge)](LICENSE)
+
+[Manual de uso e integración](docs/manual-uso-integracion.md) · [Arquitectura](docs/architecture-c4.md) · [Especificaciones](specs/) · [Seguridad](SECURITY.md) · [Estado](docs/implementation-status.md)
+
+</div>
 
 ---
 
-## 1. PRINCIPIOS
+## Vista del producto
 
-- **Soberanía del dato:** nada sale del perímetro sin opt-in explícito y auditado.
-- **Deny-by-default:** autorización, política de autonomía y tool-calls deniegan salvo permiso explícito.
-- **Trazabilidad:** cadena de auditoría con hash encadenado; evidencias con SHA-256.
-- **Reversibilidad:** toda acción autónoma declara verificación y rollback.
-- **Honestidad:** si un conector, sensor o modelo no está disponible, se muestra `unavailable`/`degraded` con causa. Nunca datos fabricados.
-- **Accesibilidad:** WCAG 2.2 AA en las 23 pantallas operativas.
+<div align="center">
+  <img src="docs/assets/dashboard.jpg" alt="HISPANSHIELD Executive Overview" width="100%" />
+  <sub>Executive Overview: riesgo consolidado, KPIs reales, salud de integraciones y superficie expuesta.</sub>
+</div>
+
+> **Estado honesto:** release candidata `0.1.0`. El producto es funcional y se
+> entrega con pruebas automatizadas, auditoría adversarial y manifiestos de
+> despliegue. **No está certificado** para ningún marco regulatorio y no debe
+> operarse en infraestructura crítica real sin evaluación independiente,
+> análisis de riesgos y aprobación del CISO. Las limitaciones se documentan en
+> [§ Estado y límites](#estado-y-límites).
 
 ---
 
-## 2. STACK
+## Qué es HISPANSHIELD
 
-| Capa | Tecnología |
+HISPANSHIELD no es una demo que parece un SOC. Es una plataforma modular que
+conecta **inventario, detección, investigación, inteligencia, respuesta y
+cumplimiento** en un único plano de control, con IA local y trazabilidad
+completa.
+
+| Pilar | Capacidad real |
 | :--- | :--- |
-| Backend | Python 3.12 · FastAPI · SQLAlchemy 2.0 (sync) · psycopg3 · Alembic · Pydantic v2 |
-| Base de datos | PostgreSQL 18 (JSONB, FTS, particiones, `SKIP LOCKED`, `LISTEN/NOTIFY`) |
-| Frontend | React 19 · TypeScript strict · Vite · CSS Modules + design tokens propios |
-| Edge | Python 3.12 · SQLite WAL · mTLS |
-| IA | Ollama / vLLM (local) · proveedor externo opt-in |
-| Calidad | pytest · Vitest · Playwright · axe-core · ruff · mypy · bandit · pip-audit · gitleaks |
+| **Superficie de ataque** | CAASM/EASM, activos IT/cloud/identidad/IoT/OT, relaciones, zonas IEC 62443, descubrimiento pasivo y sondeo acotado con autorización |
+| **Vulnerabilidades** | CVE · CISA KEV · EPSS · priorización contextual (explotabilidad, exposición, criticidad, inteligencia) — nunca solo CVSS |
+| **SIEM** | Ingesta JSON/CEF/LEEF/syslog, normalización OCSF, enriquecimiento IOC, reglas y correlación, alertas deduplicadas |
+| **SOAR** | Playbooks durables en PostgreSQL, condiciones, reintentos, timeouts, compensación, simulación, aprobaciones |
+| **Incidentes** | Ciclo completo, timeline, evidencias SHA-256, cadena de custodia, MTTR/MTTD |
+| **Threat Intelligence** | STIX 2.1, TAXII, MISP, OpenCTI, actores, MITRE ATT&CK, enriquecimiento con veredicto honesto |
+| **Respuesta autónoma** | Catálogo cerrado de acciones A0–A4, policy engine, broker, aprobaciones con separación de funciones, kill switches, verificación y rollback |
+| **IA local** | Gateway Ollama/vLLM/llama.cpp, RAG con citas, 16 agentes especializados, MCP gobernado, resistencia a prompt/tool injection |
+| **Cumplimiento** | NIS2, CRA, GDPR, ENS, ISO 27001/27002, IEC 62443, ETSI 303 645, NIST CSF 2.0, EUCC — autoevaluación técnica versionada |
+| **Operación** | Multi-tenant, RBAC/ABAC, auditoría append-only, observabilidad, backup/restore, despliegue on-premise, Kubernetes y air-gapped |
 
-Sin Kafka, Redis, OpenSearch, Qdrant, Temporal, Keycloak ni Vault. Ver `specs/adr/`.
-
----
-
-## 3. ESTRUCTURA
+### La regla que gobierna todo
 
 ```text
-.
-├── backend/            # API + workers + migraciones + tests
-├── frontend/           # SPA React (23 pantallas) + E2E
-├── edge/               # gateway store-and-forward
-├── deploy/             # compose + kubernetes
-├── infra/              # proxy, systemd, observabilidad
-├── scripts/            # verify_all, backup, restore, sbom, airgap
-├── specs/              # SDD: constitución, producto, arquitectura, 15 dominios, ADRs
-├── docs/               # auditoría, plan, C4, manuales, referencia API
-├── .factory/           # SPEC, ARCHITECTURE, TASKS, SECURITY_AUDIT
-├── reports/            # SBOM, rendimiento, auditorías (generados)
-└── examples/           # payloads de ejemplo (OCSF, STIX, CSV, prompts)
+LLM propone  →  Policy Engine evalúa  →  Authorization comprueba
+             →  Execution Broker ejecuta  →  Audit registra  →  Verification comprueba
 ```
+
+**Ningún modelo de lenguaje tiene autoridad de ejecución.** Si el motor de
+políticas falla, no se ejecuta ninguna acción privilegiada. Si no hay modelo
+local, la API devuelve `503 ai_unavailable` y los agentes cambian a un modo
+determinista basado en evidencia: nunca inventan una respuesta.
 
 ---
 
-## 4. PUESTA EN MARCHA (DESARROLLO)
+## Arquitectura
 
-### 4.1 Requisitos verificados
+```mermaid
+flowchart TB
+    subgraph SOC["SOC Command Center · React 19 + TypeScript"]
+        UI["23 vistas · ES/EN · dark/light · accesible"]
+    end
 
-| Herramienta | Versión |
-| :--- | :--- |
-| Python | 3.12.16 (`/tmp/opencode/hs-venv`) |
-| PostgreSQL | 18.6 en `/tmp/opencode:55432` (trust auth) |
-| Node.js | 22.14.0 |
-| npm | 10.9.2 |
+    subgraph API["FastAPI · Modular Monolith"]
+        AUTH["Identity · RBAC/ABAC · MFA · Tenancy"]
+        DOM["Assets · Vulns · Events · SIEM · SOAR · Incidents"]
+        TI["Threat Intel · Forensics · Compliance · Reports"]
+        GOV["Policy Engine · Authorization · Execution Broker"]
+        AI["AI Gateway · RAG · Agents · MCP Governance"]
+    end
 
-```bash
-export PATH=/tmp/opencode/node-v22.14.0-linux-x64/bin:$PATH
-source /tmp/opencode/hs-venv/bin/activate
-export HISPANSHIELD_DATABASE_URL="postgresql+psycopg://postgres@/hispanshield?host=/tmp/opencode&port=55432"
+    subgraph DATA["PostgreSQL 18"]
+        DB[("System of record · durable workflows · FTS · vectors · audit chain")]
+    end
+
+    subgraph EXT["Authorized integrations"]
+        SIEM["Wazuh · Elastic · Sentinel"]
+        TI2["MISP · OpenCTI · TAXII"]
+        IAM["Keycloak · Entra · AD"]
+        NET["pfSense · OPNsense · Suricata · Zeek"]
+        EDR["Defender · CrowdStrike · SentinelOne"]
+        EDGE["Edge gateways · OT/IoT passive spool"]
+    end
+
+    subgraph LOCAL["Local AI"]
+        LLM["Ollama · vLLM · llama.cpp"]
+    end
+
+    UI -->|HTTPS · session/API token| API
+    API --> DATA
+    GOV -->|capability-validated calls| EXT
+    AI --> LLM
+    EDGE -->|signed store-and-forward| API
 ```
 
-### 4.2 Backend
+**Decisiones clave** (detalle en [`specs/adr/`](specs/adr/)):
 
-```bash
-cd backend
-uv sync
-alembic upgrade head
-uvicorn app.main:app --reload --port 8000
-```
-
-### 4.3 Frontend
-
-```bash
-cd frontend
-npm ci
-npm run dev        # http://localhost:5173 (proxy a :8000)
-```
-
-### 4.4 Primer acceso
-
-1. Abrir `http://localhost:5173/setup` (solo si no existe ninguna organización).
-2. Crear organización + usuario `owner`.
-3. Configurar MFA en el primer login.
-4. (Opcional) Registrar un proveedor IA local en `/ai/models`.
+- Monolito modular con límites de dominio estrictos; servicios separables por
+  necesidad demostrable.
+- PostgreSQL como sistema de registro, cola durable, motor de workflows,
+  búsqueda FTS y almacén vectorial del MVP. Sin Kafka/Redis/OpenSearch/Temporal
+  en el despliegue base, reduciendo superficie operativa.
+- IA **local-first**; proveedores externos solo por opt-in y auditados.
+- Conectores con capacidades explícitas: **lectura ≠ escritura**. Las escrituras
+  pasan por el broker defensivo.
+- Auditoría encadenada por hashes + trigger append-only en PostgreSQL.
 
 ---
 
-## 5. VARIABLES DE ENTORNO
+## Inicio rápido
 
-| Variable | Obligatoria | Default | Descripción |
-| :--- | :---: | :--- | :--- |
-| `HISPANSHIELD_ENV` | ✅ | `production` | `production|staging|test` |
-| `HISPANSHIELD_DATABASE_URL` | ✅ | — | `postgresql+psycopg://...` |
-| `HISPANSHIELD_SECRET_KEY` | ✅ (prod) | — | Clave Fernet (32 bytes base64) |
-| `HISPANSHIELD_ALLOWED_ORIGINS` | ✅ | — | Orígenes CORS exactos, separados por coma |
-| `HISPANSHIELD_EVIDENCE_PATH` | ✅ | — | Volumen de evidencias |
-| `HISPANSHIELD_SESSION_IDLE_MINUTES` | — | `30` | Timeout de inactividad |
-| `HISPANSHIELD_SESSION_ABSOLUTE_HOURS` | — | `12` | Timeout absoluto |
-| `HISPANSHIELD_REQUIRE_MIGRATIONS` | — | `true` | Bloquea arranque si hay migraciones pendientes |
-| `HISPANSHIELD_EDGE_REQUIRE_MTLS` | — | `false` | Exige certificado de cliente |
-| `HISPANSHIELD_AI_PROVIDER` | — | `none` | `none|ollama|vllm|openai_compat` |
-| `HISPANSHIELD_AI_BASE_URL` | — | — | Endpoint local |
-| `HISPANSHIELD_AI_DAILY_TOKEN_BUDGET` | — | `0` | 0 = sin límite (no recomendado) |
+### Requisitos
 
-Generar la clave:
+- Python 3.12, Node.js 22, PostgreSQL 16+ (probado con 18).
+- Opcional: Ollama / vLLM / llama.cpp para funciones generativas.
+
+### Instalación
 
 ```bash
+git clone https://github.com/murdok1982/HISPANSHIELD-Autonomous-Cyber-Defense-Platform.git
+cd HISPANSHIELD-Autonomous-Cyber-Defense-Platform
+
+cp .env.example .env
+python -c "import secrets; print(secrets.token_urlsafe(64))"
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# Edita .env con HS_DATABASE_URL, HS_SECRET_KEY, HS_ENCRYPTION_KEY, orígenes y admin.
+
+python -m venv .venv && source .venv/bin/activate
+pip install -e "./backend[dev]" -e "./edge"
+cd frontend && npm ci && npm run build && cd ..
+
+createdb hispanshield
+(cd backend && alembic upgrade head)
+(cd backend && python scripts/seed_reference_data.py)   # marcos, agentes, reglas
+python scripts/bootstrap_admin.py
+
+cd backend && uvicorn app.main:app --host 127.0.0.1 --port 8080
 ```
 
-`.env` nunca se versiona. Ver `.env.example`.
+Abre **http://127.0.0.1:8080**. API docs: **http://127.0.0.1:8080/api/docs** (no
+en producción).
 
----
-
-## 6. VERIFICACIÓN
+### Demo en un minuto
 
 ```bash
-# Todo
-bash scripts/verify_all.sh
-
-# Por área
-cd backend && ruff check . && mypy --strict app && pytest -q
-cd frontend && npm run typecheck && npm run build && npm run test
-cd frontend && npm run test:e2e
-cd backend && pytest -q tests/security/test_tenant_isolation.py
-cd backend && pytest -q tests/autonomy/
-pip-audit -r backend/requirements.txt && bandit -r backend edge -ll
-gitleaks detect --no-banner --redact
-bash scripts/generate_sbom.sh && python scripts/check_licenses.py
-bash scripts/backup_restore_drill.sh
-bash scripts/verify_airgap.sh
+HS_SEED_DEMO=true python scripts/seed_demo.py
 ```
 
-Cada `AC-XX` de `.factory/SPEC.md §3` tiene un test mapeado en `specs/testing/matrix.md`.
+Organización ficticia **Ayuntamiento de Nova Iberia (demo)**, con activos IT/OT/IoT,
+eventos, alertas, incidentes, vulnerabilidades, IOC y playbooks. Todos los
+registros están marcados `is_demo=true`; la UI muestra **DEMO**.
+
+```text
+analista.demo@nova-iberia.example
+Demo-Str0ng-Pass!2026
+```
+
+### Docker Compose
+
+```bash
+cp .env.example .env   # define POSTGRES_PASSWORD y secretos
+docker compose -f deploy/compose/docker-compose.yml up -d --build
+# IA local opcional:
+docker compose -f deploy/compose/docker-compose.yml --profile ai up -d
+```
+
+### Verificación
+
+```bash
+make test          # backend (pytest) + frontend (vitest)
+make lint          # ruff + mypy + TypeScript
+make test-e2e      # Playwright
+make audit         # pip-audit + bandit
+make sbom
+```
 
 ---
 
-## 7. DOCUMENTACIÓN
+## Las 23 pantallas del SOC
 
-| Necesitas | Documento |
+| Mando | Detección | Exposición | Protección | Gobierno |
+| :--- | :--- | :--- | :--- | :--- |
+| Executive Overview | Incident Management | Asset Intelligence | SOAR | Forensics |
+| SOC Command Center | Threat Intelligence | Attack Surface | Playbook Designer | Compliance |
+| Live Threat Monitoring | SIEM | Vulnerability Management | AI Agent Control | Audit Center |
+| | | | IoT/OT Security | Integrations |
+| | | | Network Security | Model Management |
+| | | | Cloud Security | Organization Management |
+| | | | Identity Security | System Administration |
+
+Cada vista con datos implementa **skeleton de carga**, **estado vacío con CTA** y
+**error recuperable con reintento**; el diseño es responsive (375/768/1440), con
+contraste WCAG AA, navegación por teclado y tema oscuro/claro. La interfaz está
+internacionalizada en **español e inglés** y autoaloja sus fuentes para operar
+air-gapped.
+
+---
+
+## IA local y modelo recomendado
+
+HISPANSHIELD es **local-first**. Proveedores soportados: **Ollama**, **vLLM** y
+**llama.cpp** (OpenAI-compatible), con routing por tarea, límites de
+concurrencia/tokens, timeouts, evaluación y observabilidad.
+
+### Modelo recomendado (alto rendimiento, laboratorio y análisis)
+
+[**`huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF`**](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF)
+— Qwen3.8-27B, GGUF, Apache-2.0, contexto hasta 262 144 tokens. Buen razonamiento
+técnico y soporte de herramientas, ejecutable en local/offline.
+
+```bash
+huggingface-cli download huihui-ai/Huihui-Qwen3.8-27B-abliterated-GGUF \
+  Huihui-Qwen3.8-27B-abliterated-Q4_K_M.gguf --local-dir ./models
+
+cat > Modelfile <<'EOF'
+FROM ./models/Huihui-Qwen3.8-27B-abliterated-Q4_K_M.gguf
+PARAMETER num_ctx 32768
+PARAMETER temperature 0.2
+SYSTEM "Eres un analista SOC. Distingue evidencia de inferencia. Cita fuentes. No ejecutes acciones."
+EOF
+ollama create hispanshield-qwen27b -f Modelfile
+```
+
+Después, regístralo en **Model Management → Providers → Ollama** y ejecuta
+**Evaluate** antes de asignarlo a una tarea.
+
+> **Advertencia de seguridad.** Es una variante *abliterated* (sin alineación de
+> seguridad). Úsala solo como motor de razonamiento aislado, con herramientas de
+> solo lectura, validación de esquemas y revisión humana; nunca le concedas
+> permisos de escritura ni acceso a secretos. Si tu política exige un modelo
+> alineado, mantén el modelo alineado por defecto. Instrucciones completas,
+> hardware, evaluación y salvaguardas en el
+> [manual](docs/manual-uso-integracion.md#8-integración-de-ia-local-y-modelo-recomendado).
+
+---
+
+## Integraciones
+
+| Familia | Integraciones de referencia |
 | :--- | :--- |
-| Qué es y por qué | `specs/product/vision.md` |
-| Qué entra y qué no | `specs/product/scope.md` |
-| Requisitos y ACs | `.factory/SPEC.md`, `specs/product/requirements.md` |
-| Arquitectura | `.factory/ARCHITECTURE.md`, `docs/architecture-c4.md` |
-| Decisiones (ADR) | `specs/adr/` |
-| Dominios funcionales | `specs/domains/` |
-| Seguridad y autonomía | `specs/security/` |
-| API | `specs/api/rest-contract.md`, `docs/api-reference.md` |
-| Operación | `docs/operations-runbook.md`, `specs/operations/` |
-| SOC | `docs/soc-manual.md` |
-| Incidentes | `docs/incident-response-manual.md` |
-| IoT/OT | `docs/iot-ot-manual.md` |
-| Recuperación | `docs/recovery-manual.md` |
-| Auditoría | `docs/audit-manual.md` |
-| Conectores | `docs/connector-guide.md` |
-| IA local | `docs/local-models-guide.md` |
-| Agentes | `docs/agents-guide.md` |
-| Estado real | `docs/implementation-status.md` |
+| **SIEM** | Wazuh, Elastic Security, Microsoft Sentinel, IBM QRadar / Splunk / Google SecOps (extensibles) |
+| **SOAR** | Shuffle, Cortex XSOAR, Splunk SOAR, Tines (vía webhook/API) |
+| **EDR/XDR** | Microsoft Defender, CrowdStrike, SentinelOne, Elastic Defend, Wazuh |
+| **Red** | pfSense, OPNsense, Suricata, Zeek, Palo Alto, Fortinet, Cisco |
+| **Threat Intel** | MISP, OpenCTI, STIX/TAXII, MITRE ATT&CK, NVD, CISA KEV, EPSS |
+| **Identidad** | Keycloak, Active Directory, Entra ID, Okta, LDAP, OIDC, SAML |
+| **Cloud** | AWS, Azure, Google Cloud, OpenStack |
+| **Industrial** | Modbus, DNP3, OPC UA, BACnet, PROFINET, EtherNet/IP, IEC 104/61850, S7, MQTT, LoRaWAN (pasivo) |
+
+**Contrato de capacidades:** cada conector declara lectura y escritura por
+separado. Las llamadas de escritura se ejecutan únicamente a través del
+[Execution Broker](backend/app/services/broker.py), con política, aprobación,
+verificación y rollback cuando es técnicamente viable.
+
+### Formatos de ingesta
+
+```bash
+# Webhook con token de fuente (mostrado una sola vez)
+curl -X POST https://shield.example.eu/api/v1/ingest/$SOURCE_TOKEN \
+  -H "Content-Type: application/json" \
+  -d '{"host":"dc01","user":"j.perez","src_ip":"203.0.113.77","message":"Failed password","severity":"high"}'
+```
+
+Syslog RFC5424/3164, CEF, LEEF, JSON y OpenTelemetry. El evento original se
+conserva junto al normalizado OCSF.
 
 ---
 
-## 8. SEGURIDAD
+## Seguridad y autonomía
 
-- No se aceptan secretos en el repositorio: `gitleaks` bloquea el gate.
-- Vulnerabilidades del producto: ver `SECURITY.md` (divulgación responsable y plazos).
-- La clave `HISPANSHIELD_SECRET_KEY` la custodia el operador; sin ella, los secretos cifrados son irrecuperables.
-- Despliegue en producción: TLS + HSTS, PostgreSQL con autenticación fuerte (no trust), backups cifrados y probados.
-
----
-
-## 9. LICENCIA Y ORIGINALIDAD
-
-Construcción **clean-room**: no deriva de `SmartNationDefense` ni de ningún producto con licencia incompatible. Ver `docs/repository-audit.md`, `docs/license-policy.md` y `specs/adr/ADR-012-license-clean-room.md`. La licencia de distribución del producto se define en el contrato de despliegue; las dependencias cumplen la allowlist documentada.
-
----
-
-## 10. ESTADO
-
-| Elemento | Estado |
+| Control | Implementación |
 | :--- | :--- |
-| Especificación (SDD) | ✅ Congelada v1.0 |
-| Backlog | ✅ 150 tareas en 12 fases |
-| Implementación | ⏳ Pendiente (`0 / 150`) |
-| Auditoría de seguridad | ⏳ Pendiente (`SECURITY_AUDIT.md` en `BLOCKED`) |
-| Release 1.0 | ⏳ No iniciada |
+| Identidad | Argon2id, MFA TOTP, sesiones opacas `HttpOnly` + SameSite, CSRF double-submit, rotación/revocación |
+| Autorización | 10 roles RBAC, comprobaciones ABAC, aislamiento multi-tenant verificado (`404` cross-tenant) |
+| Secretos | Cifrado Fernet en reposo; nunca se devuelven al cliente; rotación |
+| Red | SSRF con resolución DNS; metadata cloud siempre bloqueada; TLS verificado; sin redirecciones |
+| HTTP | CSP, HSTS (producción), frame denial, nosniff, referrer/permissions policy, CORS explícito |
+| Resiliencia | Rate limiting en PostgreSQL, lockout, límites de cuerpo, request IDs, manejo de errores sin stack traces |
+| Auditoría | Cadena de hashes por organización + trigger append-only (UPDATE/DELETE/TRUNCATE) |
+| Autonomía | Catálogo cerrado A0–A4, kill switches global/org/conector/autonomía, aprobación humana, fail-closed |
+| OT/IoT | Monitorización pasiva por defecto; clases de acción peligrosas **prohibidas en código** |
+| Supply chain | Dependencias pinneadas, `pip-audit` limpio, bandit, SBOM, CI con escaneo de imagen |
 
-El Exit Gate exige: 150/150 tareas, 124/124 ACs con test verde, `0 CRITICAL/HIGH`, air-gap y backup verificados.
+**Acciones defensivas permitidas** (según conector y autorización): revocar
+sesiones, aislar endpoint, bloquear IP, deshabilitar identidad, restaurar
+configuración validada, aplicar parche autorizado, abrir incidente, activar
+playbook, recolectar evidencia. **Nunca** operaciones ofensivas, escritura en
+controladores, reinicios OT o cambios de firmware.
+
+---
+
+## Cumplimiento europeo
+
+Motor versionado con marcos **NIS2, CRA, GDPR, ENS, ISO/IEC 27001:2022,
+ISO/IEC 27002 (mapeo), IEC 62443, ETSI EN 303 645, NIST CSF 2.0 y EUCC**.
+Los controles se evalúan contra datos reales del sistema (MFA, auditoría, TLS de
+conectores, retención, inventario, segmentación, OT pasivo, revisión de accesos,
+etc.), se vinculan a evidencias y generan informes ejecutivos, técnicos y
+regulatorios reproducibles.
+
+> HISPANSHIELD genera **autoevaluaciones técnicas**. No certifica a ninguna
+> organización ni sustituye auditorías, notificaciones o DPIA.
+
+---
+
+## Estructura del repositorio
+
+```text
+backend/        FastAPI · dominios · servicios · migraciones · 300+ tests
+frontend/       React 19 + TS + Vite · design system propio · 23 vistas
+edge/           Gateway offline-first con cola SQLite durable y HMAC/mTLS
+specs/          Constitución · producto · arquitectura · 15 dominios · ADR
+docs/           Manual de uso/integración · C4 · runbooks · auditoría · estado
+deploy/         Docker Compose · Kubernetes (HA, probes, NetworkPolicy)
+scripts/        Bootstrap · seed · workers · backup/restore · SBOM · smoke API
+.factory/       Estado de la software factory (SPEC/ARCH/TASKS/AUDIT)
+tests/          Escenarios de aceptación y laboratorio de autonomía
+```
+
+### Documentación esencial
+
+- [Manual de uso e integración](docs/manual-uso-integracion.md) — instalación, operación, conectores, IA, API, gateway, troubleshooting.
+- [Constitución](specs/constitution.md) — reglas no negociables.
+- [Arquitectura del sistema](specs/architecture/system-architecture.md) y [C4](docs/architecture-c4.md).
+- [Modelo de amenazas](specs/security/threat-model.md) y [política de autonomía](specs/security/autonomy-policy.md).
+- [Contrato de conector](specs/integrations/connector-contract.md) y [matriz de compatibilidad](specs/integrations/compatibility-matrix.md).
+- [Runbook de operaciones](docs/operations-runbook.md), [manual SOC](docs/soc-manual.md), [respuesta a incidentes](docs/incident-response-manual.md), [recuperación](docs/recovery-manual.md).
+- [Informe de auditoría de seguridad](.factory/SECURITY_AUDIT.md).
+
+---
+
+## Estado y límites
+
+Esta release es **funcional y verificable**, no una promesa:
+
+- Suite backend de integración/seguridad sobre PostgreSQL real, suite frontend,
+  Playwright E2E, auditoría de dependencias limpia y escaneo estático.
+- Manifiestos Docker/Kubernetes incluidos; **no se validaron en runtime** en el
+  entorno de construcción (sin daemon Docker). Valídalos en tu plataforma.
+- Sin proveedor de IA, las funciones generativas devuelven un error explícito;
+  el análisis determinista sigue operativo.
+- La federación SSO OIDC con IdP externo no está habilitada por defecto; el login
+  local y el conector administrativo de Keycloak sí están implementados.
+- El MVP usa PostgreSQL para búsqueda, colas, workflows y vectores. Los ADR
+  documentan los puntos de extensión a OpenSearch/Kafka/Qdrant/Temporal.
+- La licencia es propietaria en evaluación y requiere revisión jurídica antes de
+  su distribución.
+
+Hoja de ruta, riesgos y evidencias: [`docs/implementation-status.md`](docs/implementation-status.md)
+y [`docs/roadmap.md`](docs/roadmap.md).
+
+---
+
+## Licencia y contacto
+
+Software propietario en evaluación — consulta [LICENSE](LICENSE). No se ha
+incorporado código de terceros ni del repositorio hermano auditado.
+
+- Seguridad: sigue [SECURITY.md](SECURITY.md). No publiques vulnerabilidades en issues.
+- Contribuciones: [CONTRIBUTING.md](CONTRIBUTING.md).
+- Cambios: [CHANGELOG.md](CHANGELOG.md).
+
+<div align="center">
+  <sub>HISPANSHIELD · Construido con disciplina de ingeniería, seguridad verificable y soberanía del dato.</sub>
+</div>

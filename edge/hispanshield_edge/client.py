@@ -54,6 +54,10 @@ class EdgeClientError(RuntimeError):
 class TransportError(EdgeClientError):
     """Connection refused/reset/timeout: the request may or may not have landed."""
 
+    def __init__(self, message: str, *, connect_failed: bool = False) -> None:
+        super().__init__(message)
+        self.connect_failed = connect_failed
+
 
 class FatalAuthError(EdgeClientError):
     """401/403 or revoked gateway: retrying cannot help, re-enrollment is required."""
@@ -103,9 +107,7 @@ def build_signature_message(timestamp: str, method: str, path: str, body: bytes)
 
 
 def compute_signature(secret: str, timestamp: str, method: str, path: str, body: bytes) -> str:
-    return hmac.new(
-        secret.encode(), build_signature_message(timestamp, method, path, body), hashlib.sha256
-    ).hexdigest()
+    return hmac.new(secret.encode(), build_signature_message(timestamp, method, path, body), hashlib.sha256).hexdigest()
 
 
 def sign_config_bundle(secret: str, bundle: dict[str, Any]) -> str:
@@ -292,7 +294,7 @@ class EdgeClient:
                 timeout=timeout,
             )
         except (httpx.ConnectError, httpx.ConnectTimeout) as exc:
-            raise TransportError(f"cannot connect to core: {exc.__class__.__name__}") from exc
+            raise TransportError(f"cannot connect to core: {exc.__class__.__name__}", connect_failed=True) from exc
         except httpx.HTTPError as exc:
             raise TransportError(f"transport failure: {exc.__class__.__name__}") from exc
 
@@ -302,10 +304,7 @@ class EdgeClient:
             payload = response.json()
         except ValueError:
             return response.text[:200]
-        if isinstance(payload, dict):
-            detail = payload.get("detail") or payload.get("message") or payload
-        else:
-            detail = payload
+        detail = (payload.get("detail") or payload.get("message") or payload) if isinstance(payload, dict) else payload
         return str(detail)[:300]
 
     def _retry_after(self, response: httpx.Response) -> float | None:
@@ -320,8 +319,8 @@ class EdgeClient:
     def _raise_http(self, response: httpx.Response, *, context: str) -> None:
         status = response.status_code
         detail = self._detail(response)
-        if status in {401, 403}:
-            raise FatalAuthError(f"{context}: authentication rejected ({status}): {detail}")
+        if status in {401, 403, 404}:
+            raise FatalAuthError(f"{context}: authentication rejected or gateway unknown ({status}): {detail}")
         if status == 429:
             raise RetryableHTTPError(
                 f"{context}: rate limited ({detail})", status=status, retry_after=self._retry_after(response)
@@ -482,8 +481,8 @@ class EdgeClient:
             try:
                 response = self._send("POST", endpoint, body=body, signed=True, timeout=30.0)
                 break
-            except TransportError:
-                if attempt == 1:
+            except TransportError as exc:
+                if attempt == 1 or not exc.connect_failed:
                     raise
                 self._sleep(0.25)
         if response is None:  # pragma: no cover - loop always sets or raises

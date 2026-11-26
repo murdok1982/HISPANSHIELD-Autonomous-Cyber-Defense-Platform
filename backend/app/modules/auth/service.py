@@ -118,7 +118,7 @@ def authenticate_password(
             ip_address=ip,
         )
         db.commit()
-        raise Unauthorized("Account temporarily locked. Try again later.")
+        raise Unauthorized("Invalid email or password")
 
     if not verify_password(password, user.password_hash):
         user.failed_login_count += 1

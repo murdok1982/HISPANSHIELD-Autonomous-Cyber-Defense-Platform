@@ -26,7 +26,6 @@ import {
   LinkButton,
   PageHeader,
   PageSkeleton,
-  ProgressBar,
   SeverityBadge,
   StatusBadge,
   type Column,
@@ -414,9 +413,6 @@ export function IdentityPage() {
                 <ShieldCheck size={14} style={{ flex: "0 0 auto" }} aria-hidden="true" />
                 <span>{c("computedNote")}</span>
               </div>
-            </div>
-            <div style={{ marginTop: 10 }}>
-              <ProgressBar value={data.identities.mfa_percent} tone={data.identities.mfa_percent >= 100 ? "var(--success)" : "var(--warning)"} />
             </div>
             <div style={{ marginTop: 10 }}>
               <LinkButton to="/admin" size="sm" variant="ghost" icon={Users}>{c("goAdmin")}</LinkButton>

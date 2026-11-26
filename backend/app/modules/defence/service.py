@@ -8,9 +8,11 @@ from uuid import UUID
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
+from app.models.assets import Asset
 from app.models.connectors import Connector
 from app.models.core import KillSwitch
-from app.services.actions import ACTIONS, FORBIDDEN_ACTIONS
+from app.services.actions import ACTIONS, FORBIDDEN_ACTIONS, level_index
+from app.services.policy_engine import active_policy_snapshot
 
 # Only actions with an explicit, idempotent inverse may be rolled back.
 ROLLBACK_ACTIONS: dict[str, str] = {
@@ -22,6 +24,35 @@ ROLLBACK_ACTIONS: dict[str, str] = {
 
 def rollback_action_for(action_type: str) -> str | None:
     return ROLLBACK_ACTIONS.get(action_type)
+
+
+def ot_asset_violation(db: Session, org_id: UUID, action_type: str, target_id: str | None) -> str | None:
+    """Block state-changing actions against OT assets regardless of target type.
+
+    The policy engine checks OT only for ``target_type=asset``; an endpoint/UUID
+    target can still resolve to an OT asset, so the API and playbook engine
+    apply the same safety interlock here. No catalogue action is marked
+    ``ot_allowed`` today, and a policy must explicitly opt in to change that.
+    """
+    definition = ACTIONS.get(action_type)
+    if definition is None or level_index(definition.min_level) < level_index("A2"):
+        return None
+    if not target_id:
+        return None
+    try:
+        from uuid import UUID
+
+        asset_uuid = UUID(str(target_id))
+    except (ValueError, TypeError):
+        return None
+    asset = db.get(Asset, asset_uuid)
+    if asset is None or asset.org_id != org_id or asset.kind != "ot":
+        return None
+    if definition.ot_allowed:
+        snapshot = active_policy_snapshot(db, org_id)
+        if bool((snapshot.get("definition") or {}).get("allow_ot_automation")):
+            return None
+    return "OT assets are passive-monitor-only unless a policy explicitly authorizes a safe action"
 
 
 def effective_kill_switches(db: Session, org_id: UUID) -> dict[str, Any]:

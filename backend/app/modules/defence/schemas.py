@@ -104,6 +104,11 @@ class RemediationOut(ORMModel):
     rollback_output: dict[str, Any]
     evidence_id: UUID | None
 
+    @field_validator("parameters", mode="before")
+    @classmethod
+    def _hide_internal_markers(cls, value: dict[str, Any] | None) -> dict[str, Any]:
+        return {key: item for key, item in (value or {}).items() if not str(key).startswith("_")}
+
 
 class DefenceExecuteResult(StrictModel):
     status: str

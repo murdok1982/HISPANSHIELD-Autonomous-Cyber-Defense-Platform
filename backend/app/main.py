@@ -219,7 +219,7 @@ def _mount_spa(app: FastAPI) -> None:
         if full_path.startswith(("api/", "healthz", "readyz", "metrics")):
             return JSONResponse(_error_payload_static("not_found", "Not found"), status_code=404)
         candidate = (dist / full_path).resolve()
-        if full_path and candidate.is_file() and str(candidate).startswith(str(dist.resolve())):
+        if full_path and candidate.is_file() and candidate.is_relative_to(dist.resolve()):
             return FileResponse(candidate)
         return FileResponse(index, headers={"Cache-Control": "no-cache"})
 

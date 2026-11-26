@@ -105,18 +105,27 @@ class SyslogReceiver:
             raise RuntimeError("Syslog receiver is already started")
         loop = asyncio.get_running_loop()
         self._stop_event.clear()
-        self._transport, _ = await loop.create_datagram_endpoint(
-            lambda: _UDPProtocol(self),
-            local_addr=(self.host, self.udp_port),
-        )
-        sockname = self._transport.get_extra_info("sockname")
-        self.bound_udp_port = int(sockname[1]) if sockname else self.udp_port
-        self._server = await asyncio.start_server(
-            self._handle_tcp_client,
-            host=self.host,
-            port=self.tcp_port,
-            limit=self.max_message_bytes + 2,
-        )
+        try:
+            self._transport, _ = await loop.create_datagram_endpoint(
+                lambda: _UDPProtocol(self),
+                local_addr=(self.host, self.udp_port),
+            )
+            sockname = self._transport.get_extra_info("sockname")
+            self.bound_udp_port = int(sockname[1]) if sockname else self.udp_port
+            self._server = await asyncio.start_server(
+                self._handle_tcp_client,
+                host=self.host,
+                port=self.tcp_port,
+                limit=self.max_message_bytes + 2,
+            )
+        except Exception:
+            if self._transport is not None:
+                self._transport.close()
+                self._transport = None
+            if self._server is not None:
+                self._server.close()
+                self._server = None
+            raise
         if self._server.sockets:
             self.bound_tcp_port = int(self._server.sockets[0].getsockname()[1])
         else:

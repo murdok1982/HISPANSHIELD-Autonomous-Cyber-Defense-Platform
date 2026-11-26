@@ -237,16 +237,3 @@ class IncidentMetricsOut(StrictModel):
     mttd_seconds: float | None
     mttr_seconds: float | None
     computed_at: datetime
-
-
-class EvidenceSealOut(EvidenceOut):
-    sealed_at: datetime | None = None
-
-
-class EvidenceVerifyOut(StrictModel):
-    evidence_id: UUID
-    verified: bool
-    expected_sha256: str
-    actual_sha256: str
-    size_bytes: int
-    checked_at: datetime

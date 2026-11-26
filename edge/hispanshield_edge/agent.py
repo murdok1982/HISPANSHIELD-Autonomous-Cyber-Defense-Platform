@@ -14,6 +14,7 @@ with jitter. Nothing in this module logs the shared key or enrollment token.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import signal
@@ -133,6 +134,8 @@ class GatewayAgent:
         self.config_path = Path(config_path) if config_path else None
         self.data_dir = Path(data_dir) if data_dir else Path("edge-data")
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(OSError):
+            self.data_dir.chmod(0o700)
         self.status_path = self.data_dir / "status.json"
         self.spool_dir = Path(spool_dir) if spool_dir else self.data_dir / "spool"
         self.ot_spool_dir = Path(ot_spool_dir) if ot_spool_dir else None
@@ -193,7 +196,8 @@ class GatewayAgent:
     def start_collectors(self) -> None:
         if self.spool is None:
             self._build_collectors()
-        assert self.spool is not None
+        if self.spool is None:  # pragma: no cover - construction always sets it
+            raise CollectorError("spool collector failed to initialize")
         self.spool.start()
         try:
             if self.ot_spool is not None:
@@ -496,7 +500,7 @@ class GatewayAgent:
         )
         if shipped["error"]:
             summary["error"] = shipped["error"]
-        if heartbeat and not shipped["blocked"]:
+        if heartbeat:
             try:
                 summary["heartbeat"] = self.heartbeat_once()
             except FatalAuthError:
@@ -569,10 +573,7 @@ class GatewayAgent:
             while not self._stop.is_set():
                 try:
                     summary = self.once()
-                    if summary["error"]:
-                        backoff = min(backoff * 2, 60.0)
-                    else:
-                        backoff = 1.0
+                    backoff = min(backoff * 2, 60.0) if summary["error"] else 1.0
                 except FatalAuthError as exc:
                     log_event(
                         logging.CRITICAL,

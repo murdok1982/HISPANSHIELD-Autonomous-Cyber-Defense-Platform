@@ -175,6 +175,7 @@ def test_verify_hash_match_appends_custody(seeded, auth_client: TestClient, db, 
     assert body["status"] == "match"
     assert body["computed_sha256"] == hashlib.sha256(content).hexdigest()
     assert body["file_size"] == len(content)
+    assert len(body["chain_of_custody"]) == 2
 
     custody = auth_client.get(f"{BASE}/evidence/{evidence.id}/chain-of-custody")
     assert custody.status_code == 200

@@ -14,6 +14,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
+from app.core.config import settings
+
 request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("request_id", default="-")
 user_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("user_id", default="-")
 org_id_var: contextvars.ContextVar[str] = contextvars.ContextVar("org_id", default="-")
@@ -111,6 +113,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; "
             "frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'",
         )
+        if settings.is_production:
+            response.headers.setdefault("Strict-Transport-Security", "max-age=63072000; includeSubDomains; preload")
         if request.url.path.startswith("/api/"):
             response.headers.setdefault("Cache-Control", "no-store")
         return response

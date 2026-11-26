@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from pydantic import Field
+
 from app.core.schemas import ORMModel, StrictModel
 
 
@@ -78,6 +80,7 @@ class HashVerificationOut(StrictModel):
     status: str
     file_size: int | None
     verified_at: datetime
+    chain_of_custody: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ChainOfCustodyOut(StrictModel):

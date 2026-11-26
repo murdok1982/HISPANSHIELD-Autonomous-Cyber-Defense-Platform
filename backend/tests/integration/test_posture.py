@@ -262,9 +262,7 @@ def test_summary_combines_scores_and_cites_domains(seeded, auth_client: TestClie
     assert "cloud" in recommendation_domains
 
 
-def test_rbac_requires_read_permission(seeded, auth_client: TestClient) -> None:
-    # The seeded platform admin always passes; this asserts the permission key
-    # is enforced by the router (viewer also holds asset:read, so 200 is valid).
+def test_posture_endpoints_return_summaries(seeded, auth_client: TestClient) -> None:
     assert auth_client.get(f"{BASE}/network").status_code == 200
     assert auth_client.get(f"{BASE}/cloud").status_code == 200
     assert auth_client.get(f"{BASE}/identity").status_code == 200

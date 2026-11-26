@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Check, ClipboardCopy, Info, ShieldQuestion } from "lucide-react";
 import { formatDateTime, formatNumber, humanize } from "../../../lib/format";
 import { useI18n, usePageCopy, type Lang } from "../../../lib/i18n";
@@ -544,9 +544,4 @@ export function CopyField({ label, value }: { label: string; value: string }) {
       </div>
     </div>
   );
-}
-
-export function useMemoizedEvidence(evidence: Record<string, unknown> | undefined): { label: string; value: string }[] {
-  const { lang } = useI18n();
-  return useMemo(() => (evidence ? evidenceEntries(evidence, lang) : []), [evidence, lang]);
 }

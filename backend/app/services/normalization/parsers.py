@@ -991,6 +991,8 @@ def _parse_syslog_line(line: str, *, now: datetime | None = None) -> NormalizedE
     facility = priority // 8
     syslog_severity = priority % 8
     remainder = match.group(2)
+    if not remainder.strip():
+        raise ParseError("malformed_syslog", "Syslog message has no content after the priority")
     structured_data: list[dict[str, Any]] | None = None
     extra: dict[str, Any] = {
         "facility": facility,

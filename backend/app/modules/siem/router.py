@@ -29,6 +29,7 @@ from app.modules.siem.schemas import (
     SigmaImportRequest,
     SigmaImportResponse,
     SigmaImportSkipped,
+    SigmaRule,
 )
 
 router = APIRouter(prefix="/siem", tags=["SIEM: Detection & Alerts"])
@@ -75,14 +76,15 @@ def rules_templates(ctx: RequestContext = Depends(require_permission("alert:read
 
 @router.post("/rules/import", response_model=SigmaImportResponse, summary="Import a Sigma rule subset")
 def import_sigma_rules(
-    payload: SigmaImportRequest,
+    payload: SigmaRule | SigmaImportRequest,
     ctx: RequestContext = Depends(require_permission("alert:write")),
 ) -> SigmaImportResponse:
+    rules = [payload] if isinstance(payload, SigmaRule) else payload.rules
     imported, skipped = service.import_sigma(
         ctx.db,
         org_id=ctx.org.id,
         actor_id=ctx.actor_id,
-        rules=payload.rules,
+        rules=rules,
     )
     ctx.audit(
         action="detection_rule.import",

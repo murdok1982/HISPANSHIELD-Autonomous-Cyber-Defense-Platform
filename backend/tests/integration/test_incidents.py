@@ -6,6 +6,7 @@ import hashlib
 import re
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -15,6 +16,24 @@ from app.models.incidents import Evidence, Incident, IncidentTimeline
 from tests.conftest import ADMIN_EMAIL, login
 
 API = "/api/v1/incidents"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _disable_audit_truncate_guard(migrate_database):
+    """Allow the shared TRUNCATE cleanup to reset the test database.
+
+    Migration 0003 installs a production guard that blocks TRUNCATE on the
+    append-only audit trail; the platform test cleanup still truncates every
+    table. Tests never mutate audit rows, so user triggers are disabled for this
+    test database only (the guard stays active in production).
+    """
+    from sqlalchemy import text
+
+    from app.core.db import engine
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE audit_records DISABLE TRIGGER USER"))
+    yield
 
 
 def _create(client: TestClient, **overrides) -> dict:

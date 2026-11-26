@@ -42,6 +42,14 @@ def _strings(value: Any, limit: int = 10, max_length: int = 300) -> list[str]:
     return result
 
 
+def _bounded_int(value: Any, default: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(1, min(parsed, maximum))
+
+
 def _iso(value: Any) -> str | None:
     if value is None:
         return None
@@ -145,8 +153,7 @@ def tool_failure(name: str, error: str) -> dict:
 
 
 def search_events_tool(db: Session, org_id: UUID, arguments: dict[str, Any]) -> dict:
-    limit = arguments.get("limit", 20)
-    limit = max(1, min(int(limit) if isinstance(limit, int) else 20, MAX_EVENTS))
+    limit = _bounded_int(arguments.get("limit", 20), 20, MAX_EVENTS)
     src_ips = _strings(arguments.get("src_ips"))
     host_names = _strings(arguments.get("host_names"))
     user_names = _strings(arguments.get("user_names"))
@@ -192,8 +199,7 @@ def get_incident_tool(db: Session, org_id: UUID, incident_id: UUID | None) -> di
 
 
 def list_assets_tool(db: Session, org_id: UUID, arguments: dict[str, Any]) -> dict:
-    limit = arguments.get("limit", 20)
-    limit = max(1, min(int(limit) if isinstance(limit, int) else 20, MAX_ASSETS))
+    limit = _bounded_int(arguments.get("limit", 20), 20, MAX_ASSETS)
     asset_ids: list[UUID] = []
     for raw in _strings(arguments.get("asset_ids"), limit=MAX_ASSETS, max_length=64):
         try:

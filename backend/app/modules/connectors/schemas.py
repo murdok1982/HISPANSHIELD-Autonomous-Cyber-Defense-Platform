@@ -180,6 +180,7 @@ class ConnectorCatalogOut(BaseModel):
     adapters: list[CatalogAdapterOut]
     configured: list[str]
     missing: list[str]
+    unconfigured: list[str]
     generated_at: datetime
 
 

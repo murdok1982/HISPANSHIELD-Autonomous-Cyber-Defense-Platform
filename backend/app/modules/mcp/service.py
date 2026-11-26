@@ -30,6 +30,24 @@ MAX_RESULT_CHARS = 50_000
 DISCOVERY_TIMEOUT_SECONDS = 20
 
 
+MALFORMED_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {},
+    "additionalProperties": False,
+    "x-hispanshield-malformed": True,
+}
+
+
+def _normalise_schema(raw: Any) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        return dict(MALFORMED_SCHEMA)
+    if "properties" in raw and not isinstance(raw["properties"], dict):
+        return dict(MALFORMED_SCHEMA)
+    if "required" in raw and not isinstance(raw["required"], list):
+        return dict(MALFORMED_SCHEMA)
+    return raw
+
+
 def _tool_metadata(raw: dict[str, Any]) -> dict[str, Any] | None:
     name = raw.get("name")
     if not isinstance(name, str) or not name.strip():
@@ -47,7 +65,7 @@ def _tool_metadata(raw: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "name": name.strip()[:160],
         "description": (str(description)[:2000] if description is not None else None),
-        "input_schema": input_schema if isinstance(input_schema, dict) else {},
+        "input_schema": _normalise_schema(input_schema),
         "output_schema": output_schema if isinstance(output_schema, dict) else {},
         "version": str(version)[:40] if version is not None else None,
         "risk_level": risk,

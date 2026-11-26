@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import uuid
 from datetime import UTC, datetime
 
 import pytest
@@ -16,6 +18,7 @@ from app.services.normalization.ocsf import (
     severity_to_id,
     status_from_value,
 )
+from app.workers.syslog_receiver import SourceBinding, SyslogReceiver
 
 
 def _one(body: bytes | str, content_type: str | None = None, parser: str = "auto"):
@@ -331,3 +334,66 @@ def test_timestamp_parsing_variants():
     assert parse_timestamp("1767225600000", default=fallback) == datetime(2026, 1, 1, tzinfo=UTC)
     assert parse_timestamp("2026-01-01T00:00:00Z", default=fallback) == fallback
     assert parse_timestamp("garbage", default=fallback) == fallback
+
+
+def test_syslog_udp_roundtrip_with_in_memory_sink():
+    received = []
+    binding = SourceBinding(org_id=uuid.uuid4(), source_id=uuid.uuid4(), name="udp-test")
+
+    async def scenario():
+        receiver = SyslogReceiver(
+            resolver=lambda token: binding if token == "good-token-value" else None,
+            sink=lambda _binding, _raw, event: received.append(event),
+            host="127.0.0.1",
+            udp_port=0,
+            tcp_port=0,
+            max_message_bytes=4096,
+        )
+        await receiver.start()
+        assert receiver.bound_udp_port
+        loop = asyncio.get_running_loop()
+        transport, _ = await loop.create_datagram_endpoint(
+            asyncio.DatagramProtocol,
+            remote_addr=("127.0.0.1", receiver.bound_udp_port),
+        )
+        transport.sendto(b"HS-TOKEN:good-token-value <34>1 2026-01-01T00:00:00Z edge app - - - failed login")
+        for _ in range(100):
+            if received:
+                break
+            await asyncio.sleep(0.02)
+        transport.close()
+        stats = receiver.stats()
+        await receiver.stop()
+        return stats
+
+    stats = asyncio.run(scenario())
+    assert len(received) == 1
+    assert received[0].host_name == "edge"
+    assert received[0].severity_id == 4
+    assert stats["accepted"] == 1
+
+
+def test_syslog_receiver_rejects_unknown_source_and_oversize():
+    async def scenario():
+        receiver = SyslogReceiver(
+            resolver=lambda token: None,
+            sink=lambda *_args: None,
+            host="127.0.0.1",
+            udp_port=0,
+            tcp_port=0,
+            max_message_bytes=512,
+        )
+        await receiver.start()
+        no_token = await receiver.handle_message(b"<34>1 2026-01-01T00:00:00Z host app - - - msg")
+        unknown = await receiver.handle_message(b"HS-TOKEN:unknown <34>1 2026-01-01T00:00:00Z h a - - - m")
+        oversize = await receiver.handle_message(b"HS-TOKEN:unknown " + b"x" * 600)
+        stats = receiver.stats()
+        await receiver.stop()
+        return no_token, unknown, oversize, stats
+
+    no_token, unknown, oversize, stats = asyncio.run(scenario())
+    assert no_token["rejected"] == 1
+    assert unknown["rejected"] == 1
+    assert oversize["rejected"] == 1
+    assert stats["rejected_unknown_source"] == 2
+    assert stats["rejected_oversize"] == 1

@@ -30,6 +30,24 @@ from tests.conftest import ADMIN_EMAIL, ADMIN_PASSWORD, login
 API = "/api/v1/soar"
 
 
+@pytest.fixture(scope="session", autouse=True)
+def _disable_audit_truncate_guard(migrate_database):
+    """Allow the shared TRUNCATE cleanup to reset the test database.
+
+    Migration 0003 installs a production guard that blocks TRUNCATE on the
+    append-only audit trail; the platform test cleanup still truncates every
+    table. Tests never mutate audit rows, so user triggers are disabled for this
+    test database only (the guard stays active in production).
+    """
+    from sqlalchemy import text
+
+    from app.core.db import engine
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE audit_records DISABLE TRIGGER USER"))
+    yield
+
+
 class SoarTestAdapter(ConnectorAdapter):
     connector_type = "fake_soar_local"
     display_name = "Fake SOAR connector"

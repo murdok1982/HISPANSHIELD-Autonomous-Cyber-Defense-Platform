@@ -373,6 +373,10 @@ def test_health_transitions_and_run_history(auth_client: TestClient, fake_api: F
     detail = auth_client.get(f"{API}/connectors/{connector['id']}").json()
     assert detail["status"] == "unhealthy"
     assert detail["health"]["circuit_open"] is False
+    persisted = auth_client.get(f"{API}/connectors/{connector['id']}/health")
+    assert persisted.status_code == 200
+    assert persisted.json()["state"] == "unhealthy"
+    assert persisted.json()["last_error"]
 
     runs = auth_client.get(f"{API}/connectors/{connector['id']}/runs").json()
     assert runs["meta"]["total"] == 2
@@ -384,6 +388,18 @@ def test_health_transitions_and_run_history(auth_client: TestClient, fake_api: F
     row = db.execute(select(Connector).where(Connector.id == UUID(connector["id"]))).scalar_one()
     assert row.last_health_at is not None
     assert row.last_error is not None
+
+
+def test_get_health_is_read_only_and_does_not_probe(auth_client: TestClient, fake_api: FakeAPI) -> None:
+    connector = _create(auth_client, "wazuh-health-read", fake_api.base_url)
+    before = len(fake_api.requests)
+    response = auth_client.get(f"{API}/connectors/{connector['id']}/health")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["state"] == "unknown"
+    assert body["stale"] is True
+    assert body["circuit_open"] is False
+    assert len(fake_api.requests) == before
 
 
 def test_invoke_read_capability_and_reject_write(auth_client: TestClient, fake_api: FakeAPI, db) -> None:

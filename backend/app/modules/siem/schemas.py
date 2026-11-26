@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Literal
 from uuid import UUID
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 
 from app.core.schemas import ORMModel, StrictModel
 
@@ -136,7 +136,9 @@ class RuleOut(StrictModel):
 
 
 class RuleTestRequest(StrictModel):
-    events: list[dict[str, Any]] | None = Field(default=None, max_length=50)
+    events: list[dict[str, Any]] | None = Field(
+        default=None, max_length=50, validation_alias=AliasChoices("events", "sample_events")
+    )
     event_ids: list[int] | None = Field(default=None, max_length=50)
     apply_threshold: bool = True
 

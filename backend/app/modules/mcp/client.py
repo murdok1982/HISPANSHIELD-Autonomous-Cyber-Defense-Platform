@@ -41,6 +41,8 @@ class JsonRpcClient:
     def call(self, method: str, params: dict[str, Any] | None = None, *, timeout: float | None = None) -> Any:
         request_id = next(self._ids)
         body = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}
+        # Re-validate on every call to defeat DNS rebinding between discovery and execution.
+        endpoint = validate_endpoint(self.endpoint)
         try:
             with httpx.Client(
                 timeout=httpx.Timeout(timeout or self.timeout),
@@ -48,7 +50,7 @@ class JsonRpcClient:
                 verify=True,
             ) as client:
                 response = client.post(
-                    self.endpoint,
+                    endpoint,
                     json=body,
                     headers={"Accept": "application/json", "Content-Type": "application/json"},
                 )
@@ -191,6 +193,8 @@ def validate_arguments(schema: dict[str, Any] | None, arguments: dict[str, Any])
         return []
     if not isinstance(schema, dict):
         return ["tool input schema is malformed"]
+    if schema.get("x-hispanshield-malformed") is True:
+        return ["tool input schema is malformed; execution refused"]
     errors = _validate_value(schema, arguments, "arguments", 0)
     return errors[:20]
 

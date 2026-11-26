@@ -38,6 +38,9 @@ revision:
 bootstrap:
 	$(PYTHON) scripts/bootstrap_admin.py
 
+seed-reference:
+	cd backend && $(PYTHON) scripts/seed_reference_data.py
+
 seed-demo:
 	HS_SEED_DEMO=true $(PYTHON) scripts/seed_demo.py
 

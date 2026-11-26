@@ -1,0 +1,107 @@
+# HISPANSHIELD edge gateway agent — hardened systemd unit example.
+#
+# Install:
+#   sudo install -m 0644 edge/systemd/hispanshield-edge.service.example \
+#        /etc/systemd/system/hispanshield-edge.service
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now hispanshield-edge
+#
+# Layout expected by this unit:
+#   /etc/hispanshield-edge/gateway.json   enrolled config, 0600, read-only to the service
+#   /etc/hispanshield-edge/agent.env      optional EnvironmentFile (e.g. log level), 0600
+#   /var/lib/hispanshield-edge/           queue, offsets, status (systemd StateDirectory)
+#   /var/spool/hispanshield-edge/spool/   writable JSON/JSONL drop directory
+#   /var/spool/hispanshield-edge/ot/      read-only OT observation spool
+#
+# The agent never needs root, never opens an inbound TCP port and only makes
+# outbound HTTPS connections. The optional syslog listener is UDP on loopback.
+
+[Unit]
+Description=HISPANSHIELD Edge Gateway Agent (store-and-forward telemetry)
+After=network-online.target time-sync.target
+Wants=network-online.target
+# Do not fail the site if the core is unreachable at boot: the agent buffers.
+
+[Service]
+Type=simple
+User=hispanshield-edge
+Group=hispanshield-edge
+UMask=0077
+WorkingDirectory=/var/lib/hispanshield-edge
+
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/hispanshield-edge/agent.env
+
+ExecStart=/opt/hispanshield-edge/venv/bin/hispanshield-edge run \
+    --config /etc/hispanshield-edge/gateway.json \
+    --data-dir /var/lib/hispanshield-edge \
+    --spool-dir /var/spool/hispanshield-edge/spool \
+    --ot-spool /var/spool/hispanshield-edge/ot \
+    --syslog-bind 127.0.0.1 \
+    --syslog-port 5514 \
+    --log-level info
+
+Restart=on-failure
+RestartSec=10
+# The agent handles SIGTERM by finishing the current batch, persisting the
+# cursor/status and flushing the SQLite WAL. Never SIGKILL a healthy agent.
+KillSignal=SIGTERM
+KillMode=mixed
+TimeoutStopSec=45
+
+# ---------------------------------------------------------------------------
+# Privilege and filesystem hardening
+# ---------------------------------------------------------------------------
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources @mount @debug
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+IPAddressDeny=any
+# Allow only the core and loopback. Replace 203.0.113.10 with the core address
+# (or use IPAddressAllow=link-local plus a local reverse proxy / WireGuard IP).
+IPAddressAllow=localhost 203.0.113.10
+
+StateDirectory=hispanshield-edge
+StateDirectoryMode=0700
+RuntimeDirectory=hispanshield-edge
+RuntimeDirectoryMode=0700
+
+ReadOnlyPaths=/etc/hispanshield-edge /var/spool/hispanshield-edge/ot
+ReadWritePaths=/var/lib/hispanshield-edge /var/spool/hispanshield-edge/spool /run/hispanshield-edge
+
+# Bounded memory: SQLite caches + httpx + collectors. Raise for >100k events.
+MemoryHigh=192M
+MemoryMax=256M
+TasksMax=64
+LimitNOFILE=4096
+
+# ---------------------------------------------------------------------------
+# Logging: JSON lines to journald; no telemetry secrets are ever logged.
+# ---------------------------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=hispanshield-edge
+
+[Install]
+WantedBy=multi-user.target

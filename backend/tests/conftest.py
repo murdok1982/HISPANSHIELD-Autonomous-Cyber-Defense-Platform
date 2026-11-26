@@ -50,9 +50,20 @@ def clean_database(migrate_database):
             .scalars()
             .all()
         )
-        if tables:
-            joined = ", ".join(f'"{table}"' for table in tables)
-            connection.execute(text(f"TRUNCATE {joined} RESTART IDENTITY CASCADE"))
+        # The audit trail is append-only (UPDATE/DELETE/TRUNCATE triggers).
+        # Test isolation may temporarily disable those guards as schema owner.
+        has_audit = "audit_records" in tables
+        if has_audit:
+            connection.execute(text("ALTER TABLE audit_records DISABLE TRIGGER audit_records_append_only"))
+            connection.execute(text("ALTER TABLE audit_records DISABLE TRIGGER audit_records_no_truncate"))
+        try:
+            if tables:
+                joined = ", ".join(f'"{table}"' for table in tables)
+                connection.execute(text(f"TRUNCATE {joined} RESTART IDENTITY CASCADE"))
+        finally:
+            if has_audit:
+                connection.execute(text("ALTER TABLE audit_records ENABLE TRIGGER audit_records_append_only"))
+                connection.execute(text("ALTER TABLE audit_records ENABLE TRIGGER audit_records_no_truncate"))
     yield
 
 

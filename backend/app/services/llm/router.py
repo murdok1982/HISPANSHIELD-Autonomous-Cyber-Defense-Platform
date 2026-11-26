@@ -295,7 +295,7 @@ def complete(
                 ]
             )
 
-    prompt = "\n".join(f"{message.get('role')}: {message.get('content')}" for message in messages)
+    prompt = "\n".join(str(message.get("content", "")) for message in messages)
     prompt_tokens_estimate = estimate_messages_tokens(messages)
     attempted: set[UUID] = set()
     last_error = "No candidate produced a response"

@@ -87,12 +87,15 @@ def _persist_indicators(db: Session, connector: Connector, indicators: list[dict
             _merge_indicator(existing, data)
             updated += 1
             continue
+        record = ThreatIndicator(org_id=connector.org_id, **data)
         try:
             with db.begin_nested():
-                db.add(ThreatIndicator(org_id=connector.org_id, **data))
+                db.add(record)
             created += 1
         except IntegrityError:
             # A concurrent sync inserted the same natural key first; merge instead.
+            if record in db:
+                db.expunge(record)
             existing = db.execute(
                 select(ThreatIndicator).where(
                     ThreatIndicator.org_id == connector.org_id,

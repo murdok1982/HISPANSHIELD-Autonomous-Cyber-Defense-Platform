@@ -40,6 +40,7 @@ from app.models.assets import Asset
 from app.models.core import Approval, Notification, Organization
 from app.models.events import Alert, SecurityEvent
 from app.models.incidents import Incident, Playbook, PlaybookExecution, PlaybookStep, Remediation
+from app.modules.defence.service import ot_asset_violation
 from app.modules.incidents.service import (
     add_timeline_entry,
     create_incident_core,
@@ -479,6 +480,21 @@ def _defence_execute(
             f"Requested autonomy level {requested_level} exceeds the organization ceiling {org.autonomy_level}"
         )
 
+    violation = ot_asset_violation(db, org.id, str(action_type), target_id)
+    if violation:
+        _audit(
+            db,
+            org_id=org.id,
+            actor=actor,
+            action="defence.action.denied",
+            resource_type="playbook_execution",
+            resource_id=str(execution.id),
+            outcome="failure",
+            payload={"step_key": step.step_key, "reason": violation, "target_id": target_id},
+        )
+        db.commit()
+        raise PolicyDenied(violation)
+
     existing = list(
         db.execute(
             select(Remediation).where(
@@ -658,6 +674,11 @@ def _plan_step(db: Session, org: Organization, step: PlaybookStep, env: dict[str
             plan["would_execute"] = False
             plan["reason"] = "requested_level_exceeds_ceiling"
             plan["requested_level"] = requested_level
+            return _bounded(plan)
+        violation = ot_asset_violation(db, org.id, str(action_type), str(params.get("target_id") or ""))
+        if violation:
+            plan["would_execute"] = False
+            plan["reason"] = violation
             return _bounded(plan)
         action_definition = get_action(str(action_type)) if isinstance(action_type, str) else None
         target_type = params.get("target_type") or (action_definition.target_type if action_definition else None)
@@ -1168,6 +1189,14 @@ def simulate_playbook(
                 entry["would_execute"] = False
                 entry["reason"] = "requested_level_exceeds_ceiling"
                 entry["requested_level"] = requested_level
+                plan.append(entry)
+                continue
+            violation = ot_asset_violation(
+                db, org.id, str(params.get("action_type")), str(params.get("target_id") or "")
+            )
+            if violation:
+                entry["would_execute"] = False
+                entry["reason"] = violation
                 plan.append(entry)
                 continue
             decision = evaluate(

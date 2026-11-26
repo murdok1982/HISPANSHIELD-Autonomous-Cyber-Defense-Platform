@@ -166,6 +166,7 @@ def verify_evidence_hash(db: Session, ctx: RequestContext, evidence: Evidence) -
         "status": status,
         "file_size": size,
         "verified_at": verified_at,
+        "chain_of_custody": custody,
     }
 
 

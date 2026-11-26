@@ -219,7 +219,8 @@ const RANGE_MS: Record<RangePreset, number> = {
 
 export function MonitoringPage() {
   const { t, lang } = useI18n();
-  const { push } = useToastSafe();
+  const c = usePageCopy(COPY);
+  const { push } = useToast();
 
   const [search, setSearch] = useState("");
   const [severity, setSeverity] = useState("");
@@ -485,7 +486,7 @@ export function MonitoringPage() {
         />
         <Kpi
           label={c("monitoring.kpi.topSource")}
-          value={stats?.top_sources[0]?.name ?? "—"}
+          value={<span style={{ fontSize: 16, overflowWrap: "anywhere" }}>{stats?.top_sources[0]?.name ?? "—"}</span>}
           icon={Waves}
           tone="neutral"
           footer={
@@ -500,7 +501,7 @@ export function MonitoringPage() {
         />
         <Kpi
           label={c("monitoring.kpi.topHost")}
-          value={stats?.top_hosts[0]?.host_name ?? "—"}
+          value={<span style={{ fontSize: 16, overflowWrap: "anywhere" }}>{stats?.top_hosts[0]?.host_name ?? "—"}</span>}
           icon={Server}
           tone="warning"
           footer={
@@ -771,15 +772,11 @@ export function MonitoringPage() {
       </Modal>
     </div>
   );
-
-  function c(key: keyof (typeof COPY)["es"]): string {
-    return COPY[lang][key] ?? COPY.en[key] ?? String(key);
-  }
 }
 
 function EventDetailView({ event }: { event: SecurityEventDetail }) {
   const { t, lang } = useI18n();
-  const copy = usePageCopyLocal();
+  const copy = usePageCopy(COPY);
   return (
     <div className="stack">
       <div className="row wrap" style={{ gap: 6 }}>
@@ -852,20 +849,6 @@ function EventDetailView({ event }: { event: SecurityEventDetail }) {
       </div>
     </div>
   );
-}
-
-function usePageCopyLocal() {
-  const { lang } = useI18n();
-  return (key: keyof (typeof COPY)["es"]): string => COPY[lang][key] ?? COPY.en[key] ?? String(key);
-}
-
-/** Toast is guaranteed by the app shell; the local guard keeps isolated renders safe. */
-function useToastSafe() {
-  try {
-    return useToast();
-  } catch {
-    return { push: () => undefined };
-  }
 }
 
 export default MonitoringPage;

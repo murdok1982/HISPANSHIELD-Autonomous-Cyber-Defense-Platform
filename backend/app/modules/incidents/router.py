@@ -133,6 +133,7 @@ def list_incidents(
     ),
     severity: str | None = Query(default=None, pattern="^(info|low|medium|high|critical)$"),
     assignee: UUID | None = Query(default=None),
+    incident_date: datetime | None = Query(default=None, alias="date"),
     incident_date_from: datetime | None = Query(default=None, alias="date_from"),
     incident_date_to: datetime | None = Query(default=None, alias="date_to"),
     page: int = Query(default=1, ge=1),
@@ -150,6 +151,13 @@ def list_incidents(
         stmt = stmt.where(Incident.severity == severity)
     if assignee:
         stmt = stmt.where(Incident.assignee_id == assignee)
+    if incident_date:
+        from datetime import timedelta
+
+        stmt = stmt.where(
+            Incident.detected_at >= incident_date,
+            Incident.detected_at < incident_date + timedelta(days=1),
+        )
     if incident_date_from:
         stmt = stmt.where(Incident.detected_at >= incident_date_from)
     if incident_date_to:

@@ -20,6 +20,7 @@ from app.models.ti import TIFeed
 from app.modules.connectors.schemas import (
     ConnectorCatalogOut,
     ConnectorCreate,
+    ConnectorHealthOut,
     ConnectorHealthResultOut,
     ConnectorHealthSummaryOut,
     ConnectorInvokeRequest,
@@ -192,6 +193,18 @@ def get_connector_detail(
     connector_id: UUID, ctx: RequestContext = Depends(require_permission("connector:read"))
 ) -> ConnectorOut:
     return serialize_connector(get_connector(ctx.db, ctx.org.id, connector_id))
+
+
+@router.get(
+    "/{connector_id}/health",
+    response_model=ConnectorHealthOut,
+    summary="Read the last persisted connector health state",
+)
+def get_connector_health(
+    connector_id: UUID, ctx: RequestContext = Depends(require_permission("connector:read"))
+) -> ConnectorHealthOut:
+    connector = get_connector(ctx.db, ctx.org.id, connector_id)
+    return serialize_connector(connector).health
 
 
 @router.patch("/{connector_id}", response_model=ConnectorOut, summary="Update a connector or rotate its secret")

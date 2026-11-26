@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 from uuid import UUID, uuid4
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
@@ -23,6 +24,24 @@ from tests.conftest import ADMIN_EMAIL, ADMIN_PASSWORD, login
 DEFENCE = "/api/v1/defence"
 SOAR = "/api/v1/soar"
 INCIDENTS = "/api/v1/incidents"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _disable_audit_truncate_guard(migrate_database):
+    """Allow the shared TRUNCATE cleanup to reset the test database.
+
+    Migration 0003 installs a production guard that blocks TRUNCATE on the
+    append-only audit trail; the platform test cleanup still truncates every
+    table. Tests never mutate audit rows, so user triggers are disabled for this
+    test database only (the guard stays active in production).
+    """
+    from sqlalchemy import text
+
+    from app.core.db import engine
+
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE audit_records DISABLE TRIGGER USER"))
+    yield
 
 
 class GuardTestAdapter(ConnectorAdapter):
@@ -467,6 +486,32 @@ def test_playbook_simulation_has_no_side_effects(auth_client: TestClient, seeded
     assert GuardTestAdapter.CALLS == []
     assert db.execute(select(func.count()).select_from(Approval)).scalar_one() == 0
     assert db.execute(select(func.count()).select_from(Remediation)).scalar_one() == 0
+
+
+def test_ot_asset_cannot_be_targeted_via_endpoint_type(auth_client: TestClient, seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    asset = Asset(
+        org_id=seeded["org"].id,
+        asset_key="ot-endpoint",
+        name="OT gateway",
+        kind="ot",
+        criticality=5,
+    )
+    db.add(asset)
+    db.commit()
+    response = _execute(
+        auth_client,
+        {
+            "action_type": "endpoint.isolate",
+            "target_type": "endpoint",
+            "target_id": str(asset.id),
+        },
+    )
+    assert response.status_code == 403
+    assert "OT" in response.json()["error"]["message"]
+    assert GuardTestAdapter.CALLS == []
 
 
 def test_requested_level_cannot_bypass_ceiling(auth_client: TestClient, seeded, db) -> None:

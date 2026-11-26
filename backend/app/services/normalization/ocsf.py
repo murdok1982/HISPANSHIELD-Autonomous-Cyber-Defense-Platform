@@ -165,7 +165,10 @@ def severity_to_id(value: Any) -> int:
         if number < 0:
             return 0
         return 5 if number >= 6 else number
-    alias = _SEVERITY_ALIASES.get(str(value).strip().lower())
+    text = str(value).strip().lower()
+    if text.isdigit():
+        return severity_to_id(int(text))
+    alias = _SEVERITY_ALIASES.get(text)
     return alias if alias is not None else 0
 
 
@@ -225,7 +228,11 @@ def status_from_value(value: Any) -> int | None:
     if isinstance(value, int | float):
         number = int(value)
         return number if 0 <= number <= 2 else None
-    return _STATUS_ALIASES.get(str(value).strip().lower())
+    text = str(value).strip().lower()
+    if text.isdigit():
+        number = int(text)
+        return number if 0 <= number <= 2 else None
+    return _STATUS_ALIASES.get(text)
 
 
 def identify_ip(value: Any) -> str | None:

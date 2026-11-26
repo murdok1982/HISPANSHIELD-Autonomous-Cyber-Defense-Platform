@@ -337,7 +337,7 @@ export function CloudPage() {
           value={formatNumber(data.public_storage_findings.length)}
           icon={HardDrive}
           tone={data.public_storage_findings.length ? "danger" : "success"}
-          footer={<span>{formatNumber(data.assets.by_subtype.bucket ?? data.assets.by_subtype.storage ?? 0)} storage · {formatNumber(data.assets.by_subtype.instance ?? 0)} compute</span>}
+          footer={<span>{formatNumber(data.assets.by_subtype.bucket ?? data.assets.by_subtype.storage ?? 0)} {c("publicStorage").toLowerCase()} · {formatNumber(data.assets.by_subtype.instance ?? 0)} {c("services").toLowerCase()}</span>}
         />
         <Kpi
           label={c("identity")}
