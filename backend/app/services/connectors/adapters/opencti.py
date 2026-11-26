@@ -68,7 +68,8 @@ class OpenCTIAdapter(HttpAdapter):
 
     def health_check(self) -> AdapterResult:
         data = self._graphql("query { about { version } }")
-        about = data.get("about") if isinstance(data.get("about"), dict) else {}
+        raw_about = data.get("about")
+        about: dict[str, Any] = raw_about if isinstance(raw_about, dict) else {}
         return AdapterResult(
             ok=True,
             data={"version": about.get("version"), "authenticated": True},
@@ -79,7 +80,8 @@ class OpenCTIAdapter(HttpAdapter):
             raise ConnectorError(f"Unsupported OpenCTI capability: {capability}")
         limit = bounded_limit(params)
         data = self._graphql(_INDICATORS_QUERY, {"first": limit})
-        indicators = data.get("indicators") if isinstance(data.get("indicators"), dict) else {}
+        raw_indicators = data.get("indicators")
+        indicators: dict[str, Any] = raw_indicators if isinstance(raw_indicators, dict) else {}
         edges = indicators.get("edges") or []
         nodes = [edge["node"] for edge in edges if isinstance(edge, dict) and isinstance(edge.get("node"), dict)]
         return AdapterResult(ok=True, data={"items": nodes[:limit], "format": "opencti"})

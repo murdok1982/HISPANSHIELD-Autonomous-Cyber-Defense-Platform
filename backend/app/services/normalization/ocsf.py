@@ -10,6 +10,7 @@ persisted in ``normalized``.  Parsers MUST route unknown vendor fields through
 from __future__ import annotations
 
 import ipaddress
+import math
 import re
 import uuid
 from dataclasses import dataclass, field
@@ -135,8 +136,10 @@ def sanitize_value(value: Any, *, depth: int = 0, max_string: int = MAX_RAW_STRI
     """Recursively sanitize JSON-compatible values, bounding depth and payload size."""
     if depth > 8:
         return "[truncated]"
-    if value is None or isinstance(value, bool | int | float):
+    if value is None or isinstance(value, bool | int):
         return value
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
     if isinstance(value, str):
         return sanitize_text(value, max_length=max_string)
     if isinstance(value, bytes):

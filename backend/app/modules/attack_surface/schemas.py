@@ -135,7 +135,9 @@ class DiscoveryJobCreate(_ScopeMixin):
 class DiscoveryJobPatch(_ScopeMixin):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     mode: str | None = Field(default=None, pattern="^(passive|active)$")
-    scope_cidrs: list[str] | None = Field(default=None, max_length=MAX_SCOPE_CIDRS)
+    # PATCH semantics make the inherited scope optional; pydantic re-declares the
+    # field at runtime while mypy treats the narrowed override as a type error.
+    scope_cidrs: list[str] | None = Field(default=None, max_length=MAX_SCOPE_CIDRS)  # type: ignore[assignment]
     authorized_by: str | None = Field(default=None, max_length=120)
     authorization_reference: str | None = Field(default=None, max_length=200)
 

@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, or_, select
 
 from app.core.db import utcnow
-from app.core.deps import RequestContext, get_context
+from app.core.deps import RequestContext, get_context, require_permission
 from app.core.errors import ValidationFailure
 from app.models.assets import Asset, Vulnerability
 from app.models.connectors import Connector
@@ -74,7 +74,7 @@ def _series(db, model, timestamp_column, org_id, hours: int, granularity: str = 
 
 
 @router.get("/executive", summary="Executive risk overview")
-def executive_overview(ctx: RequestContext = Depends(get_context)) -> dict[str, Any]:
+def executive_overview(ctx: RequestContext = Depends(require_permission("org:read"))) -> dict[str, Any]:
     org_id = ctx.org.id
     db = ctx.db
 
@@ -228,7 +228,7 @@ def executive_overview(ctx: RequestContext = Depends(get_context)) -> dict[str, 
 
 
 @router.get("/soc", summary="SOC command center snapshot")
-def soc_overview(ctx: RequestContext = Depends(get_context)) -> dict[str, Any]:
+def soc_overview(ctx: RequestContext = Depends(require_permission("event:read"))) -> dict[str, Any]:
     org_id = ctx.org.id
     db = ctx.db
     since = utcnow() - timedelta(hours=1)
@@ -407,7 +407,7 @@ def global_search(
 
 
 @router.get("/notifications", summary="Recent in-app notifications")
-def notifications(ctx: RequestContext = Depends(get_context)) -> list[dict[str, Any]]:
+def notifications(ctx: RequestContext = Depends(require_permission("org:read"))) -> list[dict[str, Any]]:
     from app.models.core import Notification
 
     rows = ctx.db.execute(
@@ -435,7 +435,9 @@ def notifications(ctx: RequestContext = Depends(get_context)) -> list[dict[str, 
 
 
 @router.post("/notifications/{notification_id}/read", summary="Mark a notification as read")
-def mark_notification_read(notification_id: str, ctx: RequestContext = Depends(get_context)) -> dict[str, Any]:
+def mark_notification_read(
+    notification_id: str, ctx: RequestContext = Depends(require_permission("org:read"))
+) -> dict[str, Any]:
     from uuid import UUID
 
     from app.core.errors import NotFound

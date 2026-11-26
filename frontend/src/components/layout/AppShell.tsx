@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -15,6 +15,7 @@ import {
   ShieldOff,
   Sun,
   UserRound,
+  X,
 } from "lucide-react";
 import clsx from "clsx";
 import { api } from "../../lib/api";
@@ -60,6 +61,8 @@ export function AppShell() {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [userOpen, setUserOpen] = useState(false);
+  const [navScrollable, setNavScrollable] = useState(false);
+  const navRef = useRef<HTMLElement | null>(null);
   const [theme, setTheme] = useState(() => {
     try {
       return window.localStorage.getItem("hs.theme") ?? "dark";
@@ -92,6 +95,38 @@ export function AppShell() {
     setMobileOpen(false);
     setNotificationsOpen(false);
     setUserOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMobileOpen(false);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mobileOpen]);
+
+  // Keep the navigation honest about overflow: only fade the scroll area when
+  // there is actually more content below the fold.
+  useEffect(() => {
+    const element = navRef.current;
+    if (!element) return;
+    const update = () => setNavScrollable(element.scrollHeight > element.clientHeight + 2);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(element);
+    const mutation = new MutationObserver(update);
+    mutation.observe(element, { childList: true, subtree: true });
+    window.addEventListener("resize", update);
+    return () => {
+      observer.disconnect();
+      mutation.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [session?.role]);
+
+  useEffect(() => {
+    navRef.current?.querySelector<HTMLElement>(".nav-item.active")?.scrollIntoView({ block: "nearest" });
   }, [location.pathname]);
 
   const currentItem = useMemo(() => {
@@ -140,8 +175,17 @@ export function AppShell() {
           >
             {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
+          <button
+            type="button"
+            className="icon-btn drawer-close"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Cerrar menú"
+            style={{ marginLeft: "auto" }}
+          >
+            <X size={18} />
+          </button>
         </div>
-        <nav className="sidebar-scroll">
+        <nav className={clsx("sidebar-scroll", navScrollable && "is-scrollable")} aria-label="Secciones" ref={navRef}>
           {NAV_GROUPS.map((group) => {
             const items = group.items.filter((item) => can(item.permission));
             if (!items.length) return null;

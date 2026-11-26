@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal, TypedDict
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -17,13 +18,15 @@ from app.core.errors import Forbidden, NotFound, ValidationFailure
 from app.core.rate_limit import enforce
 from app.core.rbac import ALL_PERMISSIONS, ROLE_PERMISSIONS, effective_permissions
 from app.core.schemas import PasswordPolicyError, validate_password_strength
-from app.models.core import ApiToken, Membership, Organization
+from app.models.core import ApiToken, BreakGlassGrant, Membership, Organization
 from app.models.core import Session as AuthSession
 from app.modules.auth import service
 from app.modules.auth.schemas import (
     ApiTokenCreate,
     ApiTokenCreated,
     ApiTokenInfo,
+    BreakGlassRequest,
+    BreakGlassResponse,
     ChangePasswordRequest,
     LoginRequest,
     MfaActivateRequest,
@@ -39,12 +42,21 @@ from app.modules.auth.schemas import (
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+class _CookieOptions(TypedDict):
+    """Explicit type for the shared ``set_cookie`` keyword arguments."""
+
+    max_age: int
+    path: str
+    samesite: Literal["lax", "strict", "none"]
+    domain: str | None
+
+
 def _set_session_cookies(response: Response, raw_token: str, session: AuthSession) -> None:
     max_age = settings.session_ttl_minutes * 60
-    common = {
+    common: _CookieOptions = {
         "max_age": max_age,
         "path": "/",
-        "samesite": "lax",
+        "samesite": "strict",
         "domain": settings.cookie_domain or None,
     }
     response.set_cookie(
@@ -162,7 +174,18 @@ def me(ctx: RequestContext = Depends(get_context)) -> dict:
     # API-token callers have no browser session and therefore no CSRF token.
     orgs = service.user_organizations(ctx.db, ctx.user)
     return {
-        "user": ctx.user,
+        "user": {
+            "id": ctx.user.id,
+            "email": ctx.user.email,
+            "full_name": ctx.user.full_name,
+            "status": ctx.user.status,
+            "is_platform_admin": ctx.user.is_platform_admin,
+            "mfa_enabled": ctx.user.mfa_enabled,
+            "locale": ctx.user.locale,
+            "timezone": ctx.user.timezone,
+            "last_login_at": ctx.user.last_login_at,
+            "created_at": ctx.user.created_at,
+        },
         "organization": {
             "id": ctx.org.id,
             "slug": ctx.org.slug,
@@ -196,8 +219,21 @@ def switch_org(payload: SwitchOrgRequest, ctx: RequestContext = Depends(get_cont
     org = ctx.db.get(Organization, payload.org_id)
     if org is None or org.deleted_at is not None or org.status != "active":
         raise NotFound("Organization")
-    if membership is None and not ctx.user.is_platform_admin:
-        raise NotFound("Organization")
+    if membership is None:
+        if not ctx.user.is_platform_admin:
+            raise NotFound("Organization")
+        if not payload.reason or len(payload.reason.strip()) < 10:
+            raise Forbidden("break_glass_required: a justification of at least 10 characters is required")
+        if not payload.ticket or len(payload.ticket.strip()) < 3:
+            raise Forbidden("break_glass_required: a change/incident ticket is required")
+        service.create_break_glass(
+            ctx.db,
+            user=ctx.user,
+            org=org,
+            reason=payload.reason,
+            ticket=payload.ticket,
+            request_id=ctx.request_id,
+        )
     role = "platform_admin" if ctx.user.is_platform_admin else membership.role  # type: ignore[union-attr]
     ctx.session.org_id = org.id
     ctx.audit(
@@ -209,6 +245,51 @@ def switch_org(payload: SwitchOrgRequest, ctx: RequestContext = Depends(get_cont
     info = service.serialize_session(ctx.db, ctx.user, org, ctx.session, role)
     ctx.db.commit()
     return info
+
+
+@router.post(
+    "/break-glass",
+    response_model=BreakGlassResponse,
+    summary="Create a time-boxed, justified platform-admin grant for another organization",
+)
+def break_glass(payload: BreakGlassRequest, ctx: RequestContext = Depends(get_context)) -> BreakGlassResponse:
+    assert ctx.user is not None
+    if not ctx.user.is_platform_admin:
+        raise Forbidden("Break-glass access is reserved for platform administrators")
+    org = ctx.db.get(Organization, payload.org_id)
+    if org is None or org.deleted_at is not None or org.status != "active":
+        raise NotFound("Organization")
+    grant = service.create_break_glass(
+        ctx.db,
+        user=ctx.user,
+        org=org,
+        reason=payload.reason,
+        ticket=payload.ticket,
+        request_id=ctx.request_id,
+    )
+    ctx.db.commit()
+    return BreakGlassResponse(
+        grant_id=grant.id,
+        org_id=org.id,
+        expires_at=grant.expires_at,
+        reason=grant.reason,
+        ticket=grant.ticket,
+    )
+
+
+@router.post("/break-glass/{grant_id}/revoke", summary="Revoke a break-glass grant immediately")
+def revoke_break_glass(grant_id: UUID, ctx: RequestContext = Depends(get_context)) -> dict:
+    assert ctx.user is not None
+    if not ctx.user.is_platform_admin:
+        raise Forbidden("Only platform administrators can revoke break-glass grants")
+    grant = ctx.db.get(BreakGlassGrant, grant_id)
+    if grant is None:
+        raise NotFound("Break-glass grant")
+    if grant.user_id != ctx.user.id and not ctx.user.is_platform_admin:
+        raise Forbidden("Not allowed")
+    service.revoke_break_glass(ctx.db, grant, actor=ctx.user)
+    ctx.db.commit()
+    return {"message": "Break-glass grant revoked", "grant_id": str(grant.id)}
 
 
 @router.post("/change-password", summary="Change the current account password")
@@ -247,9 +328,17 @@ def mfa_enroll(ctx: RequestContext = Depends(get_context)) -> MfaEnrollment:
 def mfa_activate(payload: MfaActivateRequest, ctx: RequestContext = Depends(get_context)) -> dict:
     assert ctx.user is not None
     service.activate_mfa(ctx.db, ctx.user, payload.code)
-    ctx.audit(action="auth.mfa.enable", resource_type="user", resource_id=str(ctx.user.id))
+    revoked = service.revoke_user_sessions(
+        ctx.db, ctx.user.id, except_session_id=ctx.session.id if ctx.session else None, reason="mfa_activated"
+    )
+    ctx.audit(
+        action="auth.mfa.enable",
+        resource_type="user",
+        resource_id=str(ctx.user.id),
+        payload={"revoked_other_sessions": revoked},
+    )
     ctx.db.commit()
-    return {"message": "MFA enabled"}
+    return {"message": "MFA enabled", "revoked_other_sessions": revoked}
 
 
 @router.post("/mfa/disable", summary="Disable TOTP with password and code confirmation")
@@ -278,7 +367,9 @@ def create_token(
     payload: ApiTokenCreate, ctx: RequestContext = Depends(require_permission("apikey:manage"))
 ) -> ApiTokenCreated:
     assert ctx.user is not None
-    scopes = payload.scopes or ctx.permissions
+    # A platform administrator has every permission plus the "*" wildcard; an
+    # API token must carry concrete scopes, so never persist the wildcard.
+    scopes = payload.scopes or [scope for scope in ctx.permissions if scope != "*"]
     record, raw = service.create_api_token(
         ctx.db,
         user=ctx.user,

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import secrets
 from functools import lru_cache
 from typing import Annotated, Literal
 
@@ -27,6 +26,8 @@ class Settings(BaseSettings):
     secret_key: str = ""
     encryption_key: str = ""
     session_ttl_minutes: int = 720
+    session_idle_minutes: int = 60
+    break_glass_ttl_minutes: int = 30
     cookie_name: str = "hs_session"
     csrf_cookie_name: str = "hs_csrf"
     cookie_secure: bool = False
@@ -66,8 +67,11 @@ class Settings(BaseSettings):
     @field_validator("secret_key")
     @classmethod
     def _validate_secret(cls, value: str) -> str:
-        if not value:
-            return secrets.token_urlsafe(48)
+        # Never generate a process-local key: sessions and challenge tokens would
+        # silently become invalid on restart and production could run without a
+        # deliberate secret. Fail fast instead.
+        if not value or len(value) < 32:
+            raise ValueError("HS_SECRET_KEY is required and must contain at least 32 characters")
         return value
 
     @property

@@ -146,7 +146,8 @@ local capabilities.
 
 `collectors` is advisory documentation of enabled sources; local process flags
 decide which listeners actually open. A compromised or malicious core cannot
-make the agent open a new port.
+make the agent open a new port. `batch_size` is applied when collectors enqueue;
+envelopes already persisted are always shipped whole to avoid sequence reuse.
 
 ## 6. Security properties
 
@@ -162,8 +163,9 @@ make the agent open a new port.
 * Enrollment tokens are single-use, short-lived and never persisted by the agent.
 * Syslog is passive UDP. The agent never sends packets to OT/IT devices and never
   performs discovery, scanning or credential use against controllers.
-* Queue, spool and status live under a `0700` data directory; the SQLite file is
-  `0600`. JSON logs go to stdout/stderr for journald.
+* Queue, spool and status live under a `0700` data directory (created `0700`
+  when absent; the agent warns if an existing one is group/world accessible);
+  the SQLite file is `0600`. JSON logs go to stdout/stderr for journald.
 
 ## 7. Deployment
 
@@ -192,6 +194,19 @@ sudo -u hispanshield-edge env HISPANSHIELD_ENROLL_TOKEN='hs_enroll...' \
 For mTLS add `--client-cert /etc/hispanshield-edge/gateway.crt
 --client-key /etc/hispanshield-edge/gateway.key`.
 
+`run` can also auto-enroll when the config file does not exist yet, using the
+same one-time token through `HISPANSHIELD_ENROLL_TOKEN` (never persisted):
+
+```bash
+sudo -u hispanshield-edge env HISPANSHIELD_ENROLL_TOKEN='hs_enroll...' \
+  /opt/hispanshield-edge/venv/bin/hispanshield-edge run \
+  --config /etc/hispanshield-edge/gateway.json \
+  --url https://core.example.com --name site-a --once
+```
+
+Explicit `enroll` is recommended for production because it fails before the
+service starts and keeps the token out of the unit environment.
+
 Install `edge/systemd/hispanshield-edge.service.example` as
 `/etc/systemd/system/hispanshield-edge.service`, create
 `/etc/hispanshield-edge/agent.env` (see the unit), then:
@@ -205,7 +220,9 @@ journalctl -u hispanshield-edge -f
 The example unit uses `NoNewPrivileges`, `ProtectSystem=strict`, `PrivateTmp`,
 `ProtectHome`, an empty capability bounding set, `RestrictAddressFamilies`,
 `SystemCallFilter=@system-service`, `UMask=0077`, `MemoryMax=256M` and explicit
-read/write paths. Adjust `ReadWritePaths` if spool directories differ.
+read/write paths. Adjust `ReadWritePaths` if spool directories differ. The unit
+also restricts egress with `IPAddressDeny=any` plus an allow-list; if the core
+URL uses a DNS name, add the resolver address (or pin the core in `/etc/hosts`).
 
 ### Read-only OT spool
 

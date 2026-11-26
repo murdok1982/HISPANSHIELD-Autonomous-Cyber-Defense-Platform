@@ -790,3 +790,31 @@ def test_timeline_step_outputs_are_bounded(auth_client: TestClient, db) -> None:
     investigation = next(step for step in created.json()["steps"] if step["step_key"] == "investigate")
     assert investigation["output"]["scope"] == "incident"
     assert investigation["finished_at"] is not None
+
+
+def test_playbook_steps_require_direct_permissions() -> None:
+    from app.core.errors import Forbidden
+    from app.modules.soar.router import _enforce_step_permissions
+
+    class Ctx:
+        def __init__(self, permissions: set[str]) -> None:
+            self.permissions = permissions
+
+        def require(self, permission: str) -> None:
+            if permission not in self.permissions:
+                raise Forbidden(permission)
+
+    definition = {
+        "steps": [
+            {"key": "isolate", "action": "defence.execute", "params": {}},
+            {"key": "read", "action": "connector.read", "params": {}},
+        ]
+    }
+    _enforce_step_permissions(Ctx({"playbook:execute", "connector:read"}), definition, dry_run=True)
+    try:
+        _enforce_step_permissions(Ctx({"playbook:execute", "connector:read"}), definition, dry_run=False)
+    except Forbidden:
+        pass
+    else:
+        raise AssertionError("defence.execute must require defence:execute")
+    _enforce_step_permissions(Ctx({"defence:execute", "connector:read"}), definition, dry_run=False)

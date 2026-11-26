@@ -247,6 +247,8 @@ const COPY = {
     statusChangeTitle: "Transición de estado",
     evidenceUploaded: "Evidencia adjuntada",
     unknownKind: "Evento",
+    detail: "detalle",
+    actor: "Actor",
   },
   en: {
     eyebrow: "Response · Incident",
@@ -393,6 +395,8 @@ const COPY = {
     statusChangeTitle: "Status transition",
     evidenceUploaded: "Evidence attached",
     unknownKind: "Event",
+    detail: "detail",
+    actor: "Actor",
   },
 };
 
@@ -507,6 +511,12 @@ export function IncidentDetailPage() {
     queryKey: ["incidents", "detail", incidentId],
     queryFn: () => api.get<IncidentDetailData>(`/incidents/${incidentId}`),
     enabled: Boolean(incidentId),
+  });
+
+  const timelineQuery = useQuery({
+    queryKey: ["incidents", "timeline", incidentId],
+    queryFn: () => api.get<Page<TimelineEntry>>(`/incidents/${incidentId}/timeline`, { page_size: 200 }),
+    enabled: Boolean(incidentId) && tab === "timeline",
   });
 
   const members = useQuery({
@@ -649,6 +659,7 @@ export function IncidentDetailPage() {
   }
 
   const incident = detail.data;
+  const timelineEntries = timelineQuery.data?.items ?? incident.timeline;
   const open = incident.status !== "closed";
   const transitions = allowedTransitions(incident.status).filter(
     (value) => value !== "closed" || can("incident:close"),
@@ -921,7 +932,7 @@ export function IncidentDetailPage() {
             ariaLabel={c("subtitle")}
             items={[
               { key: "overview", label: c("tabOverview") },
-              { key: "timeline", label: c("tabTimeline"), count: incident.timeline.length },
+              { key: "timeline", label: c("tabTimeline"), count: timelineEntries.length },
               { key: "evidence", label: c("tabEvidence"), count: incident.evidence.length },
               { key: "response", label: c("tabResponse"), count: incident.remediations.length },
               { key: "alerts", label: c("tabAlerts"), count: incident.alerts.length },
@@ -1035,6 +1046,17 @@ export function IncidentDetailPage() {
                             ))}
                           </Select>
                         </Field>
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          icon={ArrowRightLeft}
+                          style={{ marginTop: 6 }}
+                          disabled={!can("incident:write") || !transitionValid}
+                          onClick={() => transitionTarget && openTransition(transitionTarget)}
+                          data-testid="apply-transition"
+                        >
+                          {c("applyTransition")}
+                        </Button>
                         <div className="row" style={{ marginTop: 8, gap: 6 }}>
                           {transitions.map((status) => (
                             <Button
@@ -1062,12 +1084,17 @@ export function IncidentDetailPage() {
 
           {tab === "timeline" ? (
             <div className="split-main" data-testid="incident-tab-timeline">
-              <Card title={c("timelineTitle")} actions={<Badge tone="neutral">{incident.timeline.length}</Badge>}>
-                {incident.timeline.length === 0 ? (
+              <Card title={c("timelineTitle")} actions={<Badge tone="neutral">{timelineEntries.length}</Badge>}>
+                {timelineQuery.isError ? (
+                  <div style={{ marginBottom: 10 }}>
+                    <ErrorBanner compact message={errorMessage(timelineQuery.error)} onRetry={() => void timelineQuery.refetch()} />
+                  </div>
+                ) : null}
+                {timelineEntries.length === 0 ? (
                   <EmptyState icon={History} title={c("timelineEmpty")} />
                 ) : (
                   <div className="timeline">
-                    {incident.timeline.map((entry) => (
+                    {timelineEntries.map((entry) => (
                       <div
                         key={entry.id}
                         className={`timeline-item ${entry.kind === "status_change" ? "danger" : entry.kind === "evidence" ? "success" : ""}`}
@@ -1086,7 +1113,7 @@ export function IncidentDetailPage() {
                         </div>
                         {Object.keys(entry.detail).length ? (
                           <details style={{ marginTop: 6 }}>
-                            <summary className="dim" style={{ fontSize: 10.5, cursor: "pointer" }}>detail</summary>
+                            <summary className="dim" style={{ fontSize: 10.5, cursor: "pointer" }}>{c("detail")}</summary>
                             <pre className="code-block" style={{ marginTop: 6 }}>{JSON.stringify(entry.detail, null, 2)}</pre>
                           </details>
                         ) : null}

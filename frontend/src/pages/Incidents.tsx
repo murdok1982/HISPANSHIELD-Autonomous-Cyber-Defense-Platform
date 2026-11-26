@@ -126,6 +126,7 @@ const COPY = {
     slaDue: "vence {time}",
     activeScopeNote: "{count} incidentes cerrados ocultos por la pestaña Activos (se conserva la paginación del servidor).",
     demo: "DEMO",
+    demoBanner: "Incidentes de demostración del laboratorio",
     unassigned: "Sin asignar",
     createTitle: "Registrar incidente",
     createSubtitle: "El servidor asigna referencia, SLA y prioridad si no se indica.",
@@ -215,6 +216,7 @@ const COPY = {
     slaDue: "due {time}",
     activeScopeNote: "{count} closed incidents hidden by the Active tab (server pagination is preserved).",
     demo: "DEMO",
+    demoBanner: "Demonstration lab incidents",
     unassigned: "Unassigned",
     createTitle: "Register incident",
     createSubtitle: "The server assigns the reference, SLA and priority when omitted.",
@@ -540,6 +542,15 @@ export function IncidentsPage() {
 
   const hasFilters = Boolean(q || severity || status || assignee || dateFrom || dateTo || tab !== "active");
 
+  const paginationMeta =
+    incidents.data?.meta && tab === "active" && !status
+      ? {
+          ...incidents.data.meta,
+          total: metrics.data?.open_total ?? incidents.data.meta.total,
+          pages: Math.max(1, Math.ceil((metrics.data?.open_total ?? incidents.data.meta.total) / incidents.data.meta.page_size)),
+        }
+      : incidents.data?.meta;
+
   const clearFilters = () => {
     setQ("");
     setSeverity("");
@@ -574,7 +585,7 @@ export function IncidentsPage() {
       key: "ref",
       header: c("colRef"),
       width: "116px",
-      render: (row) => <span className="mono" style={{ fontSize: 10.5, color: "var(--accent)" }}>{row.ref}</span>,
+      render: (row) => <span className="mono" style={{ fontSize: 10.5, color: "var(--accent)", whiteSpace: "nowrap" }}>{row.ref}</span>,
     },
     {
       key: "title",
@@ -592,7 +603,7 @@ export function IncidentsPage() {
       ),
     },
     { key: "severity", header: c("colSeverity"), width: "104px", render: (row) => <SeverityBadge severity={row.severity} /> },
-    { key: "status", header: c("colStatus"), width: "124px", render: (row) => <StatusBadge status={row.status}  /> },
+    { key: "status", header: c("colStatus"), width: "124px", render: (row) => <StatusBadge status={row.status} /> },
     {
       key: "priority",
       header: c("colPriority"),
@@ -629,7 +640,7 @@ export function IncidentsPage() {
         const remaining = slaRemainingMinutes(row.sla_due_at);
         const age = incidentAgeMinutes(row.detected_at);
         return (
-          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-start" }}>
             <span className="mono" style={{ fontSize: 10.5 }}>{durationMinutes(age)}</span>
             <Badge tone={slaTone(state)}>
               {slaLabel(state, c)}
@@ -703,7 +714,7 @@ export function IncidentsPage() {
       />
 
       {incidents.data?.items.some((row) => row.is_demo) ? (
-        <div className="demo-banner" style={{ marginBottom: 12 }}>{c("demo")} · seeded incident dataset</div>
+        <div className="demo-banner" style={{ marginBottom: 12 }}>{c("demo")} · {c("demoBanner")}</div>
       ) : null}
 
       <div className="kpi-grid" style={{ marginBottom: 12 }}>
@@ -763,13 +774,14 @@ export function IncidentsPage() {
           <Tabs<Tab>
             ariaLabel={c("filters")}
             items={[
-              { key: "active", label: c("tabActive") },
-              { key: "all", label: c("tabAll") },
-              { key: "closed", label: c("tabClosed") },
+              { key: "active", label: c("tabActive"), count: metrics.data?.open_total },
+              { key: "all", label: c("tabAll"), count: metrics.data?.total },
+              { key: "closed", label: c("tabClosed"), count: metrics.data?.closed_total },
             ]}
             value={tab}
             onChange={(value) => {
               setTab(value);
+              if (value === "active" && status === "closed") setStatus("");
               setPage(1);
             }}
           />
@@ -784,16 +796,7 @@ export function IncidentsPage() {
             {tab === "active" && hiddenClosed > 0 ? (
               <span className="dim" style={{ fontSize: 10.5 }}>{c("activeScopeNote").replace("{count}", String(hiddenClosed))}</span>
             ) : null}
-            <Pagination
-              meta={
-                tab === "active"
-                  ? incidents.data?.meta
-                    ? { ...incidents.data.meta, total: metrics.data?.open_total ?? incidents.data.meta.total, pages: Math.max(1, Math.ceil((metrics.data?.open_total ?? incidents.data.meta.total) / incidents.data.meta.page_size)) }
-                    : undefined
-                  : incidents.data?.meta
-              }
-              onPage={setPage}
-            />
+            <Pagination meta={paginationMeta} onPage={setPage} />
           </div>
         }
       >
@@ -833,7 +836,7 @@ export function IncidentsPage() {
           >
             <option value="">{c("allStatuses")}</option>
             {INCIDENT_STATUSES.map((value) => (
-              <option key={value} value={value}>{value}</option>
+              <option key={value} value={value} disabled={tab === "active" && value === "closed"}>{value}</option>
             ))}
           </Select>
           {can("user:read") ? (

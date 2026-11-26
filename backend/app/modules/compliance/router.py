@@ -6,7 +6,7 @@ from collections import Counter
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 
 from app.core.db import utcnow
 from app.core.deps import RequestContext, require_permission
@@ -359,7 +359,7 @@ def update_control_status(
         status_row.evidence_ids = [str(evidence_id) for evidence_id in requested]
 
         ctx.db.execute(
-            ControlEvidenceLink.__table__.delete().where(
+            delete(ControlEvidenceLink).where(
                 ControlEvidenceLink.control_status_id == status_row.id,
                 ControlEvidenceLink.org_id == ctx.org.id,
             )
@@ -446,7 +446,7 @@ def gap_analysis(
     else:
         raw_gaps = service.build_gaps(ctx.db, ctx.org, framework, statuses, controls)
     gaps = [GapItem.model_validate(gap) for gap in raw_gaps]
-    severity_counter = Counter(gap.severity for gap in gaps)
+    severity_counter: Counter[str] = Counter(gap.severity for gap in gaps)
     return GapAnalysis(
         assessment_id=assessment.id,
         framework_code=framework.code,

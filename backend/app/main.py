@@ -210,9 +210,9 @@ def _mount_spa(app: FastAPI) -> None:
 
     from fastapi.staticfiles import StaticFiles
 
-    assets = dist / "assets"
+    assets = dist / "static"
     if assets.exists():
-        app.mount("/assets", StaticFiles(directory=assets), name="assets")
+        app.mount("/static", StaticFiles(directory=assets), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)
     def spa_fallback(full_path: str):

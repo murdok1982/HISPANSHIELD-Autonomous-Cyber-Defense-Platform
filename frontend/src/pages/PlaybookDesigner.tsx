@@ -6,7 +6,6 @@ import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
-  Braces,
   CheckCircle2,
   Code2,
   Copy,
@@ -17,14 +16,13 @@ import {
   Rocket,
   Save,
   ShieldAlert,
-  ShieldCheck,
   Trash2,
   Wand2,
 } from "lucide-react";
 import { api, errorMessage, isApiError, type Page } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n, usePageCopy } from "../lib/i18n";
-import { formatDateTime, formatNumber, humanize } from "../lib/format";
+import { formatNumber } from "../lib/format";
 import {
   Badge,
   Button,
@@ -322,6 +320,8 @@ const COPY = {
     approval: "Aprobación",
     otBlocked: "OT bloqueado",
     actionsAvailable: "{count} acciones disponibles",
+    policyDefault: "Política de la organización",
+    catalogueUnavailable: "catálogo no disponible",
     forbiddenCount: "{count} acciones prohibidas",
     cancelled: "Cancelado",
     demo: "DEMO",
@@ -436,6 +436,8 @@ const COPY = {
     approval: "Approval",
     otBlocked: "OT blocked",
     actionsAvailable: "{count} actions available",
+    policyDefault: "Organization policy",
+    catalogueUnavailable: "catalogue unavailable",
     forbiddenCount: "{count} forbidden actions",
     cancelled: "Canceled",
     demo: "DEMO",
@@ -624,7 +626,7 @@ function buildStepPayload(draft: StepDraft, index: number, c: (key: string) => s
 export function PlaybookDesignerPage() {
   const { playbookId } = useParams<{ playbookId?: string }>();
   const c = usePageCopy(COPY);
-  const { t, lang } = useI18n();
+  const { t } = useI18n();
   const { can } = useAuth();
   const { push } = useToast();
   const navigate = useNavigate();
@@ -1030,8 +1032,12 @@ export function PlaybookDesignerPage() {
                             data-testid={`step-action-${index}`}
                           >
                             {COMBINED_ACTIONS.map((action) => (
-                              <option key={action} value={action}>
-                                {action === "defence.execute" && !catalogue.data?.actions.length ? `${action} (catalogue unavailable)` : action}
+                              <option
+                                key={action}
+                                value={action}
+                                disabled={action === "defence.execute" && !catalogue.data?.actions.length}
+                              >
+                                {action === "defence.execute" && !catalogue.data?.actions.length ? `${action} (${c("catalogueUnavailable")})` : action}
                               </option>
                             ))}
                           </Select>
@@ -1114,7 +1120,7 @@ export function PlaybookDesignerPage() {
                             </Field>
                             <Field label={c("defenceLevel")} htmlFor={`step-level-${step.uid}`}>
                               <Select id={`step-level-${step.uid}`} value={step.defenceLevel} onChange={(event) => updateStep(step.uid, { defenceLevel: event.target.value })}>
-                                <option value="">{c("yes")} / policy</option>
+                                <option value="">{c("policyDefault")}</option>
                                 {["A0", "A1", "A2", "A3", "A4"].map((level) => <option key={level} value={level}>{level}</option>)}
                               </Select>
                             </Field>
@@ -1258,7 +1264,7 @@ export function PlaybookDesignerPage() {
                 {payloadInvalid ? (
                   <div className="notice notice-warning" style={{ fontSize: 11 }}>
                     <AlertTriangle size={13} style={{ flex: "0 0 auto" }} />
-                    <span>{c("previewError").replace("{error}", "error" in payload ? payload.error : "—")}</span>
+                    <span>{c("previewError").replace("{error}", "error" in payload ? payload.error ?? "—" : "—")}</span>
                   </div>
                 ) : null}
                 <pre className="code-block" style={{ marginTop: 8 }} data-testid="definition-json">{previewText}</pre>
@@ -1271,7 +1277,7 @@ export function PlaybookDesignerPage() {
                 <div className="metric-row"><span className="metric-label">{c("version")}</span><span className="metric-value">v{savedPlaybook?.version ?? 0}</span></div>
               </div>
             )}
-            {payloadInvalid ? <p className="hint">{c("previewError").replace("{error}", "error" in payload ? payload.error : "—")}</p> : null}
+            {payloadInvalid ? <p className="hint">{c("previewError").replace("{error}", "error" in payload ? payload.error ?? "—" : "—")}</p> : null}
           </Card>
 
           <Card

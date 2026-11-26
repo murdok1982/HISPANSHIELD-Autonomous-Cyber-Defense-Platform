@@ -77,6 +77,18 @@ def test_atomic_write_preserves_previous_file_on_failure(tmp_path: Path, monkeyp
     assert not list(tmp_path.glob("*.tmp"))
 
 
+def test_config_does_not_chmod_an_existing_shared_directory(tmp_path: Path, caplog):
+    parent = tmp_path / "shared"
+    parent.mkdir()
+    parent.chmod(0o755)
+    path = parent / "gateway.json"
+    caplog.set_level("WARNING")
+    save_config(new_config(base_url="https://core.example.com", fingerprint="hs-0123456789abcdef"), path)
+    assert stat.S_IMODE(parent.stat().st_mode) == 0o755
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert "expected 0700" in caplog.text
+
+
 def test_plain_http_requires_explicit_lab_opt_in():
     with pytest.raises(ConfigError):
         GatewayConfig(base_url="http://127.0.0.1:8000", fingerprint="hs-0123456789abcdef")

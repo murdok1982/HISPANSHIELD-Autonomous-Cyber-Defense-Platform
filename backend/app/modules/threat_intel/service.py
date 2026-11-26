@@ -1005,15 +1005,15 @@ def mitre_coverage(db: Session, org_id: UUID) -> dict[str, Any]:
 
     catalog = load_mitre_techniques()
     covered: list[dict[str, Any]] = []
-    for technique in catalog:
-        technique_id = technique["id"]
+    for catalog_technique in catalog:
+        technique_id = catalog_technique["id"]
         events = event_counts.get(technique_id, 0)
         indicators = indicator_counts.get(technique_id, 0)
         actors = actor_counts.get(technique_id, 0)
         if events or indicators or actors:
             covered.append(
                 {
-                    **technique,
+                    **catalog_technique,
                     "event_count": events,
                     "indicator_count": indicators,
                     "actor_count": actors,

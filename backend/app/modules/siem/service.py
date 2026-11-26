@@ -30,14 +30,22 @@ from app.services.detection import (
 from app.services.normalization import sanitize_text
 
 MITRE_NAMES: dict[str, str] = {
+    "T1021": "Remote Services",
     "T1041": "Exfiltration Over C2 Channel",
     "T1046": "Network Service Discovery",
+    "T1055": "Process Injection",
+    "T1059": "Command and Scripting Interpreter",
     "T1068": "Exploitation for Privilege Escalation",
     "T1071": "Application Layer Protocol",
+    "T1078": "Valid Accounts",
     "T1105": "Ingress Tool Transfer",
     "T1110": "Brute Force",
+    "T1190": "Exploit Public-Facing Application",
     "T1204": "User Execution",
+    "T1486": "Data Encrypted for Impact",
+    "T1547": "Boot or Logon Autostart Execution",
     "T1548": "Abuse Elevation Control Mechanism",
+    "T1566": "Phishing",
 }
 
 _SIGMA_FIELD_MAP = {
@@ -77,7 +85,7 @@ _SIGMA_FIELD_MAP = {
 
 _SIGMA_MODIFIERS = {"contains", "startswith", "endswith", "re", "gt", "gte", "lt", "lte", "ne"}
 _SIGMA_LEVELS = {
-    "informational": "low",
+    "informational": "informational",
     "low": "low",
     "medium": "medium",
     "high": "high",
@@ -464,10 +472,11 @@ def convert_sigma(sigma: SigmaRule) -> dict[str, Any]:
     for tag in sigma.tags:
         candidate = tag.strip()
         attack = re.match(r"(?i)^attack\.(t\d{4}(?:\.\d{3})?)$", candidate)
+        safe_tag = sanitize_text(candidate, max_length=80)
         if attack:
             mitre.append(attack.group(1).upper())
-        elif candidate:
-            tags.append(candidate[:80])
+        elif safe_tag:
+            tags.append(safe_tag)
     return {
         "name": sigma.title,
         "description": sigma.description,
@@ -497,13 +506,14 @@ def import_sigma(
         except ValueError as exc:
             skipped.append({"title": sigma.title, "reason": str(exc)[:300]})
             continue
-        if spec["name"] in existing_names:
+        rule_name = sanitize_text(spec["name"], max_length=200)
+        if rule_name in existing_names:
             skipped.append({"title": sigma.title, "reason": "duplicate rule name"})
             continue
         rule = DetectionRule(
             org_id=org_id,
-            name=spec["name"],
-            description=spec["description"],
+            name=rule_name,
+            description=sanitize_text(spec["description"], max_length=2000) or None,
             severity=spec["severity"],
             status="production",
             enabled=True,

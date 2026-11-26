@@ -39,7 +39,7 @@ logger = logging.getLogger("hispanshield_edge.client")
 ENROLL_PATH = "/api/v1/edge/gateways/register"
 HEARTBEAT_PATH = "/api/v1/edge/gateways/{gateway_id}/heartbeat"
 EVENTS_PATH = "/api/v1/edge/gateways/{gateway_id}/events"
-CONFIG_BUNDLE_PATH = "/api/v1/edge/gateways/{gateway_id}/config-bundle"
+CONFIG_BUNDLE_PATH = "/api/v1/edge/gateways/{gateway_id}/config-bundle/signed"
 MAX_SIGNATURE_SKEW_SECONDS = 300
 CLOCK_WARNING_SECONDS = 120
 

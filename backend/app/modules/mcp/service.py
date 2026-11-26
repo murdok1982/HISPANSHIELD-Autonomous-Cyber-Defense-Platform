@@ -52,7 +52,8 @@ def _tool_metadata(raw: dict[str, Any]) -> dict[str, Any] | None:
     name = raw.get("name")
     if not isinstance(name, str) or not name.strip():
         return None
-    annotations = raw.get("annotations") if isinstance(raw.get("annotations"), dict) else {}
+    raw_annotations = raw.get("annotations")
+    annotations: dict[Any, Any] = raw_annotations if isinstance(raw_annotations, dict) else {}
     risk = "medium"
     if annotations.get("destructiveHint") is True:
         risk = "high"
@@ -85,7 +86,8 @@ def discover_server(db: Session, server: MCPServer) -> dict[str, Any]:
         raise ServiceUnavailable(f"MCP discovery failed: {str(exc)[:300]}", code="mcp_discovery_failed") from exc
 
     protocol_version = init.get("protocolVersion")
-    server_info = init.get("serverInfo") if isinstance(init.get("serverInfo"), dict) else {}
+    raw_server_info = init.get("serverInfo")
+    server_info: dict[Any, Any] = raw_server_info if isinstance(raw_server_info, dict) else {}
     discovered: dict[str, dict[str, Any]] = {}
     for raw in raw_tools:
         metadata = _tool_metadata(raw)

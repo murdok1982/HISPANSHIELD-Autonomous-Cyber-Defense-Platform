@@ -517,7 +517,7 @@ def _defence_execute(
     decision = evaluate(
         db,
         org,
-        action_type,
+        str(action_type),
         target_type=target_type,
         target_id=target_id,
         requested_level=requested_level,
@@ -995,7 +995,9 @@ def _execute_steps(
             except Exception as exc:  # noqa: BLE001 - every failure is persisted and audited
                 failure = exc
                 db.rollback()
-                step = db.get(PlaybookStep, step.id)
+                refreshed_step = db.get(PlaybookStep, step.id)
+                if refreshed_step is not None:
+                    step = refreshed_step
                 step.attempts = base_attempts + attempt + 1
                 if _retryable(exc) and attempt < retries:
                     _backoff(attempt)

@@ -50,6 +50,7 @@ import {
   TagList,
   fieldErrors,
   SEVERITY_LEVELS,
+  useDebouncedValue,
 } from "../components/features/detect/shared";
 import { AssetGraphView } from "../components/features/detect/graph";
 import type {
@@ -130,6 +131,7 @@ const COPY = {
     "detail.vuln.none": "Sin vulnerabilidades registradas",
     "detail.vuln.noneHint": "Importa CVEs o ejecuta un análisis de exposición para poblar el inventario.",
     "detail.vuln.openAll": "Abrir en gestión de vulnerabilidades",
+    "detail.vuln.openShort": "Abrir",
     "detail.vuln.filter.status": "Estado",
     "detail.vuln.filter.severity": "Severidad",
     "detail.vuln.filter.allStatuses": "Todos los estados",
@@ -285,6 +287,7 @@ const COPY = {
     "detail.vuln.none": "No vulnerabilities recorded",
     "detail.vuln.noneHint": "Import CVEs or run an exposure analysis to populate the inventory.",
     "detail.vuln.openAll": "Open in vulnerability management",
+    "detail.vuln.openShort": "Open",
     "detail.vuln.filter.status": "Status",
     "detail.vuln.filter.severity": "Severity",
     "detail.vuln.filter.allStatuses": "All statuses",
@@ -408,6 +411,7 @@ export function AssetDetailPage() {
 
   const [targetSearch, setTargetSearch] = useState("");
   const [targetId, setTargetId] = useState("");
+  const debouncedTargetSearch = useDebouncedValue(targetSearch, 300);
   const [relKind, setRelKind] = useState<(typeof RELATIONSHIP_KINDS)[number]>("connects_to");
   const [relConfidence, setRelConfidence] = useState("100");
   const [relErrors, setRelErrors] = useState<Record<string, string>>({});
@@ -459,9 +463,9 @@ export function AssetDetailPage() {
   });
 
   const targetQuery = useQuery({
-    queryKey: ["assets", "target-search", targetSearch],
-    queryFn: () => api.get<Page<Asset>>("/assets", { q: targetSearch, page: 1, page_size: 10 }),
-    enabled: targetSearch.trim().length >= 2,
+    queryKey: ["assets", "target-search", debouncedTargetSearch],
+    queryFn: () => api.get<Page<Asset>>("/assets", { q: debouncedTargetSearch, page: 1, page_size: 10 }),
+    enabled: debouncedTargetSearch.trim().length >= 2,
   });
 
   const createRelationship = useMutation({
@@ -502,6 +506,18 @@ export function AssetDetailPage() {
       push(`${c("detail.identity.failed")}: ${errorMessage(error)}`, "error");
     },
   });
+
+  if (!assetId) {
+    return (
+      <div data-testid="page-asset-detail">
+        <PageHeader eyebrow={c("detail.eyebrow")} title={c("detail.notFound")} />
+        <ErrorBanner title={c("detail.notFound")} message={c("detail.notFoundHint")} />
+        <div style={{ marginTop: 12 }}>
+          <LinkButton to="/assets" icon={ChevronLeft}>{c("detail.back")}</LinkButton>
+        </div>
+      </div>
+    );
+  }
 
   if (assetQuery.isLoading) return <PageSkeleton />;
 
@@ -736,7 +752,6 @@ export function AssetDetailPage() {
           <div className="split-main">
             <Card
               title={c("detail.rel.graph")}
-              subtitle={c("detail.rel.graphHint")}
               actions={
                 <div className="segmented" role="group" aria-label={`${c("detail.rel.depth")} (${c("detail.rel.depthHint")})`}>
                   {[1, 2, 3].map((level) => (
@@ -754,6 +769,7 @@ export function AssetDetailPage() {
                 </div>
               }
             >
+              <p className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{c("detail.rel.graphHint")}</p>
               {graphQuery.isLoading ? (
                 <TableSkeleton rows={5} />
               ) : graphQuery.isError ? (
@@ -769,10 +785,11 @@ export function AssetDetailPage() {
               )}
             </Card>
 
-            <Card title={c("detail.rel.add")} subtitle={c("detail.rel.addHint")}>
+            <Card title={c("detail.rel.add")}>
+              <p className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{c("detail.rel.addHint")}</p>
               {canWrite ? (
                 <div className="stack">
-                  <Field label={c("detail.rel.target")} htmlFor="relationship-target" required error={relErrors.target_asset_id}>
+                  <Field label={c("detail.rel.target")} required error={relErrors.target_asset_id}>
                     <SearchInput
                       value={targetSearch}
                       onChange={(value) => {
@@ -783,7 +800,7 @@ export function AssetDetailPage() {
                       ariaLabel={c("detail.rel.target")}
                     />
                   </Field>
-                  {targetSearch.trim().length >= 2 ? (
+                  {debouncedTargetSearch.trim().length >= 2 ? (
                     <div className="metric-list" style={{ maxHeight: 220, overflowY: "auto" }} aria-live="polite">
                       {targetQuery.isLoading ? (
                         <span className="dim" style={{ fontSize: 11 }}>{t("common.loading")}</span>
@@ -900,7 +917,7 @@ export function AssetDetailPage() {
           subtitle={`${formatNumber(vulnSummary.total)} ${c("detail.count")}`}
           actions={
             <LinkButton to={`/vulnerabilities?asset=${asset.id}`} size="sm" icon={ArrowUpRight}>
-              {c("detail.vuln.openAll")}
+              {c("detail.vuln.openShort")}
             </LinkButton>
           }
           bodyClassName=""
@@ -966,9 +983,11 @@ export function AssetDetailPage() {
       {tab === "identities" ? (
         <Card
           title={c("detail.identity.title")}
-          subtitle={c("detail.identity.hint")}
           bodyClassName=""
         >
+          <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", fontSize: 11.5, color: "var(--dim)" }}>
+            {c("detail.identity.hint")}
+          </div>
           {canWrite ? (
             <div style={{ padding: 12, borderBottom: "1px solid var(--border)" }}>
               <div className="form-grid">
@@ -1146,9 +1165,9 @@ function OverviewTab({ asset, zoneName }: { asset: AssetDetail; zoneName: string
 
       <Card
         title={c("detail.overview.vulnSummary")}
-        subtitle={c("detail.overview.vulnSummaryHint")}
-        actions={<LinkButton to={`/vulnerabilities?asset=${asset.id}`} size="sm" icon={ArrowUpRight}>{c("detail.vuln.openAll")}</LinkButton>}
+        actions={<LinkButton to={`/vulnerabilities?asset=${asset.id}`} size="sm" icon={ArrowUpRight}>{c("detail.vuln.openShort")}</LinkButton>}
       >
+        <p className="muted" style={{ fontSize: 11.5, marginBottom: 10 }}>{c("detail.overview.vulnSummaryHint")}</p>
         {summary.total === 0 ? (
           <EmptyState icon={ShieldAlert} title={c("detail.vuln.none")} description={c("detail.vuln.noneHint")} />
         ) : (

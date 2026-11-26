@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { api, downloadFile, errorMessage, type Page } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { useI18n, usePageCopy, type Lang } from "../lib/i18n";
+import { useI18n, type Lang } from "../lib/i18n";
 import { formatDate, formatDateTime, formatNumber, humanize, relativeTime } from "../lib/format";
 import {
   Badge,
@@ -44,6 +44,7 @@ import {
 import {
   ConfirmDialog,
   MetaRows,
+  useGovernCopy,
   daysAgoInput,
   localDateTimeInput,
   toIso,
@@ -246,6 +247,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     eyebrow: "Gobierno · Cumplimiento",
     title: "Cumplimiento normativo",
     subtitle: "Catálogo de marcos, autoevaluaciones técnicas, brechas y informes trazables.",
+    shortDisclaimer: "Autoevaluación técnica",
     disclaimer:
       "Autoevaluación técnica — no es una certificación. Los resultados se derivan de evidencia de la plataforma y no constituyen una opinión de auditoría ni asesoramiento legal.",
     readOnly: "Tu rol permite consultar el cumplimiento, pero no modificarlo.",
@@ -257,6 +259,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     frameworksCatalogued: "Marcos en catálogo",
     applicableControls: "Controles aplicables",
     frameworks: "Catálogo de marcos",
+    frameworkColumn: "Marco",
     frameworkSearch: "Buscar por código, nombre o autoridad…",
     jurisdiction: "Jurisdicción",
     statusFilter: "Estado",
@@ -265,6 +268,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     chooseFramework: "Selecciona un marco del catálogo para ver sus controles y evidencias.",
     controls: "controles",
     technicalChecks: "comprobaciones técnicas",
+    checksShort: "comprob.",
     authority: "Autoridad",
     effectiveDate: "Entrada en vigor",
     publishedAt: "Publicado",
@@ -300,6 +304,16 @@ const COPY: Record<Lang, Record<string, string>> = {
     createAssessment: "Crear evaluación",
     noAssessments: "Todavía no hay evaluaciones",
     noAssessmentsHint: "Crea una evaluación para medir la postura frente a un marco.",
+    statusCompliant: "Cumple",
+    statusPartial: "Parcial",
+    statusNonCompliant: "No cumple",
+    statusNotApplicable: "No aplica",
+    statusNotAssessed: "Sin evaluar",
+    statusPublished: "Publicado",
+    statusDraft: "Borrador",
+    statusRetired: "Retirado",
+    noAssessmentMatches: "Ninguna evaluación coincide con los filtros.",
+    noReportMatches: "Ningún informe coincide con los filtros.",
     selectAssessment: "Selecciona una evaluación para revisar controles, puntuación y brechas.",
     score: "Puntuación",
     gaps: "Brechas",
@@ -338,6 +352,8 @@ const COPY: Record<Lang, Record<string, string>> = {
     reviewedBy: "Revisado por",
     evidenceLinked: "Evidencias vinculadas",
     reportList: "Informes generados",
+    reportKinds: "Tipos de informe",
+    reportKindsHint: "Ejecutivo · Técnico · Regulatorio · Incidente",
     reportSearch: "Buscar por título…",
     reportKind: "Tipo",
     generateReport: "Generar informe",
@@ -370,6 +386,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     loadFailed: "No se pudo cargar la información de cumplimiento.",
     filterClear: "Limpiar filtros",
     emptyFiltered: "Ningún marco coincide con los filtros.",
+    noFrameworks: "Sin marcos en el catálogo",
     loadMore: "Ver más",
     evidenceExpiredHint:
       "Las evidencias enlazadas se validan contra la organización en el servidor; una evidencia ajena se trata como inexistente.",
@@ -382,6 +399,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     eyebrow: "Governance · Compliance",
     title: "Regulatory compliance",
     subtitle: "Framework catalogue, technical self-assessments, gaps and traceable reports.",
+    shortDisclaimer: "Technical self-assessment",
     disclaimer:
       "Technical self-assessment — not a certification. Results are derived from platform evidence and are not an audit opinion or legal advice.",
     readOnly: "Your role can read compliance but cannot change it.",
@@ -393,6 +411,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     frameworksCatalogued: "Catalogued frameworks",
     applicableControls: "Applicable controls",
     frameworks: "Framework catalogue",
+    frameworkColumn: "Framework",
     frameworkSearch: "Search by code, name or authority…",
     jurisdiction: "Jurisdiction",
     statusFilter: "Status",
@@ -401,6 +420,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     chooseFramework: "Select a framework from the catalogue to inspect its controls and evidence.",
     controls: "controls",
     technicalChecks: "technical checks",
+    checksShort: "checks",
     authority: "Authority",
     effectiveDate: "Effective date",
     publishedAt: "Published",
@@ -436,6 +456,16 @@ const COPY: Record<Lang, Record<string, string>> = {
     createAssessment: "Create assessment",
     noAssessments: "No assessments yet",
     noAssessmentsHint: "Create an assessment to measure posture against a framework.",
+    statusCompliant: "Compliant",
+    statusPartial: "Partial",
+    statusNonCompliant: "Non-compliant",
+    statusNotApplicable: "Not applicable",
+    statusNotAssessed: "Not assessed",
+    statusPublished: "Published",
+    statusDraft: "Draft",
+    statusRetired: "Retired",
+    noAssessmentMatches: "No assessment matches the filters.",
+    noReportMatches: "No report matches the filters.",
     selectAssessment: "Select an assessment to review controls, score and gaps.",
     score: "Score",
     gaps: "Gaps",
@@ -474,6 +504,8 @@ const COPY: Record<Lang, Record<string, string>> = {
     reviewedBy: "Reviewed by",
     evidenceLinked: "Linked evidence",
     reportList: "Generated reports",
+    reportKinds: "Report types",
+    reportKindsHint: "Executive · Technical · Regulatory · Incident",
     reportSearch: "Search by title…",
     reportKind: "Kind",
     generateReport: "Generate report",
@@ -506,6 +538,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     loadFailed: "Compliance data could not be loaded.",
     filterClear: "Clear filters",
     emptyFiltered: "No framework matches the filters.",
+    noFrameworks: "No frameworks in the catalogue",
     loadMore: "Show more",
     evidenceExpiredHint:
       "Linked evidence is validated against this organization server-side; foreign evidence is treated as missing.",
@@ -516,10 +549,26 @@ const COPY: Record<Lang, Record<string, string>> = {
   },
 };
 
+function controlStatusLabel(status: string, t: (key: string) => string): string {
+  if (status === "compliant") return t("statusCompliant");
+  if (status === "partial") return t("statusPartial");
+  if (status === "non_compliant") return t("statusNonCompliant");
+  if (status === "not_applicable") return t("statusNotApplicable");
+  if (status === "not_assessed") return t("statusNotAssessed");
+  return humanize(status);
+}
+
 function statusLabel(status: string, t: (key: string) => string): string {
   if (status === "in_progress") return t("inProgress");
   if (status === "completed") return t("completed");
   if (status === "archived") return t("archived");
+  return humanize(status);
+}
+
+function frameworkStatusLabel(status: string, t: (key: string) => string): string {
+  if (status === "published") return t("statusPublished");
+  if (status === "draft") return t("statusDraft");
+  if (status === "retired") return t("statusRetired");
   return humanize(status);
 }
 
@@ -540,7 +589,7 @@ function FrameworksTab({
   canWrite: boolean;
   isPlatformAdmin: boolean;
 }) {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -608,7 +657,7 @@ function FrameworksTab({
   const columns: Column<FrameworkSummary>[] = [
     {
       key: "framework",
-      header: t("frameworkSearch"),
+      header: t("frameworkColumn"),
       render: (row) => (
         <div style={{ minWidth: 200 }}>
           <div className="row" style={{ gap: 6 }}>
@@ -633,7 +682,7 @@ function FrameworksTab({
       width: "110px",
       render: (row) => (
         <Badge tone={row.status === "published" ? "success" : row.status === "draft" ? "warning" : "neutral"}>
-          {humanize(row.status)}
+          {frameworkStatusLabel(row.status, t)}
         </Badge>
       ),
     },
@@ -646,11 +695,11 @@ function FrameworksTab({
     {
       key: "controls",
       header: t("controls"),
-      width: "130px",
+      width: "148px",
       align: "right",
       render: (row) => (
-        <span className="mono" style={{ fontSize: 11 }}>
-          {formatNumber(row.controls_count)} · {formatNumber(row.technical_checks_count)} {t("technicalChecks").slice(0, 3)}.
+        <span className="mono" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+          {formatNumber(row.controls_count)} · {formatNumber(row.technical_checks_count)} {t("checksShort")}
         </span>
       ),
     },
@@ -722,9 +771,9 @@ function FrameworksTab({
               data-testid="compliance-framework-status"
             >
               <option value="">{t("common.all")}</option>
-              <option value="published">published</option>
-              <option value="draft">draft</option>
-              <option value="retired">retired</option>
+              <option value="published">{t("statusPublished")}</option>
+              <option value="draft">{t("statusDraft")}</option>
+              <option value="retired">{t("statusRetired")}</option>
             </Select>
             <label className="checkbox">
               <input type="checkbox" checked={allVersions} onChange={(event) => { setAllVersions(event.target.checked); setPage(1); }} />
@@ -739,21 +788,23 @@ function FrameworksTab({
           </div>
         ) : (
           <>
-            <DataTable
-              columns={columns}
-              rows={listQuery.data?.items}
-              rowKey={(row) => row.id}
-              loading={listQuery.isLoading}
-              onRowClick={(row) => setSelected({ code: row.code })}
-              empty={
-                <EmptyState
-                  icon={BookOpenCheck}
-                  title={filtersActive ? t("emptyFiltered") : t("noSelection")}
-                  description={filtersActive ? t("filterClear") : t("importHint")}
-                  action={filtersActive ? <Button size="sm" onClick={() => { setQ(""); setJurisdiction(""); setStatus(""); setAllVersions(false); }}>{t("filterClear")}</Button> : undefined}
-                />
-              }
-            />
+            <div data-testid="compliance-framework-table">
+              <DataTable
+                columns={columns}
+                rows={listQuery.data?.items}
+                rowKey={(row) => row.id}
+                loading={listQuery.isLoading}
+                onRowClick={(row) => setSelected({ code: row.code, version: allVersions ? row.version : undefined })}
+                empty={
+                  <EmptyState
+                    icon={BookOpenCheck}
+                    title={filtersActive ? t("emptyFiltered") : t("noSelection")}
+                    description={filtersActive ? t("filterClear") : t("importHint")}
+                    action={filtersActive ? <Button size="sm" onClick={() => { setQ(""); setJurisdiction(""); setStatus(""); setAllVersions(false); }}>{t("filterClear")}</Button> : undefined}
+                  />
+                }
+              />
+            </div>
             <div style={{ padding: "0 16px 12px" }}>
               <Pagination meta={listQuery.data?.meta} onPage={setPage} />
             </div>
@@ -831,7 +882,7 @@ function FrameworksTab({
                 <div className="stack">
                   {detailQuery.data.controls.map((control) => (
                     <details key={control.id} className="card card-pad" data-testid="compliance-control">
-                      <summary style={{ cursor: "pointer", listStyle: "none" }}>
+                      <summary style={{ cursor: "pointer" }}>
                         <div className="row-between wrap" style={{ gap: 8 }}>
                           <div style={{ minWidth: 0 }}>
                             <div className="mono" style={{ fontSize: 10, color: "var(--accent)" }}>{control.control_id}</div>
@@ -933,7 +984,7 @@ function FrameworksTab({
                 <div>
                   <div className="row" style={{ gap: 6 }}>
                     <span className="mono" style={{ color: "var(--accent)", fontSize: 11 }}>v{version.version}</span>
-                    <Badge tone={version.status === "published" ? "success" : "neutral"}>{humanize(version.status)}</Badge>
+                    <Badge tone={version.status === "published" ? "success" : "neutral"}>{frameworkStatusLabel(version.status, t)}</Badge>
                     {selected?.version === version.version ? <Badge tone="accent">{t("common.active")}</Badge> : null}
                   </div>
                   <div className="item-title" style={{ marginTop: 3 }}>{version.name}</div>
@@ -1055,7 +1106,7 @@ function FrameworksTab({
 /* -------------------------------------------------------------- assessments */
 
 function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -1132,7 +1183,9 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
       setControlError(null);
       toast.push(t("saveControl"), "success");
       await queryClient.invalidateQueries({ queryKey: ["compliance", "assessment", selectedId] });
+      await queryClient.invalidateQueries({ queryKey: ["compliance", "assessment", selectedId, "gaps"] });
       await queryClient.invalidateQueries({ queryKey: ["compliance", "assessments"] });
+      await queryClient.invalidateQueries({ queryKey: ["compliance", "summary"] });
     },
     onError: (error) => setControlError(errorMessage(error)),
   });
@@ -1199,6 +1252,8 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
     setControlError(null);
   };
 
+  const assessmentFiltersActive = Boolean(q || status);
+
   const evidenceValues = controlEvidence
     .split(",")
     .map((value) => value.trim())
@@ -1226,7 +1281,7 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
       key: "status",
       header: t("status"),
       width: "130px",
-      render: (row) => <StatusBadge status={row.status} label={humanize(row.status)} />,
+      render: (row) => <StatusBadge status={row.status} label={controlStatusLabel(row.status, t)} />,
     },
     {
       key: "owner",
@@ -1308,21 +1363,29 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
           </div>
         ) : (
           <>
-            <DataTable
-              columns={columns}
-              rows={listQuery.data?.items}
-              rowKey={(row) => row.id}
-              loading={listQuery.isLoading}
-              onRowClick={(row) => setSelectedId(row.id)}
-              empty={
-                <EmptyState
-                  icon={ClipboardCheck}
-                  title={t("noAssessments")}
-                  description={t("noAssessmentsHint")}
-                  action={canAssess ? <Button size="sm" onClick={() => setCreateOpen(true)}>{t("newAssessment")}</Button> : undefined}
-                />
-              }
-            />
+            <div data-testid="compliance-assessment-table">
+              <DataTable
+                columns={columns}
+                rows={listQuery.data?.items}
+                rowKey={(row) => row.id}
+                loading={listQuery.isLoading}
+                onRowClick={(row) => setSelectedId(row.id)}
+                empty={
+                  <EmptyState
+                    icon={ClipboardCheck}
+                    title={assessmentFiltersActive ? t("noAssessmentMatches") : t("noAssessments")}
+                    description={assessmentFiltersActive ? t("filterClear") : t("noAssessmentsHint")}
+                    action={
+                      assessmentFiltersActive ? (
+                        <Button size="sm" onClick={() => { setQ(""); setStatus(""); setPage(1); }}>{t("filterClear")}</Button>
+                      ) : canAssess ? (
+                        <Button size="sm" onClick={() => setCreateOpen(true)}>{t("newAssessment")}</Button>
+                      ) : undefined
+                    }
+                  />
+                }
+              />
+            </div>
             <div style={{ padding: "0 16px 12px" }}>
               <Pagination meta={listQuery.data?.meta} onPage={setPage} />
             </div>
@@ -1399,12 +1462,14 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
             </Card>
 
             <Card title={t("directControls")} bodyClassName="" subtitle={`${detail.controls.length}`}>
-              <DataTable
-                columns={controlColumns}
-                rows={detail.controls}
-                rowKey={(row) => row.id}
-                empty={<EmptyState icon={ClipboardCheck} title={t("controlsEmpty")} />}
-              />
+              <div data-testid="compliance-control-table">
+                <DataTable
+                  columns={controlColumns}
+                  rows={detail.controls}
+                  rowKey={(row) => row.id}
+                  empty={<EmptyState icon={ClipboardCheck} title={t("controlsEmpty")} />}
+                />
+              </div>
             </Card>
 
             <Card title={t("gaps")} subtitle={t("gapAnalysisHint")}>
@@ -1427,7 +1492,7 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
                             <div className="mono" style={{ fontSize: 10, color: "var(--accent)" }}>{gap.control_code}</div>
                             <div className="primary-cell">{gap.title}</div>
                           </td>
-                          <td><StatusBadge status={gap.status} label={humanize(gap.status)} /></td>
+                          <td><StatusBadge status={gap.status} label={controlStatusLabel(gap.status, t)} /></td>
                           <td><span style={{ fontSize: 11.5 }}>{gap.recommendation}</span></td>
                         </tr>
                       ))}
@@ -1543,7 +1608,7 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
             <div className="form-grid">
               <Field label={t("controlStatus")} htmlFor={`${idPrefix}-control-status`} required>
                 <Select id={`${idPrefix}-control-status`} value={controlStatus} onChange={(event) => setControlStatus(event.target.value)} data-testid="compliance-control-status">
-                  {CONTROL_STATUSES.map((value) => <option key={value} value={value}>{humanize(value)}</option>)}
+                  {CONTROL_STATUSES.map((value) => <option key={value} value={value}>{controlStatusLabel(value, t)}</option>)}
                 </Select>
               </Field>
               <Field label={t("owner")} htmlFor={`${idPrefix}-control-owner`}>
@@ -1606,7 +1671,7 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
               ) : (
                 Object.entries(gapQuery.data.gaps_by_severity).map(([severity, count]) => (
                   <Badge key={severity} tone={severity === "critical" ? "critical" : severity === "high" ? "danger" : severity === "medium" ? "warning" : "accent"}>
-                    {humanize(severity)} {count}
+                    {t(`common.${severity}`)} {count}
                   </Badge>
                 ))
               )}
@@ -1621,14 +1686,14 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
                       <div className="row wrap" style={{ gap: 6 }}>
                         <span className="mono" style={{ fontSize: 10, color: "var(--accent)" }}>{gap.control_code}</span>
                         <Badge tone={gap.severity === "critical" ? "critical" : gap.severity === "high" ? "danger" : gap.severity === "medium" ? "warning" : "accent"}>
-                          {humanize(gap.severity)}
+                          {t(`common.${gap.severity}`)}
                         </Badge>
                       </div>
                       <div className="item-title" style={{ marginTop: 2 }}>{gap.title}</div>
                       <div className="item-sub">{gap.recommendation}</div>
                     </div>
                     <div className="item-side">
-                      <StatusBadge status={gap.status} label={humanize(gap.status)} />
+                      <StatusBadge status={gap.status} label={controlStatusLabel(gap.status, t)} />
                     </div>
                   </div>
                 ))}
@@ -1645,7 +1710,7 @@ function AssessmentsTab({ canAssess }: { canAssess: boolean }) {
 /* ------------------------------------------------------------------ reports */
 
 function ReportsTab({ canGenerate }: { canGenerate: boolean }) {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -1725,6 +1790,8 @@ function ReportsTab({ canGenerate }: { canGenerate: boolean }) {
     }
   };
 
+  const reportFiltersActive = Boolean(q || kind);
+
   const startIso = toIso(periodStart);
   const endIso = toIso(periodEnd);
   const periodValid = Boolean(
@@ -1742,7 +1809,7 @@ function ReportsTab({ canGenerate }: { canGenerate: boolean }) {
         <div style={{ minWidth: 220 }}>
           <div className="row wrap" style={{ gap: 6 }}>
             <Badge tone="accent">{reportKindLabel(row.kind, t)}</Badge>
-            <Badge tone={row.status === "generated" ? "success" : "neutral"}>{humanize(row.status)}</Badge>
+            <Badge tone={row.status === "generated" ? "success" : "neutral"}>{row.status === "generated" ? t("generatedAt") : humanize(row.status)}</Badge>
           </div>
           <div className="primary-cell" style={{ marginTop: 3 }}>{row.title}</div>
           <div className="cell-sub mono">{t("checksum")}: {row.checksum.slice(0, 16)}…</div>
@@ -1843,20 +1910,28 @@ function ReportsTab({ canGenerate }: { canGenerate: boolean }) {
           </div>
         ) : (
           <>
-            <DataTable
-              columns={columns}
-              rows={listQuery.data?.items}
-              rowKey={(row) => row.id}
-              loading={listQuery.isLoading}
-              empty={
-                <EmptyState
-                  icon={FileText}
-                  title={t("noReports")}
-                  description={t("noReportsHint")}
-                  action={canGenerate ? <Button size="sm" onClick={() => setGenerateOpen(true)}>{t("generateReport")}</Button> : undefined}
-                />
-              }
-            />
+            <div data-testid="compliance-report-table">
+              <DataTable
+                columns={columns}
+                rows={listQuery.data?.items}
+                rowKey={(row) => row.id}
+                loading={listQuery.isLoading}
+                empty={
+                  <EmptyState
+                    icon={FileText}
+                    title={reportFiltersActive ? t("noReportMatches") : t("noReports")}
+                    description={reportFiltersActive ? t("filterClear") : t("noReportsHint")}
+                    action={
+                      reportFiltersActive ? (
+                        <Button size="sm" onClick={() => { setQ(""); setKind(""); setPage(1); }}>{t("filterClear")}</Button>
+                      ) : canGenerate ? (
+                        <Button size="sm" onClick={() => setGenerateOpen(true)}>{t("generateReport")}</Button>
+                      ) : undefined
+                    }
+                  />
+                }
+              />
+            </div>
             <div style={{ padding: "0 16px 12px" }}>
               <Pagination meta={listQuery.data?.meta} onPage={setPage} />
             </div>
@@ -1992,6 +2067,10 @@ function ReportsTab({ canGenerate }: { canGenerate: boolean }) {
               <span>{detailQuery.data.disclaimer}</span>
             </div>
             <div>
+              <div className="section-label">{t("reportMetadata")}</div>
+              <pre className="code-block" style={{ maxHeight: 160 }}>{JSON.stringify(detailQuery.data.metadata, null, 2)}</pre>
+            </div>
+            <div>
               <div className="section-label">Markdown</div>
               <pre className="code-block" style={{ maxHeight: 320 }}>{detailQuery.data.content_md}</pre>
             </div>
@@ -2018,7 +2097,7 @@ function ReportsTab({ canGenerate }: { canGenerate: boolean }) {
 /* --------------------------------------------------------------------- page */
 
 export function CompliancePage() {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { can, session } = useAuth();
   const { lang } = useI18n();
   const [tab, setTab] = useState<TabKey>("frameworks");
@@ -2056,7 +2135,7 @@ export function CompliancePage() {
         subtitle={t("subtitle")}
         actions={
           <>
-            <Badge tone="warning"><ShieldCheck size={11} /> {t("disclaimer").slice(0, 34)}…</Badge>
+            <Badge tone="warning"><ShieldCheck size={11} /> {t("shortDisclaimer")}</Badge>
             <Button
               variant="ghost"
               icon={RefreshCw}
@@ -2105,8 +2184,8 @@ export function CompliancePage() {
               <div className="kpi-foot">{t("frameworks")}: {formatNumber(summary?.frameworks.length ?? 0)}</div>
             </div>
             <div className="card kpi">
-              <div className="kpi-label"><FileText size={13} style={{ color: "var(--muted)" }} />{t("tabReports")}</div>
-              <div className="kpi-value">{canReadReports ? "→" : "—"}</div>
+              <div className="kpi-label"><FileText size={13} style={{ color: "var(--muted)" }} />{t("reportKinds")}</div>
+              <div className="kpi-value">{canReadReports ? formatNumber(REPORT_KINDS.length) : "—"}</div>
               <div className="kpi-foot">{t("generateReport")}</div>
             </div>
           </div>

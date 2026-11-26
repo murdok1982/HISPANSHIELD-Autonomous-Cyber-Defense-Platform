@@ -23,7 +23,9 @@ WORKDIR /app
 COPY backend/pyproject.toml /app/backend/
 COPY backend/app /app/backend/app
 COPY backend/migrations /app/backend/migrations
+COPY backend/scripts /app/backend/scripts
 COPY backend/alembic.ini /app/backend/
+COPY scripts /app/scripts
 RUN pip install --no-cache-dir /app/backend \
  && chown -R hispanshield:hispanshield /app
 COPY --from=frontend-build --chown=hispanshield:hispanshield /build/frontend/dist /app/frontend/dist

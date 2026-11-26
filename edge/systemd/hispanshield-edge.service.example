@@ -78,8 +78,9 @@ SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources @mount @debug
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 IPAddressDeny=any
-# Allow only the core and loopback. Replace 203.0.113.10 with the core address
-# (or use IPAddressAllow=link-local plus a local reverse proxy / WireGuard IP).
+# Allow only the core and loopback. Replace 203.0.113.10 with the core address.
+# If --url uses a DNS name, also allow the resolver (e.g. the server address
+# from /etc/resolv.conf) or pin the core IP in /etc/hosts.
 IPAddressAllow=localhost 203.0.113.10
 
 StateDirectory=hispanshield-edge

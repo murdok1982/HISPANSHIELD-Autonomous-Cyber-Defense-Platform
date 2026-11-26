@@ -29,7 +29,7 @@ from app.core.db import utcnow
 from app.core.errors import Forbidden, NotFound, Unauthorized, ValidationFailure
 from app.core.rbac import ALL_PERMISSIONS, effective_permissions
 from app.core.schemas import PasswordPolicyError, validate_password_strength
-from app.models.core import ApiToken, Membership, Organization, User
+from app.models.core import ApiToken, BreakGlassGrant, Membership, Organization, User
 from app.models.core import Session as AuthSession
 
 MAX_FAILED_ATTEMPTS = 5
@@ -391,19 +391,24 @@ def create_api_token(
 
 def serialize_session(db: Session, user: User, org: Organization, session: AuthSession, role: str) -> dict:
     orgs = user_organizations(db, user)
-    if user.is_platform_admin:
-        known = {item[0].id for item in orgs}
-        all_active = db.execute(
-            select(Organization)
-            .where(Organization.deleted_at.is_(None), Organization.status == "active")
-            .order_by(Organization.name)
-        ).scalars()
-        for candidate in all_active:
-            if candidate.id not in known:
-                orgs.append((candidate, "platform_admin"))
+    if user.is_platform_admin and org.id not in {item[0].id for item in orgs}:
+        # The selected organization is shown, but it is NOT a membership and
+        # access remains governed by an active break-glass grant.
+        orgs.append((org, "platform_admin"))
         orgs.sort(key=lambda item: item[0].name.lower())
     return {
-        "user": user,
+        "user": {
+            "id": user.id,
+            "email": user.email,
+            "full_name": user.full_name,
+            "status": user.status,
+            "is_platform_admin": user.is_platform_admin,
+            "mfa_enabled": user.mfa_enabled,
+            "locale": user.locale,
+            "timezone": user.timezone,
+            "last_login_at": user.last_login_at,
+            "created_at": user.created_at,
+        },
         "organization": {
             "id": org.id,
             "slug": org.slug,
@@ -428,3 +433,73 @@ def serialize_session(db: Session, user: User, org: Organization, session: AuthS
         "autonomy_level": org.autonomy_level,
         "expires_at": session.expires_at,
     }
+
+
+def active_break_glass(db: Session, user_id: UUID, org_id: UUID) -> BreakGlassGrant | None:
+    now = utcnow()
+    return db.execute(
+        select(BreakGlassGrant)
+        .where(
+            BreakGlassGrant.user_id == user_id,
+            BreakGlassGrant.org_id == org_id,
+            BreakGlassGrant.revoked_at.is_(None),
+            BreakGlassGrant.expires_at > now,
+        )
+        .order_by(BreakGlassGrant.expires_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def create_break_glass(
+    db: Session, *, user: User, org: Organization, reason: str, ticket: str, request_id: str | None = None
+) -> BreakGlassGrant:
+    if not user.is_platform_admin:
+        raise Forbidden("Break-glass access is reserved for platform administrators")
+    cleaned = reason.strip()
+    if len(cleaned) < 10:
+        raise ValidationFailure(
+            [{"field": "reason", "message": "A justification of at least 10 characters is required"}]
+        )
+    grant = BreakGlassGrant(
+        user_id=user.id,
+        org_id=org.id,
+        reason=cleaned[:1000],
+        ticket=ticket.strip()[:80],
+        expires_at=utcnow() + timedelta(minutes=settings.break_glass_ttl_minutes),
+    )
+    db.add(grant)
+    db.flush()
+    append_audit(
+        db,
+        org_id=org.id,
+        action="auth.break_glass.grant",
+        resource_type="organization",
+        resource_id=str(org.id),
+        actor_id=str(user.id),
+        actor_email=user.email,
+        payload={
+            "grant_id": str(grant.id),
+            "reason": cleaned,
+            "ticket": grant.ticket,
+            "expires_at": grant.expires_at.isoformat(),
+        },
+        request_id=request_id,
+    )
+    return grant
+
+
+def revoke_break_glass(db: Session, grant: BreakGlassGrant, *, actor: User) -> None:
+    if grant.revoked_at is not None:
+        return
+    grant.revoked_at = utcnow()
+    grant.revoked_by = actor.id
+    append_audit(
+        db,
+        org_id=grant.org_id,
+        action="auth.break_glass.revoke",
+        resource_type="organization",
+        resource_id=str(grant.org_id),
+        actor_id=str(actor.id),
+        actor_email=actor.email,
+        payload={"grant_id": str(grant.id), "ticket": grant.ticket},
+    )

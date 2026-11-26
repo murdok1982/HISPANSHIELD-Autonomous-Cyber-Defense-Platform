@@ -118,7 +118,8 @@ class PfSenseAdapter(HttpAdapter):
                 },
                 attempts=1,
             )
-            entry_data = created.data.get("data") if isinstance(created.data.get("data"), dict) else {}
+            raw_entry_data = created.data.get("data")
+            entry_data: dict[str, Any] = raw_entry_data if isinstance(raw_entry_data, dict) else {}
             self._apply()
             return AdapterResult(
                 ok=True,

@@ -82,7 +82,8 @@ class WazuhAdapter(HttpAdapter):
             timeout=15.0,
         )
         payload = result.data or {}
-        data = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+        raw_data = payload.get("data")
+        data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else payload
         token = data.get("token") or payload.get("token")
         if not isinstance(token, str) or not token.strip():
             raise ConnectorError("Wazuh did not return a JWT token")
@@ -148,7 +149,8 @@ class WazuhAdapter(HttpAdapter):
             if self.config.get("alert_query"):
                 query["q"] = str(self.config["alert_query"])[:500]
             result = self.request("GET", "/alerts", headers=self._headers(), params=query)
-            data = result.data.get("data") if isinstance(result.data.get("data"), dict) else result.data
+            raw_data = result.data.get("data")
+            data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else result.data
             items = data.get("affected_items") if isinstance(data, dict) else None
             return AdapterResult(
                 ok=True,
@@ -159,7 +161,8 @@ class WazuhAdapter(HttpAdapter):
             result = self.request(
                 "GET", "/agents", headers=self._headers(), params={"limit": limit, "sort": "-lastKeepAlive"}
             )
-            data = result.data.get("data") if isinstance(result.data.get("data"), dict) else result.data
+            raw_agents = result.data.get("data")
+            data = raw_agents if isinstance(raw_agents, dict) else result.data
             items = data.get("affected_items") if isinstance(data, dict) else None
             return AdapterResult(ok=True, status_code=result.status_code, data={"items": (items or [])[:limit]})
         if capability == "active_response":

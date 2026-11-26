@@ -12,8 +12,8 @@ import {
 } from "lucide-react";
 import { api, errorMessage, type Page } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { useI18n, usePageCopy, type Lang } from "../lib/i18n";
-import { downloadCsv, formatDateTime, formatNumber, formatTime, humanize, relativeTime } from "../lib/format";
+import { useI18n, type Lang } from "../lib/i18n";
+import { downloadCsv, formatDateTime, formatNumber, formatTime, relativeTime } from "../lib/format";
 import {
   Badge,
   Button,
@@ -25,14 +25,13 @@ import {
   Input,
   Modal,
   PageHeader,
-  PageSkeleton,
   Pagination,
   Select,
   StatusBadge,
   useToast,
   type Column,
 } from "../components/ui";
-import { CopyButton, MetaRows, PreBlock, hashPrefix } from "../components/features/govern/common";
+import { CopyButton, MetaRows, PreBlock, hashPrefix, useGovernCopy } from "../components/features/govern/common";
 
 /* --------------------------------------------------------------- contracts */
 
@@ -88,6 +87,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     outcome: "Resultado",
     actor: "Actor",
     actorHint: "Email exacto del actor.",
+    actorType: "Tipo de actor",
     all: "Todos",
     clear: "Limpiar filtros",
     applied: "Filtros activos",
@@ -141,9 +141,9 @@ const COPY: Record<Lang, Record<string, string>> = {
     actionFilter: "Acción exacta",
     resourceFilter: "Recurso exacto",
     close: "Cerrar",
-    outcomeSuccess: "success",
-    outcomeFailure: "failure",
-    outcomePending: "pending",
+    outcomeSuccess: "Correcto",
+    outcomeFailure: "Fallido",
+    outcomePending: "Pendiente",
     rowOpen: "Abrir",
     entryHashPrefix: "Prefijo de hash",
     pageNote: "Ordenado de más reciente a más antiguo.",
@@ -164,6 +164,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     outcome: "Outcome",
     actor: "Actor",
     actorHint: "Exact actor email.",
+    actorType: "Actor type",
     all: "All",
     clear: "Clear filters",
     applied: "Active filters",
@@ -229,8 +230,13 @@ const COPY: Record<Lang, Record<string, string>> = {
 
 const EXPORT_LIMIT = 5000;
 
+function csvSafe(value: unknown): string {
+  const text = String(value ?? "");
+  return /^[=+\-@\t\r]/.test(text) ? `'${text}` : text;
+}
+
 export function AuditPage() {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const { can } = useAuth();
   const toast = useToast();
@@ -301,20 +307,20 @@ export function AuditPage() {
         `audit-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`,
         ["created_at", "actor", "actor_type", "action", "resource_type", "resource_id", "outcome", "ip_address", "request_id", "hash", "prev_hash"],
         slice.map((row) => [
-          row.created_at,
-          row.actor_email ?? row.actor_id ?? "",
-          row.actor_type,
-          row.action,
-          row.resource_type,
-          row.resource_id ?? "",
-          row.outcome,
-          row.ip_address ?? "",
-          row.request_id ?? "",
-          row.hash,
-          row.prev_hash ?? "",
+          csvSafe(row.created_at),
+          csvSafe(row.actor_email ?? row.actor_id ?? ""),
+          csvSafe(row.actor_type),
+          csvSafe(row.action),
+          csvSafe(row.resource_type),
+          csvSafe(row.resource_id ?? ""),
+          csvSafe(row.outcome),
+          csvSafe(row.ip_address ?? ""),
+          csvSafe(row.request_id ?? ""),
+          csvSafe(row.hash),
+          csvSafe(row.prev_hash ?? ""),
         ]),
       );
-      toast.push(limited ? t("exportTruncated") : t("exportDone"), limited ? "warning" : "success");
+      toast.push(limited ? t("exportTruncated") : t("exportDone"), limited ? "info" : "success");
     } catch (error) {
       toast.push(`${t("exportFailed")} ${errorMessage(error)}`, "error");
     } finally {
@@ -510,10 +516,10 @@ export function AuditPage() {
         ) : null}
       </Card>
 
+      <div style={{ marginTop: 12 }} data-testid="audit-table-card">
       <Card
         title={t("table")}
         subtitle={auditQuery.data ? `${formatNumber(auditQuery.data.meta.total)} · ${t("pageNote")}` : t("pageNote")}
-        style={{ marginTop: 12 }}
         bodyClassName=""
         footer={<span>{t("filtersHint")}</span>}
       >
@@ -603,6 +609,7 @@ export function AuditPage() {
           </div>
         )}
       </Card>
+      </div>
 
       <Modal
         open={selected !== null}
@@ -623,7 +630,7 @@ export function AuditPage() {
               items={[
                 { label: t("timestamp"), value: formatDateTime(selected.created_at, lang) },
                 { label: t("actorColumn"), value: selected.actor_email ?? selected.actor_id ?? "—" },
-                { label: "actor_type", value: selected.actor_type },
+                { label: t("actorType"), value: selected.actor_type },
                 { label: t("resource"), value: selected.resource_id ?? selected.resource_type },
                 { label: t("ip"), value: selected.ip_address ?? "—" },
                 { label: t("requestId"), value: selected.request_id ?? "—" },

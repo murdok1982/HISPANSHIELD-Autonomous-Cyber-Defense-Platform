@@ -55,7 +55,7 @@ interface AuthContextValue {
   login: (email: string, password: string, orgSlug?: string) => Promise<LoginResult>;
   verifyMfa: (challengeToken: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
-  switchOrganization: (orgId: string) => Promise<void>;
+  switchOrganization: (orgId: string, reason?: string) => Promise<void>;
   refresh: () => Promise<void>;
   can: (permission: string) => boolean;
 }
@@ -142,8 +142,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setActiveOrg(null);
   }, []);
 
-  const switchOrganization = useCallback(async (orgId: string) => {
-    const result = await api.post<Session>("/auth/switch-org", { org_id: orgId });
+  const switchOrganization = useCallback(async (orgId: string, reason?: string) => {
+    const result = await api.post<Session>("/auth/switch-org", {
+      org_id: orgId,
+      ...(reason ? { reason } : {}),
+    });
     setSession(result);
     storeOrg(result);
     // Reload so all cached queries are re-scoped to the new tenant.

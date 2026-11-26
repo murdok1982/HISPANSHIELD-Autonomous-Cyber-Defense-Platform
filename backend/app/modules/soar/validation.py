@@ -450,7 +450,7 @@ def evaluate_condition(condition: dict[str, Any] | None, context: dict[str, Any]
         return True
     value = _lookup(context, condition["field"])
     op = condition["op"]
-    expected = condition.get("value")
+    expected: Any = condition.get("value")
     try:
         if op == "exists":
             return value is not None

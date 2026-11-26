@@ -19,12 +19,17 @@ async function signIn(page: Page) {
   await page.getByRole("button", { name: /acceder|sign in/i }).click();
   await expect(page.getByRole("heading", { name: /visión ejecutiva|executive overview/i })).toBeVisible();
   const selector = page.getByLabel(/organización activa|active organization/i);
-  if ((await selector.inputValue()) !== "") {
+  const selectorVisible = await selector.isVisible().catch(() => false);
+  if (selectorVisible && (await selector.inputValue()) !== "") {
     const option = selector.locator("option", { hasText: DEMO_ORG });
     if (await option.count()) {
-      await selector.selectOption({ label: DEMO_ORG });
-      await page.waitForLoadState("load");
-      await expect(page.getByRole("heading", { name: /visión ejecutiva|executive overview/i })).toBeVisible();
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: "load" }).catch(() => null),
+        selector.selectOption({ label: DEMO_ORG }),
+      ]);
+      await page.waitForLoadState("domcontentloaded");
+      await expect(page.getByRole("heading", { name: /visión ejecutiva|executive overview/i })).toBeVisible({ timeout: 20_000 });
+      await page.waitForTimeout(400);
     }
   }
 }
@@ -49,8 +54,8 @@ test.describe("authentication and tenant scoping", () => {
 test.describe("SOC command center", () => {
   test("executive overview renders real KPI data and risk", async ({ page }) => {
     await signIn(page);
-    await expect(page.getByText(/índice de riesgo|risk index/i)).toBeVisible();
-    await expect(page.getByTestId("page-overview").or(page.locator("body"))).toBeVisible();
+    await expect(page.getByText(/índice de riesgo|risk index/i).first()).toBeVisible();
+    await expect(page.getByTestId("page-overview")).toBeVisible();
     await expect(page.getByText(/incidentes recientes|recent incidents/i)).toBeVisible();
     await page.screenshot({ path: "test-results/overview.png", fullPage: true });
   });
@@ -60,7 +65,7 @@ test.describe("SOC command center", () => {
     await page.getByRole("link", { name: /centro de mando soc|soc command center/i }).click();
     await expect(page.getByRole("heading", { name: /centro de mando soc|soc command center/i })).toBeVisible();
     await page.getByRole("link", { name: /gestión de incidentes|incident management/i }).click();
-    await expect(page.getByRole("heading", { name: /incidentes|incidents/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /incidentes|incidents/i }).first()).toBeVisible();
     await page.screenshot({ path: "test-results/incidents.png", fullPage: true });
   });
 
@@ -76,7 +81,7 @@ test.describe("governance", () => {
   test("audit center verifies the hash chain", async ({ page }) => {
     await signIn(page);
     await page.goto("/audit");
-    await expect(page.getByRole("heading", { name: /auditoría|audit/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /auditoría|audit/i }).first()).toBeVisible();
     const verify = page.getByRole("button", { name: /verificar|verify/i });
     if (await verify.count()) {
       await verify.first().click();

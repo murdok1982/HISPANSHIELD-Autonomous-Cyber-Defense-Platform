@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { api, errorMessage, type Page } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { useI18n, usePageCopy, type Lang } from "../lib/i18n";
+import { useI18n, type Lang } from "../lib/i18n";
 import { formatDateTime, formatNumber, humanize, relativeTime } from "../lib/format";
 import {
   Badge,
@@ -42,7 +42,6 @@ import {
   StatusBadge,
   StatusDot,
   Tabs,
-  Textarea,
   useToast,
   type Column,
 } from "../components/ui";
@@ -53,6 +52,7 @@ import {
   PreBlock,
   apiFieldErrors,
   parseJsonRecord,
+  useGovernCopy,
 } from "../components/features/govern/common";
 
 /* --------------------------------------------------------------- contracts */
@@ -309,6 +309,8 @@ const COPY: Record<Lang, Record<string, string>> = {
     status: "Estado",
     baseUrlShort: "URL",
     tls: "TLS",
+    tlsOn: "activo",
+    tlsOff: "desactivado",
     lastHealth: "Último health",
     actions: "Acciones",
     testHealth: "Probar salud",
@@ -368,6 +370,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     noServers: "Sin servidores MCP",
     noServersHint: "Registra un servidor JSON-RPC y descubre sus herramientas antes de aprobarlo.",
     server: "Servidor",
+    serverName: "Nombre del servidor",
     tool: "Herramienta",
     risk: "Riesgo",
     approved: "Aprobada",
@@ -405,7 +408,8 @@ const COPY: Record<Lang, Record<string, string>> = {
     ingestBody:
       "Las fuentes de ingesta (token de un solo uso, secreto HMAC, parser y contadores) se gestionan en el módulo SIEM para no duplicar su ciclo de vida. El enrollment de gateways edge se gestiona en su propia pantalla.",
     ingestSiem: "Abrir SIEM",
-    ingestEdge: "Abrir gateways edge",
+    ingestEdge: "Gateways edge",
+    brokerBadge: "Escrituras vía broker",
     ingestConnectorNote:
       "Los conectores de esta pantalla pueden asociarse a fuentes de ingesta desde SIEM; el token y el secreto HMAC solo se muestran una vez al crearlos.",
     ingestChecklist: "Lista de verificación operativa",
@@ -514,6 +518,8 @@ const COPY: Record<Lang, Record<string, string>> = {
     status: "Status",
     baseUrlShort: "URL",
     tls: "TLS",
+    tlsOn: "on",
+    tlsOff: "off",
     lastHealth: "Last health",
     actions: "Actions",
     testHealth: "Test health",
@@ -573,6 +579,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     noServers: "No MCP servers",
     noServersHint: "Register a JSON-RPC server and discover its tools before approval.",
     server: "Server",
+    serverName: "Server name",
     tool: "Tool",
     risk: "Risk",
     approved: "Approved",
@@ -610,7 +617,8 @@ const COPY: Record<Lang, Record<string, string>> = {
     ingestBody:
       "Ingest sources (one-time token, HMAC secret, parser and counters) are managed in the SIEM module to avoid duplicating their lifecycle. Edge gateway enrollment lives on its own screen.",
     ingestSiem: "Open SIEM",
-    ingestEdge: "Open edge gateways",
+    ingestEdge: "Edge gateways",
+    brokerBadge: "Writes via broker",
     ingestConnectorNote:
       "Connectors on this screen can be linked to ingest sources from SIEM; the token and HMAC secret are shown exactly once on creation.",
     ingestChecklist: "Operational checklist",
@@ -678,6 +686,18 @@ function trustLabel(level: string, t: (key: string) => string): string {
   return humanize(level);
 }
 
+function connectorStatusLabel(value: string, t: (key: string) => string): string {
+  const key = `status.${value}`;
+  const translated = t(key);
+  return translated === key ? humanize(value) : translated;
+}
+
+function riskLabel(level: string, t: (key: string) => string): string {
+  const key = `common.${level.toLowerCase()}`;
+  const translated = t(key);
+  return translated === key ? humanize(level) : translated;
+}
+
 function summaryCell(entry: Record<string, unknown>, keys: string[]): string {
   for (const key of keys) {
     const value = entry[key];
@@ -722,7 +742,7 @@ function ConnectorsTab({
   canWrite: boolean;
   canExecute: boolean;
 }) {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -985,9 +1005,9 @@ function ConnectorsTab({
       width: "150px",
       render: (row) => (
         <div className="stack" style={{ gap: 3 }}>
-          <StatusBadge status={row.enabled ? row.status : "disabled"} label={row.enabled ? humanize(row.status) : t("statusDisabled")} />
+          <StatusBadge status={row.enabled ? row.status : "disabled"} label={row.enabled ? connectorStatusLabel(row.status, t) : t("statusDisabled")} />
           <span className="mono" style={{ fontSize: 10, color: row.verify_tls ? "var(--success)" : "var(--danger)" }}>
-            {t("tls")}: {row.verify_tls ? "on" : "off"}
+            {t("tls")}: {row.verify_tls ? t("tlsOn") : t("tlsOff")}
           </span>
         </div>
       ),
@@ -1119,29 +1139,33 @@ function ConnectorsTab({
   ];
 
   const invokeOptions = invokeFor ? adapterByType.get(invokeFor.connector_type)?.capabilities.filter((capability) => capability.direction === "read") ?? [] : [];
+  const invokeParsed = parseJsonRecord(invokeParams);
   const filtersActive = Boolean(q || status);
 
   return (
     <div className="stack" data-testid="integrations-connectors">
+      {healthQuery.isError ? (
+        <ErrorBanner message={errorMessage(healthQuery.error)} onRetry={() => void healthQuery.refetch()} />
+      ) : null}
       <div className="kpi-grid">
         <div className="card kpi">
           <div className="kpi-label"><Plug size={13} style={{ color: "var(--accent)" }} />{t("totalConnectors")}</div>
-          <div className="kpi-value">{formatNumber(healthQuery.data?.total ?? listQuery.data?.meta.total ?? 0)}</div>
+          <div className="kpi-value">{healthQuery.isLoading ? "—" : formatNumber(healthQuery.data?.total ?? listQuery.data?.meta.total ?? 0)}</div>
           <div className="kpi-foot">{t("enabledCount")}: {formatNumber(healthQuery.data?.enabled ?? 0)}</div>
         </div>
         <div className="card kpi">
           <div className="kpi-label"><ShieldCheck size={13} style={{ color: "var(--success)" }} />{t("healthSummary")}</div>
-          <div className="kpi-value kpi-success">{formatNumber(healthQuery.data?.by_status.healthy ?? 0)}</div>
-          <div className="kpi-foot">{t("byStatus")}: {Object.entries(healthQuery.data?.by_status ?? {}).map(([key, value]) => `${humanize(key)} ${value}`).join(" · ") || "—"}</div>
+          <div className="kpi-value kpi-success">{healthQuery.isLoading ? "—" : formatNumber(healthQuery.data?.by_status.healthy ?? 0)}</div>
+          <div className="kpi-foot">{t("byStatus")}: {Object.entries(healthQuery.data?.by_status ?? {}).map(([key, value]) => `${connectorStatusLabel(key, t)} ${value}`).join(" · ") || "—"}</div>
         </div>
         <div className="card kpi">
           <div className="kpi-label"><RefreshCw size={13} style={{ color: "var(--warning)" }} />{t("staleConnectors")}</div>
-          <div className="kpi-value kpi-warning">{formatNumber(healthQuery.data?.stale_count ?? 0)}</div>
+          <div className="kpi-value kpi-warning">{healthQuery.isLoading ? "—" : formatNumber(healthQuery.data?.stale_count ?? 0)}</div>
           <div className="kpi-foot">{formatDateTime(healthQuery.data?.generated_at, lang)}</div>
         </div>
         <div className="card kpi">
           <div className="kpi-label"><ShieldAlert size={13} style={{ color: "var(--danger)" }} />{t("connectorErrors")}</div>
-          <div className="kpi-value kpi-danger">{formatNumber(healthQuery.data?.errors.length ?? 0)}</div>
+          <div className="kpi-value kpi-danger">{healthQuery.isLoading ? "—" : formatNumber(healthQuery.data?.errors.length ?? 0)}</div>
           <div className="kpi-foot">{t("catalogTitle")}: {formatNumber(healthQuery.data?.catalog_size ?? 0)}</div>
         </div>
       </div>
@@ -1281,20 +1305,22 @@ function ConnectorsTab({
           </div>
         ) : (
           <>
-            <DataTable
-              columns={columns}
-              rows={listQuery.data?.items}
-              rowKey={(row) => row.id}
-              loading={listQuery.isLoading}
-              empty={
-                <EmptyState
-                  icon={Plug}
-                  title={filtersActive ? t("noFilter") : t("noConnectors")}
-                  description={filtersActive ? t("clearFilters") : t("noConnectorsHint")}
-                  action={!filtersActive && canWrite ? <Button size="sm" onClick={() => openCreate()}>{t("createConnector")}</Button> : undefined}
-                />
-              }
-            />
+            <div data-testid="connector-table">
+              <DataTable
+                columns={columns}
+                rows={listQuery.data?.items}
+                rowKey={(row) => row.id}
+                loading={listQuery.isLoading}
+                empty={
+                  <EmptyState
+                    icon={Plug}
+                    title={filtersActive ? t("noFilter") : t("noConnectors")}
+                    description={filtersActive ? t("clearFilters") : t("noConnectorsHint")}
+                    action={!filtersActive && canWrite ? <Button size="sm" onClick={() => openCreate()}>{t("createConnector")}</Button> : undefined}
+                  />
+                }
+              />
+            </div>
             <div style={{ padding: "0 16px 12px" }}>
               <Pagination meta={listQuery.data?.meta} onPage={setPage} />
             </div>
@@ -1429,7 +1455,7 @@ function ConnectorsTab({
           <div className="stack">
             <div className="row wrap">
               <Badge tone={probe.result.ok ? "success" : "danger"}>{probe.result.ok ? t("ok") : t("failed")}</Badge>
-              <Badge tone="neutral">{humanize(probe.result.status)}</Badge>
+              <Badge tone="neutral">{connectorStatusLabel(probe.result.status, t)}</Badge>
               <span className="dim" style={{ fontSize: 11 }}>{probe.name}</span>
             </div>
             <MetaRows
@@ -1486,13 +1512,15 @@ function ConnectorsTab({
             <ErrorBanner message={errorMessage(runsQuery.error)} onRetry={() => void runsQuery.refetch()} />
           ) : (
             <>
-              <DataTable
-                columns={runColumns}
-                rows={runsQuery.data?.items}
-                rowKey={(row) => row.id}
-                loading={runsQuery.isLoading}
-                empty={<EmptyState icon={ListTree} title={t("noRuns")} />}
-              />
+              <div data-testid="connector-runs-table">
+                <DataTable
+                  columns={runColumns}
+                  rows={runsQuery.data?.items}
+                  rowKey={(row) => row.id}
+                  loading={runsQuery.isLoading}
+                  empty={<EmptyState icon={ListTree} title={t("noRuns")} />}
+                />
+              </div>
               <Pagination meta={runsQuery.data?.meta} onPage={setRunsPage} />
             </>
           )}
@@ -1510,16 +1538,15 @@ function ConnectorsTab({
             <Button
               variant="primary"
               loading={invokeMutation.isPending}
-              disabled={!invokeCapability || !parseJsonRecord(invokeParams).ok}
+              disabled={!invokeCapability || !invokeParsed.ok}
               onClick={() => {
                 if (!invokeFor) return;
-                const parsed = parseJsonRecord(invokeParams);
-                if (!parsed.ok) {
-                  setInvokeError(parsed.error);
+                if (!invokeParsed.ok) {
+                  setInvokeError(invokeParsed.error);
                   return;
                 }
                 setInvokeError(null);
-                invokeMutation.mutate({ connector: invokeFor, capability: invokeCapability, params: parsed.value });
+                invokeMutation.mutate({ connector: invokeFor, capability: invokeCapability, params: invokeParsed.value });
               }}
               data-testid="connector-invoke-submit"
             >
@@ -1547,7 +1574,7 @@ function ConnectorsTab({
                 value={invokeParams}
                 onChange={setInvokeParams}
                 hint={t("paramsHint")}
-                error={!parseJsonRecord(invokeParams).ok ? parseJsonRecord(invokeParams).error : undefined}
+                error={invokeParsed.ok ? undefined : invokeParsed.error}
                 testId="connector-invoke-params"
               />
             </>
@@ -1575,7 +1602,7 @@ function ConnectorsTab({
 /* ---------------------------------------------------------------------- MCP */
 
 function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boolean }) {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -1630,6 +1657,8 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
         approved: toolsApproved === "" ? undefined : toolsApproved === "approved",
       }),
   });
+
+  const toolArgsParsed = parseJsonRecord(toolArguments);
 
   const serverMap = useMemo(() => {
     const map = new Map<string, MCPServer>();
@@ -1747,7 +1776,7 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
       width: "130px",
       render: (row) => (
         <div className="stack" style={{ gap: 3 }}>
-          <StatusBadge status={row.enabled ? row.status : "disabled"} label={row.enabled ? humanize(row.status) : t("statusDisabled")} />
+          <StatusBadge status={row.enabled ? row.status : "disabled"} label={row.enabled ? connectorStatusLabel(row.status, t) : t("statusDisabled")} />
           {row.approved_by ? <span className="cell-sub">{t("approvedBy")}: {row.approved_by}</span> : <span className="cell-sub">{t("pending")}</span>}
         </div>
       ),
@@ -1799,7 +1828,7 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
       key: "risk",
       header: t("risk"),
       width: "100px",
-      render: (row) => <Badge tone={RISK_TONE[row.risk_level] ?? "neutral"}>{humanize(row.risk_level)}</Badge>,
+      render: (row) => <Badge tone={RISK_TONE[row.risk_level] ?? "neutral"}>{riskLabel(row.risk_level, t)}</Badge>,
     },
     {
       key: "approved",
@@ -1923,20 +1952,22 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
           </div>
         ) : (
           <>
-            <DataTable
-              columns={serverColumns}
-              rows={serversQuery.data?.items}
-              rowKey={(row) => row.id}
-              loading={serversQuery.isLoading}
-              empty={
-                <EmptyState
-                  icon={ServerCog}
-                  title={t("noServers")}
-                  description={t("noServersHint")}
-                  action={canWrite ? <Button size="sm" onClick={() => setServerFormOpen(true)}>{t("createServer")}</Button> : undefined}
-                />
-              }
-            />
+            <div data-testid="mcp-server-table">
+              <DataTable
+                columns={serverColumns}
+                rows={serversQuery.data?.items}
+                rowKey={(row) => row.id}
+                loading={serversQuery.isLoading}
+                empty={
+                  <EmptyState
+                    icon={ServerCog}
+                    title={t("noServers")}
+                    description={t("noServersHint")}
+                    action={canWrite ? <Button size="sm" onClick={() => setServerFormOpen(true)}>{t("createServer")}</Button> : undefined}
+                  />
+                }
+              />
+            </div>
             <div style={{ padding: "0 16px 12px" }}>
               <Pagination meta={serversQuery.data?.meta} onPage={setServerPage} />
             </div>
@@ -1972,13 +2003,15 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
           </div>
         ) : (
           <>
-            <DataTable
-              columns={toolColumns}
-              rows={toolsQuery.data?.items}
-              rowKey={(row) => row.id}
-              loading={toolsQuery.isLoading}
-              empty={<EmptyState icon={Cable} title={t("noTools")} description={t("noToolsHint")} />}
-            />
+            <div data-testid="mcp-tool-table">
+              <DataTable
+                columns={toolColumns}
+                rows={toolsQuery.data?.items}
+                rowKey={(row) => row.id}
+                loading={toolsQuery.isLoading}
+                empty={<EmptyState icon={Cable} title={t("noTools")} description={t("noToolsHint")} />}
+              />
+            </div>
             <div style={{ padding: "0 16px 12px" }}>
               <Pagination meta={toolsQuery.data?.meta} onPage={setToolsPage} />
             </div>
@@ -2015,7 +2048,7 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
         }
       >
         <div className="stack">
-          <Field label={t("connectorName")} htmlFor={`${idPrefix}-mcp-name`} error={serverFieldErrors.name} required>
+          <Field label={t("serverName")} htmlFor={`${idPrefix}-mcp-name`} error={serverFieldErrors.name} required>
             <Input id={`${idPrefix}-mcp-name`} value={serverName} maxLength={120} onChange={(event) => setServerName(event.target.value)} />
           </Field>
           <Field label={t("endpoint")} htmlFor={`${idPrefix}-mcp-endpoint`} error={serverFieldErrors.endpoint} required hint="https://host/mcp">
@@ -2093,7 +2126,7 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
           <div className="stack">
             <div className="notice notice-warning">{t("approveToolWarning")}</div>
             <div className="row wrap">
-              <Badge tone={RISK_TONE[approvingTool.risk_level] ?? "neutral"}>{humanize(approvingTool.risk_level)}</Badge>
+              <Badge tone={RISK_TONE[approvingTool.risk_level] ?? "neutral"}>{riskLabel(approvingTool.risk_level, t)}</Badge>
               <span className="mono" style={{ fontSize: 11 }}>{approvingTool.name}</span>
               <span className="dim" style={{ fontSize: 11 }}>{t("server")}: {serverMap.get(approvingTool.server_id)?.name ?? "—"}</span>
             </div>
@@ -2134,16 +2167,15 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
             <Button
               variant="primary"
               loading={executeMutation.isPending}
-              disabled={!parseJsonRecord(toolArguments).ok}
+              disabled={!toolArgsParsed.ok}
               onClick={() => {
                 if (!executingTool) return;
-                const parsed = parseJsonRecord(toolArguments);
-                if (!parsed.ok) {
-                  setExecutionError(parsed.error);
+                if (!toolArgsParsed.ok) {
+                  setExecutionError(toolArgsParsed.error);
                   return;
                 }
                 setExecutionError(null);
-                executeMutation.mutate({ tool: executingTool, args: parsed.value });
+                executeMutation.mutate({ tool: executingTool, args: toolArgsParsed.value });
               }}
               data-testid="mcp-execute-submit"
             >
@@ -2155,7 +2187,7 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
         {executingTool ? (
           <div className="stack">
             <div className="row wrap">
-              <Badge tone={RISK_TONE[executingTool.risk_level] ?? "neutral"}>{humanize(executingTool.risk_level)}</Badge>
+              <Badge tone={RISK_TONE[executingTool.risk_level] ?? "neutral"}>{riskLabel(executingTool.risk_level, t)}</Badge>
               <span className="mono" style={{ fontSize: 11 }}>{executingTool.name}</span>
               <span className="dim" style={{ fontSize: 11 }}>{t("server")}: {serverMap.get(executingTool.server_id)?.name ?? "—"}</span>
             </div>
@@ -2166,7 +2198,7 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
               label={t("arguments")}
               value={toolArguments}
               onChange={setToolArguments}
-              error={!parseJsonRecord(toolArguments).ok ? parseJsonRecord(toolArguments).error : undefined}
+              error={toolArgsParsed.ok ? undefined : toolArgsParsed.error}
               testId="mcp-execute-args"
             />
             {executionError ? <ErrorBanner message={executionError} /> : null}
@@ -2204,7 +2236,7 @@ function McpTab({ canWrite, canExecute }: { canWrite: boolean; canExecute: boole
 /* ----------------------------------------------------------------- ingest */
 
 function IngestPointerTab() {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   return (
     <div className="stack" data-testid="integrations-ingest">
       <Card title={t("ingestTitle")} subtitle={t("ingestBody")}>
@@ -2215,7 +2247,7 @@ function IngestPointerTab() {
           </div>
           <div className="row wrap" style={{ gap: 8 }}>
             <LinkButton to="/siem" variant="primary" icon={Activity}>{t("ingestSiem")}</LinkButton>
-            <LinkButton to="/edge" icon={Network}>{t("ingestEdge")}</LinkButton>
+            <span className="tag" style={{ alignSelf: "center" }}>{t("ingestEdge")}: /edge</span>
           </div>
           <div className="divider" />
           <div className="section-label">{t("ingestChecklist")}</div>
@@ -2236,7 +2268,7 @@ function IngestPointerTab() {
 /* -------------------------------------------------------------------- page */
 
 export function IntegrationsPage() {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { can } = useAuth();
   const [tab, setTab] = useState<TabKey>("connectors");
 
@@ -2274,13 +2306,7 @@ export function IntegrationsPage() {
         eyebrow={t("eyebrow")}
         title={t("title")}
         subtitle={t("subtitle")}
-        actions={
-          <>
-            {canWriteConnectors ? <Badge tone="accent"><Plug size={11} /> {t("tabConnectors")}</Badge> : null}
-            {canWriteMcp ? <Badge tone="warning"><ServerCog size={11} /> {t("tabMcp")}</Badge> : null}
-            <LinkButton to="/defence" icon={ShieldCheck}>{t("writeViaBroker").split(";")[0]}</LinkButton>
-          </>
-        }
+        actions={<Badge tone="warning"><ShieldCheck size={11} /> {t("brokerBadge")}</Badge>}
       />
 
       <div style={{ marginBottom: 12 }}>

@@ -101,6 +101,12 @@ function riskFactorLabel(factor: string, lang: string): string {
   return lang === "es" ? entry.es : entry.en;
 }
 
+function statusLabel(value: string, t: (key: string) => string): string {
+  const key = `status.${value}`;
+  const translated = t(key);
+  return translated === key ? humanize(value) : translated;
+}
+
 const riskTone: Record<string, string> = {
   critical: "var(--critical)",
   high: "var(--danger)",
@@ -176,7 +182,7 @@ export function ExecutiveOverviewPage() {
         }
       />
 
-      {data.data_classification === "demo" ? <div className="demo-banner" style={{ marginBottom: 12 }}>{t("common.demoData")} · seeded lab dataset</div> : null}
+      {data.data_classification === "demo" ? <div className="demo-banner" style={{ marginBottom: 12 }}>{t("common.demoData")} · {t("common.demoSeed")}</div> : null}
 
       <div className="kpi-grid" style={{ marginBottom: 12 }}>
         <Kpi
@@ -196,7 +202,7 @@ export function ExecutiveOverviewPage() {
           value={formatNumber(data.totals.open_alerts)}
           icon={ShieldAlert}
           tone="danger"
-          footer={<span>{alertsBySeverity.length ? alertsBySeverity.map(([key, value]) => `${humanize(key)} ${value}`).join(" · ") : t("soc.noAlerts")}</span>}
+          footer={<span>{alertsBySeverity.length ? alertsBySeverity.map(([key, value]) => `${t(`common.${key}`)} ${value}`).join(" · ") : t("soc.noAlerts")}</span>}
         />
         <Kpi
           label={t("overview.openVulns")}
@@ -217,7 +223,7 @@ export function ExecutiveOverviewPage() {
       <div className="split-main" style={{ marginBottom: 12 }}>
         <Card
           title={t("overview.riskScore")}
-          subtitle={humanize(data.risk.level)}
+          subtitle={t(`common.${data.risk.level}`)}
           actions={<Badge tone={data.risk.level === "critical" ? "critical" : data.risk.level === "high" ? "danger" : data.risk.level === "medium" ? "warning" : "success"}>{data.risk.level}</Badge>}
         >
           <div className="row wrap" style={{ gap: 24, alignItems: "flex-start" }}>
@@ -332,7 +338,7 @@ export function ExecutiveOverviewPage() {
               <div className="metric-list">
                 {connectorEntries.map(([status, count]) => (
                   <div className="metric-row" key={status}>
-                    <span className="metric-label"><StatusDot status={status} /> {humanize(status)}</span>
+                    <span className="metric-label"><StatusDot status={status} /> {statusLabel(status, t)}</span>
                     <span className="metric-value">{count}</span>
                   </div>
                 ))}

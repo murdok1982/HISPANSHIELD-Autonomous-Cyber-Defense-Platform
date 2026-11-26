@@ -87,7 +87,8 @@ class KeycloakAdapter(HttpAdapter):
         self._token()
         result = self.request("GET", "/admin/serverinfo", headers=self._headers(), attempts=2)
         payload = result.data if isinstance(result.data, dict) else {}
-        system_info = payload.get("systemInfo") if isinstance(payload.get("systemInfo"), dict) else {}
+        raw_system_info = payload.get("systemInfo")
+        system_info: dict[str, Any] = raw_system_info if isinstance(raw_system_info, dict) else {}
         return AdapterResult(
             ok=True,
             status_code=result.status_code,

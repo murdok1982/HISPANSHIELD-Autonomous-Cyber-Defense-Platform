@@ -148,6 +148,12 @@ interface PromoteResult {
   incident_id: string;
 }
 
+interface OrganizationMember {
+  user_id: string;
+  full_name: string;
+  email: string;
+}
+
 interface IngestSource {
   id: string;
   org_id: string;
@@ -331,6 +337,8 @@ const COPY = {
     alertTriage: "Triaje",
     alertTriageStatus: "Estado",
     alertTriageNote: "Nota",
+    alertAssignee: "Responsable",
+    keepAssignee: "Mantener responsable actual",
     saveTriage: "Guardar triaje",
     triageSaved: "Alerta actualizada",
     triageError: "No se pudo actualizar la alerta",
@@ -554,6 +562,8 @@ const COPY = {
     alertTriage: "Triage",
     alertTriageStatus: "Status",
     alertTriageNote: "Note",
+    alertAssignee: "Assignee",
+    keepAssignee: "Keep current assignee",
     saveTriage: "Save triage",
     triageSaved: "Alert updated",
     triageError: "Could not update the alert",
@@ -1160,6 +1170,7 @@ function AlertDetailModal({
   const navigate = useNavigate();
   const [status, setStatus] = useState("new");
   const [note, setNote] = useState("");
+  const [assignee, setAssignee] = useState("");
   const [promoteOpen, setPromoteOpen] = useState(false);
   const [incidentTitle, setIncidentTitle] = useState("");
   const [incidentDescription, setIncidentDescription] = useState("");
@@ -1170,14 +1181,25 @@ function AlertDetailModal({
     enabled: Boolean(alertId),
   });
 
+  const members = useQuery({
+    queryKey: ["organizations", "members", "alert-triage"],
+    queryFn: () => api.get<Page<OrganizationMember>>("/organizations/current/members", { page_size: 200 }),
+    enabled: Boolean(alertId) && can("user:read"),
+    staleTime: 120_000,
+  });
+
   useEffect(() => {
-    if (query.data) setStatus(query.data.status);
+    if (query.data) {
+      setStatus(query.data.status);
+      setAssignee(query.data.assignee_id ?? "");
+    }
   }, [query.data]);
 
   const triage = useMutation({
     mutationFn: () =>
       api.patch<AlertDetail>(`/siem/alerts/${alertId}`, {
         status,
+        assignee_id: assignee || undefined,
         note: note.trim() || undefined,
       }),
     onSuccess: () => {
@@ -1281,6 +1303,30 @@ function AlertDetailModal({
                   <Select id="alert-triage-status" value={status} onChange={(event) => setStatus(event.target.value)} disabled={!can("alert:write")} data-testid="alert-triage-status">
                     {["new", "triaged", "investigating", "closed", "benign"].map((value) => <option key={value} value={value}>{value}</option>)}
                   </Select>
+                </Field>
+                <Field label={c("alertAssignee")} htmlFor="alert-triage-assignee">
+                  {can("user:read") ? (
+                    <Select
+                      id="alert-triage-assignee"
+                      value={assignee}
+                      onChange={(event) => setAssignee(event.target.value)}
+                      disabled={!can("alert:write")}
+                      data-testid="alert-triage-assignee"
+                    >
+                      <option value="">{c("keepAssignee")}</option>
+                      {members.data?.items.map((member) => (
+                        <option key={member.user_id} value={member.user_id}>{member.full_name}</option>
+                      ))}
+                    </Select>
+                  ) : (
+                    <Input
+                      id="alert-triage-assignee"
+                      value={assignee}
+                      onChange={(event) => setAssignee(event.target.value)}
+                      disabled={!can("alert:write")}
+                      placeholder="UUID"
+                    />
+                  )}
                 </Field>
                 <Field label={c("alertTriageNote")} htmlFor="alert-triage-note">
                   <Input id="alert-triage-note" value={note} onChange={(event) => setNote(event.target.value)} maxLength={4000} disabled={!can("alert:write")} />

@@ -70,6 +70,9 @@ def list_organizations(ctx: RequestContext = Depends(require_permission("org:rea
                 select(Organization).where(Organization.deleted_at.is_(None)).order_by(Organization.name)
             ).scalars()
         )
+    elif ctx.user is None:
+        # Token-authenticated contexts without a user identity carry no memberships.
+        orgs = []
     else:
         orgs = [org for org, _role in user_organizations(ctx.db, ctx.user)]
     return [_org_out(org) for org in orgs]
@@ -348,7 +351,7 @@ def list_kill_switches(ctx: RequestContext = Depends(require_permission("defence
 def engage_kill_switch(
     payload: KillSwitchCreate, ctx: RequestContext = Depends(require_permission("killswitch:operate"))
 ) -> KillSwitch:
-    org_id = ctx.org.id
+    org_id: UUID | None = ctx.org.id
     if payload.scope == "global":
         if not (ctx.user and ctx.user.is_platform_admin):
             raise Forbidden("Only platform administrators can engage the global kill switch")

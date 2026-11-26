@@ -76,6 +76,22 @@ class SessionInfo(StrictModel):
 
 class SwitchOrgRequest(StrictModel):
     org_id: UUID
+    reason: str | None = Field(default=None, max_length=1000)
+    ticket: str | None = Field(default=None, max_length=80)
+
+
+class BreakGlassRequest(StrictModel):
+    org_id: UUID
+    reason: str = Field(min_length=10, max_length=1000)
+    ticket: str = Field(min_length=3, max_length=80)
+
+
+class BreakGlassResponse(StrictModel):
+    grant_id: UUID
+    org_id: UUID
+    expires_at: datetime
+    reason: str
+    ticket: str
 
 
 class ApiTokenCreate(StrictModel):

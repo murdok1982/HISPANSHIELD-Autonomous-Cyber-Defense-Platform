@@ -10,6 +10,7 @@ from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.audit import append_audit
 from app.core.crypto import decrypt_secret
 from app.core.db import get_db, utcnow
 from app.core.deps import RequestContext, require_permission
@@ -253,6 +254,54 @@ def rotate_gateway_key(
     gateway = service.get_gateway(ctx.db, ctx.org.id, gateway_id)
     result = service.rotate_gateway_key(ctx.db, ctx, gateway)
     return GatewayRotateKeyResult(**result)
+
+
+@router.get(
+    "/gateways/{gateway_id}/config-bundle/signed",
+    summary="Signed configuration bundle for the gateway itself (HMAC-authenticated)",
+)
+async def get_config_bundle_signed(
+    gateway_id: UUID,
+    request: Request,
+    db: Session = Depends(get_db),
+    x_gateway_fingerprint: str | None = Header(default=None, alias="X-Gateway-Fingerprint"),
+    x_gateway_timestamp: str | None = Header(default=None, alias="X-Gateway-Timestamp"),
+    x_gateway_signature: str | None = Header(default=None, alias="X-Gateway-Signature"),
+) -> dict[str, Any]:
+    """Allow a gateway to refresh its own signed configuration.
+
+    Tenant operators keep using the `edge:read` endpoint. The gateway proves its
+    identity with the same HMAC scheme used for heartbeat and telemetry, so no
+    long-lived user session is shipped to an edge device.
+    """
+    raw = await request.body()
+    if len(raw) > 8_000:
+        raise ValidationFailure([{"field": "body", "message": "Bundle request body is too large"}])
+    gateway, secret = service.authenticate_gateway(
+        db,
+        gateway_id,
+        fingerprint=x_gateway_fingerprint,
+        timestamp=x_gateway_timestamp,
+        signature=x_gateway_signature,
+        method=request.method,
+        path=request.url.path,
+        body=raw,
+    )
+    if gateway.status == "revoked":
+        raise Conflict("A revoked gateway has no active configuration bundle")
+    bundle = service.build_config_bundle(gateway, secret)
+    append_audit(
+        db,
+        org_id=gateway.org_id,
+        action="edge.gateway.config_bundle.read",
+        resource_type="edge_gateway",
+        resource_id=str(gateway.id),
+        actor_type="system",
+        actor_id=f"gateway:{gateway.id}",
+        payload={"fingerprint": gateway.fingerprint, "channel": "gateway-hmac"},
+    )
+    db.commit()
+    return bundle
 
 
 @router.get("/gateways/{gateway_id}/config-bundle", summary="Signed gateway configuration bundle")

@@ -158,6 +158,45 @@ def test_cli_run_once_ingests_spool_offline(tmp_path: Path, capsys):
         queue.close()
 
 
+def test_cli_run_auto_enrolls_when_config_is_missing(core: FakeCore, tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.setenv(cli.ENROLL_TOKEN_ENV, ENROLLMENT_TOKEN)
+    config_path = tmp_path / "gateway.json"
+    code = cli.main(
+        [
+            "run",
+            "--config",
+            str(config_path),
+            "--url",
+            core.base_url,
+            "--insecure",
+            "--name",
+            "auto-enrolled",
+            "--once",
+        ]
+    )
+    output = capsys.readouterr()
+    payload = json.loads(output.out)
+    assert code == cli.EXIT_OK
+    assert payload["heartbeat"] is not None
+    assert config_path.exists()
+    loaded = load_config(config_path)
+    assert loaded.gateway_id == GATEWAY_ID
+    assert loaded.shared_key == SECRET
+    assert loaded.name == "auto-enrolled"
+    assert ENROLLMENT_TOKEN not in output.out
+    assert SECRET not in output.out
+    assert SECRET not in output.err
+
+
+def test_cli_run_auto_enroll_requires_token(core: FakeCore, tmp_path: Path, monkeypatch, capsys):
+    monkeypatch.delenv(cli.ENROLL_TOKEN_ENV, raising=False)
+    config_path = tmp_path / "gateway.json"
+    code = cli.main(["run", "--config", str(config_path), "--url", core.base_url, "--insecure"])
+    assert code == cli.EXIT_CONFIG
+    assert not config_path.exists()
+    assert "not enrolled" in capsys.readouterr().err
+
+
 def test_cli_version_exits_zero(capsys):
     with pytest.raises(SystemExit) as excinfo:
         cli.main(["--version"])

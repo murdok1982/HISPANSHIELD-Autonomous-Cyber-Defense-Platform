@@ -144,18 +144,17 @@ class FakeCore:
                     if payload.get("enrollment_token") != core.state.enrollment_token:
                         self._send(401, {"detail": "Enrollment token is invalid, expired or already used"})
                         return
+                    core.state.fingerprint = payload.get("fingerprint", core.state.fingerprint)
                     self._send(
                         201,
                         {
                             "gateway_id": core.state.gateway_id,
                             "org_id": core.state.org_id,
-                            "fingerprint": payload.get("fingerprint", core.state.fingerprint),
+                            "fingerprint": core.state.fingerprint,
                             "status": "active",
                             "enrolled_at": _now_iso(),
                             "shared_key": core.state.secret,
-                            "config_bundle": core.state.bundle(
-                                fingerprint=payload.get("fingerprint", core.state.fingerprint)
-                            ),
+                            "config_bundle": core.state.bundle(),
                         },
                     )
                     return
@@ -216,7 +215,10 @@ class FakeCore:
             def do_GET(self) -> None:  # noqa: N802
                 body = self._body()
                 self._record(body)
-                if self.path == f"/api/v1/edge/gateways/{core.state.gateway_id}/config-bundle":
+                if self.path in {
+                    f"/api/v1/edge/gateways/{core.state.gateway_id}/config-bundle",
+                    f"/api/v1/edge/gateways/{core.state.gateway_id}/config-bundle/signed",
+                }:
                     if not self._authorized(body):
                         self._send(401, {"detail": "Gateway signature is invalid or expired"})
                         return

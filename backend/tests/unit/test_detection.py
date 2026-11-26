@@ -90,6 +90,10 @@ def test_validate_definition_rejects_catastrophic_regex():
     assert any("nested quantifier" in item["message"] for item in exc.value.details)
 
     with pytest.raises(DefinitionError) as exc:
+        validate_definition({"selection": {"message": {"regex": "(a|aa)+$"}}})
+    assert any("nested quantifier" in item["message"] for item in exc.value.details)
+
+    with pytest.raises(DefinitionError) as exc:
         validate_definition({"selection": {"message": {"regex": "x" * 201}}})
     assert any("1..200" in item["message"] for item in exc.value.details)
 

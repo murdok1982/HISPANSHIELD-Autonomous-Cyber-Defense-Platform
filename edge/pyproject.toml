@@ -19,7 +19,7 @@ packages = ["hispanshield_edge"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q --strict-markers"
+addopts = "--strict-markers"
 pythonpath = ["."]
 
 [tool.ruff]

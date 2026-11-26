@@ -1,0 +1,29 @@
+# Gitleaks configuration — fail on real secrets, allow documented placeholders.
+title = "HISPANSHIELD secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Documented examples and test fixtures that are not real secrets"
+paths = [
+  '''docs/.*''',
+  '''specs/.*''',
+  '''README\.md''',
+  '''\.env\.example''',
+  '''deploy/k8s/manifests\.yaml''',
+  '''frontend/src/pages/__tests__/.*\.tsx''',
+  '''backend/tests/.*''',
+  '''edge/tests/.*''',
+]
+regexes = [
+  '''CHANGE_ME''',
+  '''change-me''',
+  '''REPLACE_ME''',
+  '''dev-secret-key-0123456789''',
+  '''MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=''',
+  '''Dev-Str0ng-Pass!2026''',
+  '''Demo-Str0ng-Pass!2026''',
+  '''test-secret-key-0123456789''',
+  '''test_password''',
+]

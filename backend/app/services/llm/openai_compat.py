@@ -73,12 +73,14 @@ class OpenAICompatibleClient(BaseProviderClient):
         choices = payload.get("choices")
         if not isinstance(choices, list) or not choices:
             raise ProviderError("OpenAI-compatible response did not include choices")
-        first = choices[0] if isinstance(choices[0], dict) else {}
+        raw_first = choices[0]
+        first: dict[Any, Any] = raw_first if isinstance(raw_first, dict) else {}
         message = first.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, str):
             raise ProviderError("OpenAI-compatible response did not include message content")
-        usage = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+        raw_usage = payload.get("usage")
+        usage: dict[Any, Any] = raw_usage if isinstance(raw_usage, dict) else {}
         return ChatResult(
             content=content,
             prompt_tokens=int(usage.get("prompt_tokens") or 0),

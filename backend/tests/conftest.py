@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from contextlib import contextmanager
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -112,3 +113,33 @@ def auth_client(seeded, client):
 @pytest.fixture
 def org_id(seeded):
     return str(seeded["org"].id)
+
+
+@contextmanager
+def break_glass(client: TestClient, org_id):
+    """Temporarily exercise platform-admin break-glass for test setup.
+
+    The grant is revoked and the active-org header restored on exit, so the
+    test's isolation assertions execute without a residual cross-tenant grant.
+    """
+    response = client.post(
+        "/api/v1/auth/break-glass",
+        json={
+            "org_id": str(org_id),
+            "reason": "Automated test fixture for cross-tenant setup",
+            "ticket": "TEST-ISOLATION-001",
+        },
+    )
+    assert response.status_code == 200, response.text
+    grant_id = response.json()["grant_id"]
+    previous = client.headers.get("X-Organization-Id")
+    client.headers["X-Organization-Id"] = str(org_id)
+    try:
+        yield grant_id
+    finally:
+        if previous:
+            client.headers["X-Organization-Id"] = previous
+        else:
+            client.headers.pop("X-Organization-Id", None)
+        revoke = client.post(f"/api/v1/auth/break-glass/{grant_id}/revoke")
+        assert revoke.status_code == 200, revoke.text

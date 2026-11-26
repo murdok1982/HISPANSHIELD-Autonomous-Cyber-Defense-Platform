@@ -139,6 +139,11 @@ const STATUS_TONE: Record<string, BadgeTone> = {
   closed: "neutral",
   resolved: "success",
   open: "danger",
+  success: "success",
+  ok: "success",
+  available: "success",
+  failure: "danger",
+  unavailable: "danger",
   pending: "warning",
   pending_approval: "amber",
   waiting_approval: "amber",
@@ -170,7 +175,11 @@ const STATUS_TONE: Record<string, BadgeTone> = {
 };
 
 export function StatusBadge({ status, label }: { status: string; label?: string }) {
-  return <Badge tone={STATUS_TONE[status.toLowerCase()] ?? "neutral"}>{label ?? humanize(status)}</Badge>;
+  const { t } = useI18n();
+  const key = `status.${status.toLowerCase()}`;
+  const translated = t(key);
+  const text = label ?? (translated === key ? humanize(status) : translated);
+  return <Badge tone={STATUS_TONE[status.toLowerCase()] ?? "neutral"}>{text}</Badge>;
 }
 
 export function SeverityDot({ severity }: { severity: string }) {
@@ -738,7 +747,7 @@ export function ScoreRing({
         }}
       >
         <span style={{ fontFamily: "var(--font-display)", fontSize: size / 4.2, fontWeight: 600 }}>{Math.round(clamped)}</span>
-        {label ? <span style={{ fontSize: 9, letterSpacing: "0.14em", textTransform: "uppercase", color: "var(--dim)" }}>{label}</span> : null}
+        {label ? <span style={{ fontSize: 9, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--muted)", maxWidth: size * 0.82, lineHeight: 1.3 }}>{label}</span> : null}
       </div>
     </div>
   );

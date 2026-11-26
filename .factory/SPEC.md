@@ -1,7 +1,7 @@
 # PROJECT SPECIFICATION (SINGLE SOURCE OF TRUTH)
 
 - **Project Name:** HISPANSHIELD — Autonomous Cyber Defence Platform
-- **Status:** `DRAFT` (specs locked for Phase 0; ningún `AC-XX` puede marcarse `[x]` sin evidencia ejecutable)
+- **Status:** `IN_PROGRESS — RELEASE CANDIDATE 1` (109/150 tareas verificadas; 47 aplazadas post-MVP; cierre de AC y GA pendientes)
 - **Target Stack:** Python 3.12 + FastAPI + SQLAlchemy 2.0 (sync, psycopg3) + Alembic + PostgreSQL 18 · React 19 + TypeScript strict + Vite (CSS tokens propios, sin Tailwind) · Edge gateway Python + SQLite (WAL) store-and-forward · Workflow engine durable sobre PostgreSQL · Outbox + LISTEN/NOTIFY · JSONB float-vectors + numpy cosine
 - **Compliance Target:** NIS2 (UE 2022/2555), CRA (UE 2024/2847), GDPR (UE 2016/679), ENS (RD 311/2022), ISO/IEC 27001:2022 + 27002:2022, IEC 62443-3-3 / 4-2, ETSI EN 303 645
 - **Deployment Target:** On-premise, air-gapped, Kubernetes y single-node (sin dependencia de SaaS cloud)
@@ -601,3 +601,14 @@ Rutas públicas: `/login`, `/mfa`, `/setup` (solo primer arranque), `/403`, `/40
 | `AC-117..AC-124` | F-18 Gates | `specs/testing/matrix.md` | `scripts/verify_all.sh` |
 
 **Regla de cambio:** un `AC-XX` solo puede modificarse mediante ADR en `ARCHITECTURE.md §7` y actualización simultánea de este archivo, el documento de dominio y la matriz de tests. La numeración nunca se reutiliza.
+
+---
+
+## NOTA DE ENTREGA — RC 0.1.0 (2026-11-26)
+
+La especificación permanece como contrato de referencia. La implementación RC1
+está verificada por la suite descrita en `docs/implementation-status.md` y
+`.factory/TASKS.md`; **no todos los `AC-XX` están cerrados**. Los 47 elementos
+aplazados están marcados `[!]` con motivo y no se presentan como funcionales.
+Este documento no debe interpretarse como certificación de producto ni de
+cumplimiento regulatorio.

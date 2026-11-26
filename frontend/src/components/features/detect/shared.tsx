@@ -14,6 +14,17 @@ import { Badge, Button, Modal, useToast } from "../../ui";
 
 /* -------------------------------------------------------------------- utils */
 
+/** Track tab visibility so live views can pause polling when hidden. */
+export function useDocumentVisible(): boolean {
+  const [visible, setVisible] = useState(() => (typeof document === "undefined" ? true : !document.hidden));
+  useEffect(() => {
+    const onChange = () => setVisible(!document.hidden);
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  }, []);
+  return visible;
+}
+
 /** Debounce a rapidly changing value (search inputs) to protect the API. */
 export function useDebouncedValue<T>(value: T, delay = 350): T {
   const [debounced, setDebounced] = useState(value);
@@ -312,6 +323,7 @@ export function ImportErrors({
   errors: { row?: number | null; field?: string | null; asset_key?: string | null; identifier?: string | null; message: string }[];
   emptyLabel: string;
 }) {
+  const { lang } = useI18n();
   if (!errors.length) return <span className="dim" style={{ fontSize: 11.5 }}>{emptyLabel}</span>;
   return (
     <div className="table-wrap">
@@ -319,8 +331,8 @@ export function ImportErrors({
         <thead>
           <tr>
             <th style={{ width: 64 }}>#</th>
-            <th>Ref</th>
-            <th>Error</th>
+            <th>{lang === "es" ? "Referencia" : "Reference"}</th>
+            <th>{lang === "es" ? "Error" : "Error"}</th>
           </tr>
         </thead>
         <tbody>

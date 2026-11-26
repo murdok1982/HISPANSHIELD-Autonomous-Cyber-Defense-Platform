@@ -248,7 +248,7 @@ def run_health(db: Session, connector: Connector, *, request_id: str | None = No
         circuit_breaker.record_failure(breaker_key)
         connector.status = "degraded"
         run_status = "failed"
-    error = scrub_secret(result.error, *_known_secrets(connector, adapter))
+    scrubbed_error = scrub_secret(result.error, *_known_secrets(connector, adapter))
     run = record_connector_run(
         db,
         connector,
@@ -256,7 +256,7 @@ def run_health(db: Session, connector: Connector, *, request_id: str | None = No
         direction="read",
         status=run_status,
         latency_ms=latency,
-        error=error,
+        error=scrubbed_error,
         detail={"capability": "health", "result": bounded_result_data(result.data)},
         request_id=request_id,
     )
@@ -268,7 +268,7 @@ def run_health(db: Session, connector: Connector, *, request_id: str | None = No
         ok=result.ok,
         latency_ms=latency,
         detail=bounded_result_data(result.data),
-        error=error,
+        error=scrubbed_error,
         run_id=run.id,
         last_health_at=connector.last_health_at,
     )
@@ -314,7 +314,7 @@ def run_invoke(
     else:
         circuit_breaker.record_failure(breaker_key)
         connector.status = "degraded"
-    error = scrub_secret(result.error, *_known_secrets(connector, adapter))
+    scrubbed_error = scrub_secret(result.error, *_known_secrets(connector, adapter))
     run = record_connector_run(
         db,
         connector,
@@ -322,7 +322,7 @@ def run_invoke(
         direction="read",
         status="success" if result.ok else "failed",
         latency_ms=latency,
-        error=error,
+        error=scrubbed_error,
         detail={"capability": capability, "status_code": result.status_code},
         request_id=request_id,
     )
@@ -332,7 +332,7 @@ def run_invoke(
         ok=result.ok,
         status_code=result.status_code,
         data=bounded_result_data(result.data),
-        error=error,
+        error=scrubbed_error,
         latency_ms=latency,
         run_id=run.id,
     )

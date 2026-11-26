@@ -102,9 +102,9 @@ const copy = {
     "manageMembers": "Gestionar miembros",
     "privileged": "Identidades privilegiadas",
     "privilegedHint":
-      "Activos de tipo identidad cuyo subtipo registrado indica privilegio (admin, root, service, breakglass…). La clasificación se deriva del subtipo real, no de una suposición.",
+      "Activos de tipo identidad cuyo subtipo registrado indica privilegio (admin, root, service, breakglass…). La clasificación se deriva del subtipo real; la API de postura devuelve una muestra de hasta 50 activos.",
     "identityAssets": "Activos de identidad",
-    "identityAssetsHint": "Cuentas y entidades de identidad inventariadas por el descubrimiento.",
+    "identityAssetsHint": "Cuentas y entidades de identidad inventariadas por el descubrimiento (muestra de hasta 50).",
     "failed": "Fallos de autenticación",
     "failedHint": "Eventos de inicio de sesión fallido en los últimos {days} días.",
     "window": "Ventana",
@@ -165,9 +165,9 @@ const copy = {
     "manageMembers": "Manage members",
     "privileged": "Privileged identities",
     "privilegedHint":
-      "Identity assets whose recorded subtype indicates privilege (admin, root, service, breakglass…). Classification is derived from the real subtype, not assumed.",
+      "Identity assets whose recorded subtype indicates privilege (admin, root, service, breakglass…). Classification is derived from the real subtype; the posture API returns a sample of up to 50 assets.",
     "identityAssets": "Identity assets",
-    "identityAssetsHint": "Accounts and identity entities inventoried by discovery.",
+    "identityAssetsHint": "Accounts and identity entities inventoried by discovery (sample of up to 50).",
     "failed": "Authentication failures",
     "failedHint": "Failed login events over the last {days} days.",
     "window": "Window",

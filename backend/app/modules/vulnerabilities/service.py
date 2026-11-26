@@ -255,8 +255,12 @@ def _recalculate_many(db: Session, org_id: UUID, vulnerabilities: Sequence[Vulne
             assets[asset.id] = asset
     threat_flags = _asset_threat_flags(db, org_id, assets.values())
     for vulnerability in vulnerabilities:
-        asset = assets.get(vulnerability.asset_id) if vulnerability.asset_id else None
-        risk.apply_priority(vulnerability, asset, threat_match=threat_flags.get(asset.id, False) if asset else False)
+        related_asset = assets.get(vulnerability.asset_id) if vulnerability.asset_id else None
+        risk.apply_priority(
+            vulnerability,
+            related_asset,
+            threat_match=threat_flags.get(related_asset.id, False) if related_asset else False,
+        )
     return len(vulnerabilities)
 
 

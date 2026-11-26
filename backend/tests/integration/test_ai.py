@@ -16,7 +16,7 @@ from app.main import app
 from app.models.ai import AIInvocation, AIProvider, KnowledgeChunk
 from app.models.core import Membership, Organization, User
 from app.services.rag.service import ingest_document
-from tests.conftest import login
+from tests.conftest import break_glass, login
 
 ADMIN_EMAIL = "admin@hispanshield.eu"
 ADMIN_PASSWORD = "Str0ng-Test-Passw0rd!2026"
@@ -493,9 +493,8 @@ def test_cross_tenant_provider_is_not_visible(auth_client, fake_ai):
     assert created_org.status_code == 201, created_org.text
     second_org_id = created_org.json()["id"]
 
-    auth_client.headers["X-Organization-Id"] = second_org_id
-    foreign = _create_provider(auth_client, fake_ai.url, name="Foreign Ollama")
-    auth_client.headers.pop("X-Organization-Id", None)
+    with break_glass(auth_client, second_org_id):
+        foreign = _create_provider(auth_client, fake_ai.url, name="Foreign Ollama")
 
     response = auth_client.get(f"/api/v1/ai/providers/{foreign['id']}")
     assert response.status_code == 404

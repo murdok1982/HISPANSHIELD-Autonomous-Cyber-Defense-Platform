@@ -106,6 +106,10 @@ def test_json_array_of_scalars_is_rejected():
         parse_payload(b"[1,2,3]", content_type="application/json")
     assert exc.value.code == "malformed_json"
 
+    with pytest.raises(ParseError) as exc:
+        parse_payload(b'{"message":"x","value":NaN}', content_type="application/json")
+    assert exc.value.code == "malformed_json"
+
 
 def test_cef_maps_header_extension_and_unmapped():
     line = (

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { api, errorMessage, type Page } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { useI18n, usePageCopy, type Lang } from "../lib/i18n";
+import { useI18n, type Lang } from "../lib/i18n";
 import { formatDateTime, formatNumber, formatPercent, humanize, relativeTime } from "../lib/format";
 import {
   Badge,
@@ -42,7 +42,6 @@ import {
   Pagination,
   SearchInput,
   Select,
-  StatusBadge,
   StatusDot,
   Tabs,
   Textarea,
@@ -57,6 +56,7 @@ import {
   apiFieldErrors,
   parseJsonRecord,
   splitTags,
+  useGovernCopy,
 } from "../components/features/govern/common";
 
 /* --------------------------------------------------------------- contracts */
@@ -265,11 +265,18 @@ function statusTone(status: string): "success" | "warning" | "danger" | "neutral
   return "danger";
 }
 
+function healthLabel(value: string, t: (key: string) => string): string {
+  const key = `status.${value}`;
+  const translated = t(key);
+  return translated === key ? humanize(value) : translated;
+}
+
 /* -------------------------------------------------------------------- copy */
 
 const COPY: Record<Lang, Record<string, string>> = {
   es: {
     eyebrow: "Gobierno · IA",
+    pageTitle: "Gestión de modelos",
     title: "Gestión de modelos",
     subtitle: "Proveedores local-first, registro de modelos, conocimiento con citas y consumo real del gateway.",
     tabProviders: "Proveedores",
@@ -377,7 +384,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     knowledgeSub: "Documentos versionados con checksum, chunking y búsqueda híbrida con citas verificables.",
     newDocument: "Nuevo documento",
     editDocument: "Editar documento",
-    title: "Título",
+    docTitle: "Título",
     source: "Origen",
     version: "Versión",
     text: "Texto",
@@ -465,6 +472,7 @@ const COPY: Record<Lang, Record<string, string>> = {
   },
   en: {
     eyebrow: "Governance · AI",
+    pageTitle: "Model management",
     title: "Model management",
     subtitle: "Local-first providers, model registry, cited knowledge and real gateway usage.",
     tabProviders: "Providers",
@@ -572,7 +580,7 @@ const COPY: Record<Lang, Record<string, string>> = {
     knowledgeSub: "Versioned documents with checksum, chunking and hybrid search with verifiable citations.",
     newDocument: "New document",
     editDocument: "Edit document",
-    title: "Title",
+    docTitle: "Title",
     source: "Source",
     version: "Version",
     text: "Text",
@@ -688,8 +696,8 @@ const EMPTY_PROVIDER_FORM: ProviderFormState = {
   configText: "{}",
 };
 
-function ProvidersTab({ canAdmin, isPlatformAdmin, aiAvailable }: { canAdmin: boolean; isPlatformAdmin: boolean; aiAvailable: boolean }) {
-  const t = usePageCopy(COPY);
+function ProvidersTab({ canAdmin, isPlatformAdmin }: { canAdmin: boolean; isPlatformAdmin: boolean }) {
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -866,7 +874,7 @@ function ProvidersTab({ canAdmin, isPlatformAdmin, aiAvailable }: { canAdmin: bo
       width: "140px",
       render: (row) => (
         <div className="stack" style={{ gap: 3 }}>
-          <Badge tone={statusTone(row.health_status)}>{humanize(row.health_status)}</Badge>
+          <Badge tone={statusTone(row.health_status)}>{healthLabel(row.health_status, t)}</Badge>
           <span className="mono" style={{ fontSize: 10, color: "var(--dim)" }}>{relativeTime(row.last_health_at, lang)}</span>
         </div>
       ),
@@ -917,9 +925,7 @@ function ProvidersTab({ canAdmin, isPlatformAdmin, aiAvailable }: { canAdmin: bo
 
   return (
     <div className="stack" data-testid="models-providers">
-      {!aiAvailable ? <div className="notice notice-warning"><AlertTriangle size={14} style={{ flex: "0 0 auto" }} />{t("unavailableHint")}</div> : null}
-
-      <div className="grid-3">
+      <div className="grid-4">
         {PROVIDER_KINDS.map((kind) => (
           <div className="card card-pad stack" key={kind} style={{ gap: 4 }}>
             <div className="row" style={{ gap: 6 }}>
@@ -960,20 +966,22 @@ function ProvidersTab({ canAdmin, isPlatformAdmin, aiAvailable }: { canAdmin: bo
           </div>
         ) : (
           <>
-            <DataTable
-              columns={columns}
-              rows={providersQuery.data?.items}
-              rowKey={(row) => row.id}
-              loading={providersQuery.isLoading}
-              empty={
-                <EmptyState
-                  icon={Server}
-                  title={t("noProviders")}
-                  description={t("noProvidersHint")}
-                  action={canAdmin ? <Button size="sm" onClick={openCreate}>{t("registerProvider")}</Button> : undefined}
-                />
-              }
-            />
+            <div data-testid="provider-table">
+              <DataTable
+                columns={columns}
+                rows={providersQuery.data?.items}
+                rowKey={(row) => row.id}
+                loading={providersQuery.isLoading}
+                empty={
+                  <EmptyState
+                    icon={Server}
+                    title={t("noProviders")}
+                    description={t("noProvidersHint")}
+                    action={canAdmin ? <Button size="sm" onClick={openCreate}>{t("registerProvider")}</Button> : undefined}
+                  />
+                }
+              />
+            </div>
             <div style={{ padding: "0 16px 12px" }}>
               <Pagination meta={providersQuery.data?.meta} onPage={setPage} />
             </div>
@@ -1143,7 +1151,7 @@ const EMPTY_MODEL_FORM: ModelFormState = {
 };
 
 function ModelsTab({ canAdmin, canUse, aiAvailable }: { canAdmin: boolean; canUse: boolean; aiAvailable: boolean }) {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -1250,7 +1258,7 @@ function ModelsTab({ canAdmin, canUse, aiAvailable }: { canAdmin: boolean; canUs
     onSuccess: async (result) => {
       setEvalResult(result);
       setEvalError(null);
-      toast.push(`${t("evaluationResult")}: ${result.passed}/${result.total}`, result.failed === 0 ? "success" : "warning");
+      toast.push(`${t("evaluationResult")}: ${result.passed}/${result.total}`, result.failed === 0 ? "success" : "info");
       await queryClient.invalidateQueries({ queryKey: ["models"] });
     },
     onError: (error) => {
@@ -1258,6 +1266,8 @@ function ModelsTab({ canAdmin, canUse, aiAvailable }: { canAdmin: boolean; canUs
       setEvalError(errorMessage(error));
     },
   });
+
+  const filtersActive = Boolean(q || status || providerId);
 
   const tags = splitTags(form.taskTags);
   const tagsValid = tags.every((tag) => /^[a-z][a-z0-9_.-]{1,59}$/.test(tag));
@@ -1329,6 +1339,8 @@ function ModelsTab({ canAdmin, canUse, aiAvailable }: { canAdmin: boolean; canUs
       return { ok: false, error: t("invalidCases") };
     }
   };
+
+  const customCases = customCasesParsed();
 
   const columns: Column<AIModel>[] = [
     {
@@ -1450,20 +1462,28 @@ function ModelsTab({ canAdmin, canUse, aiAvailable }: { canAdmin: boolean; canUs
           </div>
         ) : (
           <>
-            <DataTable
-              columns={columns}
-              rows={modelsQuery.data?.items}
-              rowKey={(row) => row.id}
-              loading={modelsQuery.isLoading}
-              empty={
-                <EmptyState
-                  icon={BrainCircuit}
-                  title={q || status || providerId ? t("noModelMatches") : t("noModels")}
-                  description={t("noModelsHint")}
-                  action={canAdmin ? <Button size="sm" onClick={openCreate}>{t("registerModel")}</Button> : undefined}
-                />
-              }
-            />
+            <div data-testid="model-table">
+              <DataTable
+                columns={columns}
+                rows={modelsQuery.data?.items}
+                rowKey={(row) => row.id}
+                loading={modelsQuery.isLoading}
+                empty={
+                  <EmptyState
+                    icon={BrainCircuit}
+                    title={filtersActive ? t("noModelMatches") : t("noModels")}
+                    description={filtersActive ? t("filtersClear") : t("noModelsHint")}
+                    action={
+                      filtersActive ? (
+                        <Button size="sm" onClick={() => { setQ(""); setStatus(""); setProviderId(""); setPage(1); }}>{t("filtersClear")}</Button>
+                      ) : canAdmin ? (
+                        <Button size="sm" onClick={openCreate}>{t("registerModel")}</Button>
+                      ) : undefined
+                    }
+                  />
+                }
+              />
+            </div>
             <div style={{ padding: "0 16px 12px" }}>
               <Pagination meta={modelsQuery.data?.meta} onPage={setPage} />
             </div>
@@ -1533,7 +1553,7 @@ function ModelsTab({ canAdmin, canUse, aiAvailable }: { canAdmin: boolean; canUs
               variant="primary"
               icon={FlaskConical}
               loading={evaluateMutation.isPending}
-              disabled={!aiAvailable || (evalMode === "custom" && !customCasesParsed().ok)}
+              disabled={!aiAvailable || (evalMode === "custom" && !customCases.ok)}
               onClick={() => {
                 if (!evalFor) return;
                 setEvalError(null);
@@ -1541,12 +1561,11 @@ function ModelsTab({ canAdmin, canUse, aiAvailable }: { canAdmin: boolean; canUs
                   evaluateMutation.mutate({ model: evalFor, cases: undefined });
                   return;
                 }
-                const parsed = customCasesParsed();
-                if (!parsed.ok) {
-                  setEvalError(parsed.error);
+                if (!customCases.ok) {
+                  setEvalError(customCases.error);
                   return;
                 }
-                evaluateMutation.mutate({ model: evalFor, cases: parsed.value });
+                evaluateMutation.mutate({ model: evalFor, cases: customCases.value });
               }}
               data-testid="model-evaluate-submit"
             >
@@ -1574,7 +1593,7 @@ function ModelsTab({ canAdmin, canUse, aiAvailable }: { canAdmin: boolean; canUs
                 label={t("casesJson")}
                 htmlFor={`${idPrefix}-eval-cases`}
                 hint={t("casesHint")}
-                error={!customCasesParsed().ok ? customCasesParsed().error : undefined}
+                error={customCases.ok ? undefined : customCases.error}
               >
                 <Textarea
                   id={`${idPrefix}-eval-cases`}
@@ -1651,7 +1670,7 @@ function ModelsTab({ canAdmin, canUse, aiAvailable }: { canAdmin: boolean; canUs
 /* --------------------------------------------------------------- knowledge */
 
 function KnowledgeTab({ canAdmin, canUse }: { canAdmin: boolean; canUse: boolean }) {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -1695,6 +1714,7 @@ function KnowledgeTab({ canAdmin, canUse }: { canAdmin: boolean; canUse: boolean
   });
 
   const metadataParsed = parseJsonRecord(metadata);
+  const docsFilterActive = Boolean(q || kind);
 
   const openCreate = () => {
     setEditing(null);
@@ -1783,7 +1803,7 @@ function KnowledgeTab({ canAdmin, canUse }: { canAdmin: boolean; canUse: boolean
   const submit = () => {
     setFormError(null);
     if (title.trim().length === 0) {
-      setFormError(t("title"));
+      setFormError(t("docTitle"));
       return;
     }
     if (source.trim().length === 0) {
@@ -1825,7 +1845,7 @@ function KnowledgeTab({ canAdmin, canUse }: { canAdmin: boolean; canUse: boolean
   const columns: Column<KnowledgeDocument>[] = [
     {
       key: "title",
-      header: t("title"),
+      header: t("docTitle"),
       render: (row) => (
         <div style={{ minWidth: 200 }}>
           <div className="primary-cell">{row.title}</div>
@@ -1893,20 +1913,28 @@ function KnowledgeTab({ canAdmin, canUse }: { canAdmin: boolean; canUse: boolean
           </div>
         ) : (
           <>
-            <DataTable
-              columns={columns}
-              rows={listQuery.data?.items}
-              rowKey={(row) => row.id}
-              loading={listQuery.isLoading}
-              empty={
-                <EmptyState
-                  icon={BookText}
-                  title={t("noDocuments")}
-                  description={t("noDocumentsHint")}
-                  action={canAdmin ? <Button size="sm" onClick={openCreate}>{t("newDocument")}</Button> : undefined}
-                />
-              }
-            />
+            <div data-testid="knowledge-table">
+              <DataTable
+                columns={columns}
+                rows={listQuery.data?.items}
+                rowKey={(row) => row.id}
+                loading={listQuery.isLoading}
+                empty={
+                  <EmptyState
+                    icon={BookText}
+                    title={docsFilterActive ? t("noResults") : t("noDocuments")}
+                    description={docsFilterActive ? t("noResultsHint") : t("noDocumentsHint")}
+                    action={
+                      docsFilterActive ? (
+                        <Button size="sm" onClick={() => { setQ(""); setKind(""); setPage(1); }}>{t("filtersClear")}</Button>
+                      ) : canAdmin ? (
+                        <Button size="sm" onClick={openCreate}>{t("newDocument")}</Button>
+                      ) : undefined
+                    }
+                  />
+                }
+              />
+            </div>
             <div style={{ padding: "0 16px 12px" }}>
               <Pagination meta={listQuery.data?.meta} onPage={setPage} />
             </div>
@@ -2019,7 +2047,7 @@ function KnowledgeTab({ canAdmin, canUse }: { canAdmin: boolean; canUse: boolean
       >
         <div className="stack">
           <div className="form-grid">
-            <Field label={t("title")} htmlFor={`${idPrefix}-doc-title`} error={fieldErrors.title} required>
+            <Field label={t("docTitle")} htmlFor={`${idPrefix}-doc-title`} error={fieldErrors.title} required>
               <Input id={`${idPrefix}-doc-title`} value={title} maxLength={300} onChange={(event) => setTitle(event.target.value)} />
             </Field>
             <Field label={t("source")} htmlFor={`${idPrefix}-doc-source`} error={fieldErrors.source} required>
@@ -2133,7 +2161,7 @@ function KnowledgeTab({ canAdmin, canUse }: { canAdmin: boolean; canUse: boolean
 /* ------------------------------------------------------------------- usage */
 
 function UsageTab() {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const [days, setDays] = useState("7");
 
@@ -2194,7 +2222,15 @@ function UsageTab() {
         {usageQuery.isError ? (
           <ErrorBanner message={errorMessage(usageQuery.error)} onRetry={() => void usageQuery.refetch()} />
         ) : usageQuery.isLoading ? (
-          <div className="skeleton skeleton-chart" />
+          <div className="stack">
+            <div className="kpi-grid">
+              <div className="skeleton skeleton-card" />
+              <div className="skeleton skeleton-card" />
+              <div className="skeleton skeleton-card" />
+              <div className="skeleton skeleton-card" />
+            </div>
+            <div className="skeleton skeleton-chart" />
+          </div>
         ) : usage && usage.invocations === 0 ? (
           <EmptyState icon={Gauge} title={t("noUsage")} description={t("noUsageHint")} />
         ) : usage ? (
@@ -2236,10 +2272,10 @@ function UsageTab() {
       {usage && usage.invocations > 0 ? (
         <div className="grid-2">
           <Card title={t("byTask")} bodyClassName="">
-            <DataTable columns={bucketColumns(t("byTask"))} rows={taskRows} rowKey={(row) => row.name} empty={<EmptyState title={t("noUsage")} />} />
+            <div data-testid="usage-task-table"><DataTable columns={bucketColumns(t("byTask"))} rows={taskRows} rowKey={(row) => row.name} empty={<EmptyState title={t("noUsage")} />} /></div>
           </Card>
           <Card title={t("byModel")} bodyClassName="">
-            <DataTable columns={bucketColumns(t("byModel"))} rows={modelRows} rowKey={(row) => row.name} empty={<EmptyState title={t("noUsage")} />} />
+            <div data-testid="usage-model-table"><DataTable columns={bucketColumns(t("byModel"))} rows={modelRows} rowKey={(row) => row.name} empty={<EmptyState title={t("noUsage")} />} /></div>
           </Card>
         </div>
       ) : null}
@@ -2272,12 +2308,12 @@ function UsageTab() {
                         <Badge tone={provider.enabled ? "neutral" : "neutral"}>{provider.enabled ? t("enabled") : t("statusDisabled")}</Badge>
                       </div>
                       <div className="item-sub">
-                        {humanize(provider.health_status)} · {relativeTime(provider.last_health_at, lang)}
+                        {healthLabel(provider.health_status, t)} · {relativeTime(provider.last_health_at, lang)}
                         {provider.last_health_error ? ` · ${provider.last_health_error}` : ""}
                       </div>
                     </div>
                     <div className="item-side">
-                      <Badge tone={statusTone(provider.health_status)}>{humanize(provider.health_status)}</Badge>
+                      <Badge tone={statusTone(provider.health_status)}>{healthLabel(provider.health_status, t)}</Badge>
                     </div>
                   </div>
                 ))}
@@ -2293,7 +2329,7 @@ function UsageTab() {
 /* -------------------------------------------------------------------- page */
 
 export function ModelsPage() {
-  const t = usePageCopy(COPY);
+  const t = useGovernCopy(COPY);
   const { lang } = useI18n();
   const { can, session } = useAuth();
   const [tab, setTab] = useState<TabKey>("providers");
@@ -2325,7 +2361,7 @@ export function ModelsPage() {
   if (!canRead) {
     return (
       <div className="animate-in" data-testid="page-models">
-        <PageHeader eyebrow={t("eyebrow")} title={t("title")} subtitle={t("subtitle")} />
+        <PageHeader eyebrow={t("eyebrow")} title={t("pageTitle")} subtitle={t("subtitle")} />
         <Card><EmptyState icon={Lock} title={t("noPermission")} /></Card>
       </div>
     );
@@ -2337,7 +2373,7 @@ export function ModelsPage() {
     <div className="animate-in" data-testid="page-models">
       <PageHeader
         eyebrow={t("eyebrow")}
-        title={t("title")}
+        title={t("pageTitle")}
         subtitle={t("subtitle")}
         actions={
           <>
@@ -2390,10 +2426,10 @@ export function ModelsPage() {
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <Tabs<TabKey> ariaLabel={t("title")} items={tabs} value={tab} onChange={setTab} />
+        <Tabs<TabKey> ariaLabel={t("pageTitle")} items={tabs} value={tab} onChange={setTab} />
       </div>
 
-      {tab === "providers" ? <ProvidersTab canAdmin={canAdmin} isPlatformAdmin={isPlatformAdmin} aiAvailable={available} /> : null}
+      {tab === "providers" ? <ProvidersTab canAdmin={canAdmin} isPlatformAdmin={isPlatformAdmin} /> : null}
       {tab === "models" ? <ModelsTab canAdmin={canAdmin} canUse={canUse} aiAvailable={available} /> : null}
       {tab === "knowledge" ? <KnowledgeTab canAdmin={canAdmin} canUse={canUse} /> : null}
       {tab === "usage" ? <UsageTab /> : null}

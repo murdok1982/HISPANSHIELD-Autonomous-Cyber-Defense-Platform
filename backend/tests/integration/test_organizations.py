@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
 from app.core.db import utcnow
-from app.models.core import Approval, AuditRecord, Membership, Organization, Policy, User
+from app.models.core import Approval, AuditRecord, Membership, Organization, User
 from tests.conftest import login
 
 
@@ -42,9 +42,7 @@ def test_member_lifecycle_and_last_admin_guard(seeded, auth_client: TestClient, 
     )
     assert duplicate.status_code == 409
 
-    promoted = auth_client.patch(
-        f"/api/v1/organizations/current/members/{membership_id}", json={"role": "org_admin"}
-    )
+    promoted = auth_client.patch(f"/api/v1/organizations/current/members/{membership_id}", json={"role": "org_admin"})
     assert promoted.status_code == 200
     assert promoted.json()["role"] == "org_admin"
 

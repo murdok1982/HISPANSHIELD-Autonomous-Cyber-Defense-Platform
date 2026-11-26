@@ -11,6 +11,7 @@ from app.core.crypto import hmac_sha256_hex, token_hash
 from app.main import app
 from app.models.core import AuditRecord
 from app.models.events import IngestSource, SecurityEvent
+from tests.conftest import break_glass
 
 
 def _create_source(client, **overrides):
@@ -141,9 +142,8 @@ def test_control_characters_are_stripped_from_message_and_raw(auth_client):
 
 def test_cross_tenant_source_and_event_isolation(auth_client):
     other_org = _create_org(auth_client, "ingest-security-other")
-    auth_client.headers["X-Organization-Id"] = other_org
-    foreign = _create_source(auth_client, name="Foreign source")
-    auth_client.headers.pop("X-Organization-Id", None)
+    with break_glass(auth_client, other_org):
+        foreign = _create_source(auth_client, name="Foreign source")
 
     assert auth_client.get(f"/api/v1/ingest-sources/{foreign['id']}").status_code == 404
     assert (

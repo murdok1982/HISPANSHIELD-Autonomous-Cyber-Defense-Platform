@@ -89,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="HISPANSHIELD syslog receiver")
     parser.add_argument(
         "--bind",
-        default=os.environ.get("HS_SYSLOG_BIND", "0.0.0.0"),  # noqa: S104 - operator-controlled bind
+        default=os.environ.get("HS_SYSLOG_BIND", "127.0.0.1"),
     )
     parser.add_argument(
         "--udp-port",

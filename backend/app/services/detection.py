@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -65,7 +66,11 @@ _ALLOWED_OPERATORS = {
     "known_bad",
 }
 _FIELD_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]{0,120}$")
-_CATASTROPHIC_RE = re.compile(r"\([^)]*[+*][^)]*\)\s*(?:[+*]|\{\d*,?\d*\})|\(\.[*+]\)[*+]")
+_CATASTROPHIC_RE = re.compile(
+    r"\([^)]*[+*][^)]*\)\s*(?:[+*]|\{\d*,?\d*\})"
+    r"|\([^)]*\|[^)]*\)\s*(?:[+*]|\{\d*,?\d*\})"
+    r"|\(\.[*+]\)[*+]"
+)
 
 _FIELD_ALIASES = {
     "severity": "severity_id",
@@ -220,6 +225,8 @@ class DetectionOutcome:
 
 
 def _is_scalar(value: Any) -> bool:
+    if isinstance(value, float) and not math.isfinite(value):
+        return False
     return value is None or isinstance(value, str | int | float | bool)
 
 
@@ -262,7 +269,11 @@ def _validate_matcher(value: Any, path: str, errors: list[dict[str, str]]) -> No
                     return
             return
         if operator in {"gt", "gte", "lt", "lte"}:
-            if isinstance(operand, bool) or not isinstance(operand, int | float):
+            if (
+                isinstance(operand, bool)
+                or not isinstance(operand, int | float)
+                or (isinstance(operand, float) and not math.isfinite(operand))
+            ):
                 errors.append({"path": path, "message": f"{operator} expects a number"})
             return
         if operator in {"contains", "startswith", "endswith", "ne"}:
@@ -419,10 +430,11 @@ def resolve_field(event: Any, field_name: str) -> Any:
     if name.startswith("unmapped."):
         key = name[len("unmapped.") :]
         if isinstance(event, dict):
-            normalized = event.get("normalized") if isinstance(event.get("normalized"), dict) else {}
-            return (normalized.get("unmapped") or {}).get(key)
-        normalized = event.normalized or {}
-        return (normalized.get("unmapped") or {}).get(key)
+            raw_normalized = event.get("normalized")
+            nested = raw_normalized if isinstance(raw_normalized, dict) else {}
+            return (nested.get("unmapped") or {}).get(key)
+        orm_normalized = event.normalized or {}
+        return (orm_normalized.get("unmapped") or {}).get(key)
 
     if isinstance(event, dict):
         if name in event:
@@ -716,11 +728,14 @@ def _upsert_alert(
         .limit(1)
     ).scalar_one_or_none()
 
-    event_ids = _merge_event_ids(None, [event.id] if event.id is not None else [])
+    related_ids = [item.id for item in related if item.id is not None]
+    if event.id is not None:
+        related_ids.append(event.id)
+    event_ids = _merge_event_ids(None, related_ids)
     if existing is not None:
         existing.count += 1
         existing.last_seen = now
-        existing.event_ids = _merge_event_ids(existing.event_ids, [event.id] if event.id is not None else [])
+        existing.event_ids = _merge_event_ids(existing.event_ids, related_ids)
         existing.evidence = _evidence(
             rule=rule,
             group=group,

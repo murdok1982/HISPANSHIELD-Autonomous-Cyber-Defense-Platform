@@ -42,3 +42,6 @@ reports/generated/
 
 # Factory working scratch
 .factory/tmp/
+
+# TypeScript build info
+*.tsbuildinfo

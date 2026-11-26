@@ -102,6 +102,19 @@ def test_platform_admin_can_select_organization(seeded, client: TestClient, db) 
     db.add(other_org)
     db.commit()
     login(client)
+    denied = client.get("/api/v1/auth/me", headers={"X-Organization-Id": str(other_org.id)})
+    assert denied.status_code == 404
+    assert denied.json()["error"]["code"] == "not_found"
+
+    grant = client.post(
+        "/api/v1/auth/break-glass",
+        json={
+            "org_id": str(other_org.id),
+            "reason": "Incident response for public body",
+            "ticket": "INC-2026-0001",
+        },
+    )
+    assert grant.status_code == 200, grant.text
     response = client.get("/api/v1/auth/me", headers={"X-Organization-Id": str(other_org.id)})
     assert response.status_code == 200
     assert response.json()["organization"]["id"] == str(other_org.id)
@@ -172,5 +185,52 @@ def test_session_cookie_flags(seeded, client: TestClient) -> None:
     response = client.post("/api/v1/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
     cookie = response.headers["set-cookie"].lower()
     assert "httponly" in cookie
-    assert "samesite=lax" in cookie
+    assert "samesite=strict" in cookie
     assert settings.cookie_name in cookie
+
+
+def test_api_token_defaults_to_concrete_permissions_for_platform_admin(seeded, client: TestClient) -> None:
+    login(client)
+    created = client.post("/api/v1/auth/api-tokens", json={"name": "default-scopes"})
+    assert created.status_code == 201, created.text
+    scopes = created.json()["scopes"]
+    assert scopes and "*" not in scopes
+    assert "asset:read" in scopes
+    token = created.json()["token"]
+    client.cookies.clear()
+    client.headers.clear()
+    response = client.get("/api/v1/assets", headers={"Authorization": f"Bearer {token}"})
+    assert response.status_code == 200
+
+
+def test_login_never_returns_password_or_mfa_material(seeded, client: TestClient) -> None:
+    response = client.post("/api/v1/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    assert response.status_code == 200
+    raw = response.text
+    assert "password_hash" not in raw
+    assert "mfa_secret_encrypted" not in raw
+    assert "$argon2" not in raw
+    for forbidden in ("password", "mfa_secret", "failed_login_count", "locked_until"):
+        assert forbidden not in response.json()["user"]
+
+
+def test_api_token_scopes_are_enforced_on_overview(seeded, client: TestClient) -> None:
+    login(client)
+    created = client.post("/api/v1/auth/api-tokens", json={"name": "report-only", "scopes": ["report:read"]})
+    assert created.status_code == 201
+    token = created.json()["token"]
+    client.cookies.clear()
+    client.headers.clear()
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/v1/overview/executive", headers=headers).status_code == 403
+    assert client.get("/api/v1/overview/soc", headers=headers).status_code == 403
+    assert client.get("/api/v1/events", headers=headers).status_code == 403
+    assert client.get("/api/v1/reports", headers=headers).status_code == 200
+
+
+def test_idle_session_is_rejected(seeded, client: TestClient, db) -> None:
+    login(client)
+    session = db.execute(select(AuthSession)).scalars().first()
+    session.last_seen_at = utcnow() - timedelta(minutes=90)
+    db.commit()
+    assert client.get("/api/v1/auth/me").status_code == 401

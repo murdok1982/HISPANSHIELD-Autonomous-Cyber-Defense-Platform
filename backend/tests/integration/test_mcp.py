@@ -15,7 +15,7 @@ from app.core.crypto import hash_password
 from app.main import app
 from app.models.connectors import MCPTool, ToolExecution
 from app.models.core import Membership, User
-from tests.conftest import login
+from tests.conftest import break_glass, login
 
 ANALYST_PASSWORD = "An4lyst-MCP-Passw0rd!2026"
 
@@ -397,9 +397,8 @@ def test_delete_server_cascades_tools(auth_client, db, mcp_server):
 def test_cross_tenant_server_is_404(auth_client, mcp_server):
     second = auth_client.post("/api/v1/organizations", json={"name": "MCP Other", "slug": "mcp-other"})
     assert second.status_code == 201
-    auth_client.headers["X-Organization-Id"] = second.json()["id"]
-    foreign = _create_server(auth_client, mcp_server.url, name="Foreign MCP")
-    auth_client.headers.pop("X-Organization-Id", None)
+    with break_glass(auth_client, second.json()["id"]):
+        foreign = _create_server(auth_client, mcp_server.url, name="Foreign MCP")
 
     assert auth_client.get(f"/api/v1/mcp/servers/{foreign['id']}").status_code == 404
 

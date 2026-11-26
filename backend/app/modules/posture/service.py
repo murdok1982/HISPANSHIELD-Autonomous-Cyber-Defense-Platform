@@ -15,6 +15,7 @@ from uuid import UUID
 
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.core.db import utcnow
 from app.models.assets import Asset, AttackSurfaceFinding, Vulnerability, Zone
@@ -99,7 +100,7 @@ def network_posture(db: Session, org_id: UUID) -> dict[str, Any]:
     exposure_tokens = ("expos", "port", "service", "public", "open")
     exposed_findings = [item for item in findings if _matches(item, exposure_tokens)]
 
-    lateral_conditions = [
+    lateral_conditions: list[ColumnElement[bool]] = [
         func.lower(Alert.title).like("%lateral%"),
         func.lower(func.coalesce(Alert.description, "")).like("%lateral%"),
     ]

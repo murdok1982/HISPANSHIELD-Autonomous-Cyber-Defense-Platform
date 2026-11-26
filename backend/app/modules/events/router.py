@@ -495,6 +495,8 @@ def put_retention(
 )
 def purge_retention(ctx: RequestContext = Depends(require_permission("policy:write"))) -> RetentionPurgeResult:
     policy, definition = service.get_retention_policy(ctx.db, ctx.org.id)
+    if policy is not None and not policy.enabled:
+        raise Conflict("The retention policy is disabled")
     if not definition["purge_enabled"]:
         raise Conflict("Retention purge is disabled for this organization")
     cutoff = utcnow() - timedelta(days=definition["hot_days"])

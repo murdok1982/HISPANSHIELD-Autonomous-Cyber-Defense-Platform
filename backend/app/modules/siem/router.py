@@ -20,6 +20,7 @@ from app.modules.siem.schemas import (
     AlertDetail,
     AlertPatch,
     AlertSummary,
+    IncidentSummary,
     PromoteRequest,
     PromoteResponse,
     RuleCreate,
@@ -347,7 +348,10 @@ def list_alerts(
     total = ctx.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
     rows = list(ctx.db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars())
     names = _rule_names(ctx, rows)
-    items = [AlertSummary(**service.serialize_alert(alert, rule_name=names.get(alert.rule_id))) for alert in rows]
+    items = [
+        AlertSummary(**service.serialize_alert(alert, rule_name=names.get(alert.rule_id) if alert.rule_id else None))
+        for alert in rows
+    ]
     return Page[AlertSummary](**paginate(items, total, page, page_size))
 
 
@@ -418,15 +422,15 @@ def promote_alert(
     ctx.db.commit()
     ctx.db.refresh(incident)
     return PromoteResponse(
-        incident={
-            "id": incident.id,
-            "ref": incident.ref,
-            "title": incident.title,
-            "severity": incident.severity,
-            "status": incident.status,
-            "priority": incident.priority,
-            "detected_at": incident.detected_at,
-        },
+        incident=IncidentSummary(
+            id=incident.id,
+            ref=incident.ref,
+            title=incident.title,
+            severity=incident.severity,
+            status=incident.status,
+            priority=incident.priority,
+            detected_at=incident.detected_at,
+        ),
         alert_id=alert.id,
         incident_id=incident.id,
     )

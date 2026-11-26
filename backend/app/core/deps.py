@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -19,7 +19,7 @@ from app.core.db import get_db, utcnow
 from app.core.errors import Forbidden, NotFound, Unauthorized
 from app.core.rate_limit import enforce
 from app.core.rbac import ROLE_PERMISSIONS, effective_permissions, has_permission
-from app.models.core import ApiToken, Membership, Organization, User
+from app.models.core import ApiToken, BreakGlassGrant, Membership, Organization, User
 from app.models.core import Session as AuthSession
 
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
@@ -102,6 +102,10 @@ def _client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+def _as_utc(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
 def _resolve_session_user(db: Session, token: str) -> tuple[AuthSession | None, User | None]:
     session = db.execute(select(AuthSession).where(AuthSession.token_hash == token_hash(token))).scalar_one_or_none()
     if session is None:
@@ -111,6 +115,8 @@ def _resolve_session_user(db: Session, token: str) -> tuple[AuthSession | None, 
     if expires_at.tzinfo is None:
         expires_at = expires_at.replace(tzinfo=UTC)
     if session.revoked_at is not None or expires_at <= now:
+        return session, None
+    if (now - _as_utc(session.last_seen_at)).total_seconds() > settings.session_idle_minutes * 60:
         return session, None
     user = db.get(User, session.user_id)
     if user is None or user.status != "active":
@@ -151,6 +157,21 @@ def _resolve_org(
                 Membership.user_id == user.id, Membership.org_id == org.id, Membership.status == "active"
             )
         ).scalar_one_or_none()
+        if membership is None:
+            grant = db.execute(
+                select(BreakGlassGrant)
+                .where(
+                    BreakGlassGrant.user_id == user.id,
+                    BreakGlassGrant.org_id == org.id,
+                    BreakGlassGrant.revoked_at.is_(None),
+                    BreakGlassGrant.expires_at > utcnow(),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+            if grant is None:
+                # Conceal existence exactly as for a regular tenant boundary.
+                # The administrator obtains access through /auth/break-glass.
+                raise NotFound("Organization")
         return org, membership, "platform_admin"
 
     membership_query = select(Membership).where(Membership.user_id == user.id, Membership.status == "active")
@@ -199,8 +220,9 @@ def get_context(
             not x_csrf_token or not constant_time_equals(x_csrf_token, session.csrf_token)
         ):
             raise Forbidden("CSRF token missing or invalid")
-        if (utcnow() - session.last_seen_at).total_seconds() > 300:
+        if (utcnow() - _as_utc(session.last_seen_at)).total_seconds() > 300:
             session.last_seen_at = utcnow()
+            db.commit()
 
     assert user is not None
     if api_token and api_token.org_id and x_organization_id and api_token.org_id != x_organization_id:

@@ -216,8 +216,10 @@ class AssetPatch(StrictModel):
 class AssetImportItem(AssetCreate):
     """One row of a bulk import: creation defaults plus per-row provenance."""
 
-    discovery_source: str | None = Field(default=None, min_length=1, max_length=80)
-    confidence: int | None = Field(default=None, ge=0, le=100)
+    # Optional overrides keep "absent" distinct from the creation defaults; pydantic
+    # re-declares the field at runtime while mypy rejects the narrowed override.
+    discovery_source: str | None = Field(default=None, min_length=1, max_length=80)  # type: ignore[assignment]
+    confidence: int | None = Field(default=None, ge=0, le=100)  # type: ignore[assignment]
 
 
 class ImportRowError(StrictModel):

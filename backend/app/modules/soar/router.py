@@ -398,6 +398,32 @@ def _resolve_trigger_scope(
     return incident_id, merged, trigger
 
 
+_STEP_PERMISSIONS = {
+    "defence.execute": "defence:execute",
+    "connector.read": "connector:read",
+    "internal.create_incident": "incident:write",
+    "internal.add_timeline": "incident:write",
+}
+
+
+def _enforce_step_permissions(ctx: RequestContext, definition: dict[str, Any], *, dry_run: bool) -> None:
+    """RBAC for effectful playbook steps.
+
+    `playbook:execute` alone must never grant the ability to run a defensive
+    action or a connector read that the caller could not invoke directly.
+    """
+    for step in definition.get("steps", []) or []:
+        if not isinstance(step, dict):
+            continue
+        action = str(step.get("action") or "")
+        required = _STEP_PERMISSIONS.get(action)
+        if not required:
+            continue
+        if action == "defence.execute" and dry_run:
+            continue
+        ctx.require(required)
+
+
 def _start(
     ctx: RequestContext,
     playbook: Playbook,
@@ -410,6 +436,7 @@ def _start(
 ) -> PlaybookExecution:
     if playbook.status != "published":
         raise Conflict("Only published playbooks can be executed")
+    _enforce_step_permissions(ctx, playbook.definition, dry_run=dry_run)
     incident_id, merged, trigger = _resolve_trigger_scope(ctx, incident_id, alert_id, context)
     execution = create_execution(
         ctx.db,
@@ -527,6 +554,9 @@ def resume(execution_id: UUID, ctx: RequestContext = Depends(require_permission(
     execution = _get_execution(ctx, execution_id)
     if execution.status != "waiting_approval":
         raise Conflict("The execution is not waiting for approval")
+    playbook = ctx.db.get(Playbook, execution.playbook_id)
+    if playbook is not None:
+        _enforce_step_permissions(ctx, playbook.definition, dry_run=execution.dry_run)
     approval = ctx.db.get(Approval, execution.approval_id) if execution.approval_id else None
     resumed = True
     reason: str | None = None

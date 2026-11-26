@@ -151,6 +151,14 @@ def seed_demo(db: Session) -> tuple[Organization, bool]:
 
     existing = db.execute(select(Organization).where(Organization.slug == DEMO_SLUG)).scalar_one_or_none()
     if existing is not None:
+        # Re-running the demo seed must attach admins created after the first
+        # run (normal order is bootstrap_admin -> seed_demo).
+        for admin in db.execute(select(User).where(User.is_platform_admin.is_(True))).scalars():
+            if not db.execute(
+                select(Membership).where(Membership.org_id == existing.id, Membership.user_id == admin.id)
+            ).scalar_one_or_none():
+                db.add(Membership(org_id=existing.id, user_id=admin.id, role="org_admin", status="active"))
+        db.commit()
         return existing, False
 
     random.seed(20261126)
@@ -533,12 +541,12 @@ def seed_demo(db: Session) -> tuple[Organization, bool]:
         ("cam-021", "net-sw-core", "connects_to"),
         ("iot-park-11", "net-sw-core", "connects_to"),
     ]
-    for source, target, kind in relationships:
+    for source_key, target_key, kind in relationships:
         db.add(
             AssetRelationship(
                 org_id=org_id,
-                source_asset_id=by_key[source].id,
-                target_asset_id=by_key[target].id,
+                source_asset_id=by_key[source_key].id,
+                target_asset_id=by_key[target_key].id,
                 kind=kind,
                 confidence=90,
             )
@@ -1147,14 +1155,14 @@ def seed_demo(db: Session) -> tuple[Organization, bool]:
         ),
     ]
     events: list[SecurityEvent] = []
-    for index, (message, severity, class_uid, class_name, host, src, dst, user, mitre) in enumerate(event_specs):
+    for index, (message, severity_id, class_uid, class_name, host, src, dst, user, mitre) in enumerate(event_specs):
         for repeat in range(3 if "Failed password" in message else 1):
             event = _event(
                 org_id,
                 source.id,
                 offset_minutes=180 - index * 6 + repeat,
                 message=message,
-                severity=severity,
+                severity=severity_id,
                 class_uid=class_uid,
                 class_name=class_name,
                 host=host,

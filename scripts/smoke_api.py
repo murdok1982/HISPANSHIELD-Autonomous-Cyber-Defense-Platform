@@ -81,7 +81,7 @@ def main() -> int:
         check(client, "/organizations/current/audit/verify")
 
         assets = check(client, "/assets?page_size=5")
-        check(client, "/assets/zones")
+        check(client, "/zones")
         asset_ids = ids(assets)
         if asset_ids:
             check(client, f"/assets/{asset_ids[0]}")

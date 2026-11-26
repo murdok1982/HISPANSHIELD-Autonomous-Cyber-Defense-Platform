@@ -423,6 +423,8 @@ const copy = {
     "reason": "Motivo",
     "iotRegistry": "Registro de protocolos IoT",
     "otRegistry": "Registro de protocolos OT",
+    "infrastructureRegistry": "Protocolos de infraestructura compartida",
+    "infrastructureHint": "Protocolos presentes tanto en el registro IoT como en el OT; se muestran con los metadatos del registro IoT.",
     "registryHint": "Los protocolos se agrupan por familia (IoT) o clase de seguridad (OT). Todos son de solo lectura.",
     "readOnly": "Solo lectura",
     "support": "Soporte",
@@ -672,6 +674,8 @@ const copy = {
     "reason": "Reason",
     "iotRegistry": "IoT protocol registry",
     "otRegistry": "OT protocol registry",
+    "infrastructureRegistry": "Shared infrastructure protocols",
+    "infrastructureHint": "Protocols present in both the IoT and OT registries; shown with the IoT registry metadata.",
     "registryHint": "Protocols are grouped by family (IoT) or safety class (OT). All are read-only.",
     "readOnly": "Read-only",
     "support": "Support",
@@ -1358,12 +1362,12 @@ export function IotOtPage() {
 
   const zonesQuery = useQuery({
     queryKey: ["assets", "zones", { zoneKind, zoneQ, zonePage }],
-    queryFn: () => api.get<Page<Zone>>("/assets/zones", { kind: zoneKind, q: zoneQ, page: zonePage, page_size: 200 }),
+    queryFn: () => api.get<Page<Zone>>("/zones", { kind: zoneKind, q: zoneQ, page: zonePage, page_size: 200 }),
   });
 
   const zoneAssetsQuery = useQuery({
     queryKey: ["assets", "zone", selectedZoneId, zoneAssetsPage],
-    queryFn: () => api.get<Page<AssetRow>>(`/assets/zones/${selectedZoneId}/assets`, { page: zoneAssetsPage, page_size: 25 }),
+    queryFn: () => api.get<Page<AssetRow>>(`/zones/${selectedZoneId}/assets`, { page: zoneAssetsPage, page_size: 25 }),
     enabled: Boolean(selectedZoneId),
   });
 
@@ -1391,6 +1395,9 @@ export function IotOtPage() {
   const otProtocolOptions = (otProtocolsQuery.data ?? []).map((item) => item.name);
   const selectedGateway = gateways.find((item) => item.id === selectedGatewayId) ?? null;
   const selectedZone = zones.find((item) => item.id === selectedZoneId) ?? null;
+  const sharedProtocols = (iotProtocolsQuery.data ?? []).filter((item) =>
+    (otProtocolsQuery.data ?? []).some((otItem) => otItem.name.toLowerCase() === item.name.toLowerCase()),
+  );
 
   const invalidateInventory = () => {
     void queryClient.invalidateQueries({ queryKey: ["iot"] });
@@ -1440,7 +1447,7 @@ export function IotOtPage() {
 
   const zoneMutation = useMutation({
     mutationFn: ({ payload, editing }: { payload: Record<string, unknown>; editing: Zone | null }) =>
-      editing ? api.patch<Zone>(`/assets/zones/${editing.id}`, payload) : api.post<Zone>("/assets/zones", payload),
+      editing ? api.patch<Zone>(`/zones/${editing.id}`, payload) : api.post<Zone>("/zones", payload),
     onSuccess: (_result, variables) => {
       invalidateInventory();
       toast.push(variables.editing ? c("zoneUpdateSuccess") : c("zoneCreateSuccess"), "success");
@@ -1452,7 +1459,7 @@ export function IotOtPage() {
 
   const zoneDeleteMutation = useMutation({
     mutationFn: ({ zone, reassign }: { zone: Zone; reassign: string }) =>
-      api.delete(withQuery(`/assets/zones/${zone.id}`, { reassign_to: reassign || undefined })),
+      api.delete(withQuery(`/zones/${zone.id}`, { reassign_to: reassign || undefined })),
     onSuccess: () => {
       invalidateInventory();
       toast.push(c("zoneDeleteSuccess"), "success");
@@ -1504,13 +1511,31 @@ export function IotOtPage() {
     onError: (error) => toast.push(`${c("operationFailed")}: ${errorMessage(error)}`, "error"),
   });
 
+  const safetyBanner = (
+    <div className="notice notice-warning" style={{ marginBottom: 12 }} role="status" data-testid="ot-safety-banner">
+      <Lock size={15} style={{ flex: "0 0 auto" }} aria-hidden="true" />
+      <div>
+        <strong>{c("safetyTitle")}</strong>
+        <div style={{ marginTop: 3 }}>{c("safetyBody")}</div>
+        <div className="mono" style={{ fontSize: 10, marginTop: 5, letterSpacing: "0.04em" }}>{c("safetyNoWrite")}</div>
+      </div>
+    </div>
+  );
+
   if (iotSummaryQuery.isLoading || otPostureQuery.isLoading || zonesQuery.isLoading || gatewaysQuery.isLoading) {
-    return <PageSkeleton />;
+    return (
+      <div data-testid="page-iot-ot">
+        <PageHeader eyebrow={c("eyebrow")} title={c("title")} subtitle={c("subtitle")} />
+        {safetyBanner}
+        <PageSkeleton />
+      </div>
+    );
   }
   if (iotSummaryQuery.isError || otPostureQuery.isError || !iotSummaryQuery.data || !otPostureQuery.data) {
     return (
       <div data-testid="page-iot-ot">
         <PageHeader eyebrow={c("eyebrow")} title={c("title")} subtitle={c("subtitle")} />
+        {safetyBanner}
         <ErrorBanner
           message={t("errors.retryHint")}
           onRetry={() => {
@@ -2303,10 +2328,10 @@ export function IotOtPage() {
             data-testid="gateway-filter-status"
           >
             <option value="">{c("all")}</option>
-            <option value="active">active</option>
-            <option value="degraded">degraded</option>
-            <option value="revoked">revoked</option>
-            <option value="pending">pending</option>
+            <option value="active">{humanize("active")}</option>
+            <option value="degraded">{humanize("degraded")}</option>
+            <option value="revoked">{humanize("revoked")}</option>
+            <option value="pending">{humanize("pending")}</option>
           </Select>
         </div>
         {gatewaysQuery.isError ? (
@@ -2399,6 +2424,23 @@ export function IotOtPage() {
           )}
         </Card>
       </div>
+
+      <Card
+        title={c("infrastructureRegistry")}
+        subtitle={c("infrastructureHint")}
+        bodyClassName=""
+        actions={<Badge tone="neutral">{formatNumber(sharedProtocols.length)}</Badge>}
+      >
+        {iotProtocolsQuery.isLoading || otProtocolsQuery.isLoading ? (
+          <TableSkeleton rows={3} />
+        ) : sharedProtocols.length === 0 ? (
+          <EmptyState icon={Network} title={c("noProtocols")} description={c("infrastructureHint")} />
+        ) : (
+          <div data-testid="shared-protocols">
+            <DataTable columns={iotProtocolColumns} rows={sharedProtocols} rowKey={(row) => row.name} />
+          </div>
+        )}
+      </Card>
     </div>
   );
 
@@ -2438,14 +2480,7 @@ export function IotOtPage() {
         }
       />
 
-      <div className="notice notice-warning" style={{ marginBottom: 12 }} role="status" data-testid="ot-safety-banner">
-        <Lock size={15} style={{ flex: "0 0 auto" }} aria-hidden="true" />
-        <div>
-          <strong>{c("safetyTitle")}</strong>
-          <div style={{ marginTop: 3 }}>{c("safetyBody")}</div>
-          <div className="mono" style={{ fontSize: 10, marginTop: 5, letterSpacing: "0.04em" }}>{c("safetyNoWrite")}</div>
-        </div>
-      </div>
+      {safetyBanner}
 
       <div style={{ marginBottom: 12 }} data-testid="iotot-tabs">
         <Tabs items={tabs} value={tab} onChange={setTab} ariaLabel={c("title")} />

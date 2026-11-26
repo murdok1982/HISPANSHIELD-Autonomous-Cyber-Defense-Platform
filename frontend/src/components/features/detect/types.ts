@@ -537,7 +537,7 @@ export interface Enrichment {
   evidence: EnrichmentMatch[];
   matched?: boolean;
   actors: EnrichmentActor[];
-  actor: EnrichmentActor | null;
+  actor?: EnrichmentActor | null;
   techniques: EnrichmentTechnique[];
   events?: EnrichmentEvent[];
   reason?: string;

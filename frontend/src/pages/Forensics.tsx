@@ -392,6 +392,11 @@ function verificationTone(status: string): "success" | "danger" | "warning" | "n
   return "neutral";
 }
 
+function safeFilename(value: string | null | undefined, fallback: string): string {
+  const cleaned = (value ?? "").replace(/[^A-Za-z0-9._-]+/g, "_").replace(/^[._]+|[._]+$/g, "").slice(0, 80);
+  return cleaned || fallback;
+}
+
 export function ForensicsPage() {
   const { t, lang } = useI18n();
   const c = usePageCopy(copy);
@@ -484,7 +489,7 @@ export function ForensicsPage() {
   const exportMutation = useMutation({
     mutationFn: async () => {
       if (!activeId) throw new Error("No case selected");
-      const ref = detailQuery.data?.case.ref ?? "case";
+      const ref = safeFilename(detailQuery.data?.case.ref, "case");
       await downloadPostFile(`/forensics/cases/${activeId}/export`, `case-${ref}-evidence.zip`);
     },
     onSuccess: () => {
@@ -500,7 +505,7 @@ export function ForensicsPage() {
 
   const timelineExport = async (format: "csv" | "json") => {
     if (!activeId) return;
-    const ref = detailQuery.data?.case.ref ?? "case";
+    const ref = safeFilename(detailQuery.data?.case.ref, "case");
     setExportingFormat(format);
     try {
       await downloadFile(
@@ -518,6 +523,9 @@ export function ForensicsPage() {
   const resetCasePaging = () => {
     setCasePage(1);
     setSelectedCaseId(null);
+    setSelectedEvidenceId(null);
+    setVerification(null);
+    setEvidencePage(1);
   };
 
   const resetEvidencePaging = () => {
@@ -656,7 +664,7 @@ export function ForensicsPage() {
             size="sm"
             icon={FileCheck2}
             loading={verifyMutation.isPending && verifyMutation.variables === row.id}
-            disabled={!canVerify || !row.has_file}
+            disabled={!canVerify}
             onClick={() => verifyMutation.mutate(row.id)}
             title={canVerify ? undefined : c("permissionDenied")}
             data-testid={`verify-${row.id}`}
@@ -720,7 +728,12 @@ export function ForensicsPage() {
       }
     />
   ) : (
-    <EmptyState icon={Microscope} title={c("noCases")} description={c("noCasesHint")} />
+    <EmptyState
+      icon={Microscope}
+      title={c("noCases")}
+      description={c("noCasesHint")}
+      action={<LinkButton to="/incidents" size="sm">{t("nav.incidents")}</LinkButton>}
+    />
   );
 
   const evidenceEmpty = hasEvidenceFilters ? (
@@ -743,7 +756,12 @@ export function ForensicsPage() {
       }
     />
   ) : (
-    <EmptyState icon={Archive} title={c("noEvidence")} description={c("noEvidenceHint")} />
+    <EmptyState
+      icon={Archive}
+      title={c("noEvidence")}
+      description={c("noEvidenceHint")}
+      action={<LinkButton to="/incidents" size="sm">{t("nav.incidents")}</LinkButton>}
+    />
   );
 
   return (
@@ -834,13 +852,13 @@ export function ForensicsPage() {
             data-testid="filter-case-status"
           >
             <option value="">{c("allStatuses")}</option>
-            <option value="new">new</option>
-            <option value="triaged">triaged</option>
-            <option value="investigating">investigating</option>
-            <option value="contained">contained</option>
-            <option value="eradicated">eradicated</option>
-            <option value="recovered">recovered</option>
-            <option value="closed">closed</option>
+            <option value="new">{humanize("new")}</option>
+            <option value="triaged">{humanize("triaged")}</option>
+            <option value="investigating">{humanize("investigating")}</option>
+            <option value="contained">{humanize("contained")}</option>
+            <option value="eradicated">{humanize("eradicated")}</option>
+            <option value="recovered">{humanize("recovered")}</option>
+            <option value="closed">{humanize("closed")}</option>
           </Select>
           <Select
             value={severity}

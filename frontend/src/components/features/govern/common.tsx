@@ -1,4 +1,4 @@
-import { useEffect, useId, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { AlertTriangle, Check, Copy, ShieldAlert } from "lucide-react";
 import {
   Button,
@@ -9,6 +9,7 @@ import {
   useToast,
 } from "../../ui";
 import { isApiError } from "../../../lib/api";
+import { useI18n, type Lang } from "../../../lib/i18n";
 
 /* -------------------------------------------------------------- clipboard */
 
@@ -209,11 +210,11 @@ export function parseJsonRecord(text: string, emptyValue: Record<string, unknown
   try {
     const parsed: unknown = JSON.parse(trimmed);
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return { ok: false, error: "Debe ser un objeto JSON" };
+      return { ok: false, error: "Se requiere un objeto JSON / JSON object required" };
     }
     return { ok: true, value: parsed as Record<string, unknown> };
   } catch (error) {
-    return { ok: false, error: error instanceof Error ? `JSON inválido: ${error.message}` : "JSON inválido" };
+    return { ok: false, error: error instanceof Error ? `JSON inválido / invalid JSON: ${error.message}` : "JSON inválido / invalid JSON" };
   }
 }
 
@@ -344,4 +345,16 @@ export function apiFieldErrors(error: unknown): Record<string, string> {
 
 export function errorCode(error: unknown): string | null {
   return isApiError(error) ? error.code : null;
+}
+
+/**
+ * Page-local dictionary with the global `common.*`/`errors.*` catalogue as a
+ * fallback, so page copies only need to declare page-specific strings.
+ */
+export function useGovernCopy(copy: Record<Lang, Record<string, string>>): (key: string) => string {
+  const { lang, t } = useI18n();
+  return useCallback(
+    (key: string) => copy[lang][key] ?? copy.en[key] ?? t(key),
+    [copy, lang, t],
+  );
 }

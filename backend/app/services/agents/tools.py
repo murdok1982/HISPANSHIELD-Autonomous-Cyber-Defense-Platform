@@ -7,12 +7,14 @@ unsupported fields are ignored.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.models.assets import Asset, AssetRelationship, Vulnerability
 from app.models.events import Alert, SecurityEvent
@@ -158,7 +160,7 @@ def search_events_tool(db: Session, org_id: UUID, arguments: dict[str, Any]) -> 
     host_names = _strings(arguments.get("host_names"))
     user_names = _strings(arguments.get("user_names"))
     q = arguments.get("q")
-    conditions = []
+    conditions: list[ColumnElement[bool]] = []
     conditions.extend(SecurityEvent.src_ip == value for value in src_ips)
     conditions.extend(SecurityEvent.host_name == value for value in host_names)
     conditions.extend(SecurityEvent.user_name == value for value in user_names)
@@ -301,7 +303,7 @@ def search_knowledge_tool(db: Session, org_id: UUID, arguments: dict[str, Any]) 
     )
 
 
-TOOLS = {
+TOOLS: dict[str, Callable[..., dict[str, Any]]] = {
     "search_events": search_events_tool,
     "get_incident": get_incident_tool,
     "list_assets": list_assets_tool,

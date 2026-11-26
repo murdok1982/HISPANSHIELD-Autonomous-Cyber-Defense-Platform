@@ -194,8 +194,27 @@ class Approval(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     )
     decided_by: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BreakGlassGrant(UUIDPrimaryKeyMixin, Base):
+    __tablename__ = "break_glass_grants"
+    __table_args__ = (Index("ix_break_glass_user_org", "user_id", "org_id", "expires_at"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    reason: Mapped[str] = mapped_column(String(1000), nullable=False)
+    ticket: Mapped[str] = mapped_column(String(80), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
 
 
 class Notification(UUIDPrimaryKeyMixin, Base):
@@ -220,6 +239,7 @@ __all__ = [
     "ApiToken",
     "Approval",
     "AuditRecord",
+    "BreakGlassGrant",
     "KillSwitch",
     "Membership",
     "Notification",

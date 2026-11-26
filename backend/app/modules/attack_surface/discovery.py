@@ -27,12 +27,12 @@ from app.core.errors import ValidationFailure
 from app.models.assets import Asset
 from app.modules.attack_surface.schemas import MAX_SCOPE_CIDRS
 
-PRIVATE_NETWORKS = (
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
+PRIVATE_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
 )
-LOOPBACK_NETWORKS = (ipaddress.ip_network("127.0.0.0/8"),)
+LOOPBACK_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (ipaddress.IPv4Network("127.0.0.0/8"),)
 ALLOWED_NETWORKS = PRIVATE_NETWORKS + LOOPBACK_NETWORKS
 
 MAX_SCOPE_HOSTS = 256

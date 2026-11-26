@@ -107,9 +107,6 @@ class DurableQueue:
         self._initialize()
         with contextlib.suppress(OSError):
             os.chmod(self.path, 0o600)
-        with contextlib.suppress(OSError):
-            if str(self.path.parent) not in {"", "."}:
-                os.chmod(self.path.parent, 0o700)
 
     # ------------------------------------------------------------------ #
     # Setup
@@ -143,7 +140,12 @@ class DurableQueue:
                 self._conn.execute("ROLLBACK")
                 raise
             else:
-                self._conn.execute("COMMIT")
+                try:
+                    self._conn.execute("COMMIT")
+                except BaseException:
+                    with contextlib.suppress(sqlite3.Error):
+                        self._conn.execute("ROLLBACK")
+                    raise
 
     # ------------------------------------------------------------------ #
     # Write path
@@ -215,10 +217,19 @@ class DurableQueue:
         if max_events < 1:
             raise QueueError("max_events must be >= 1")
         with self._write() as conn:
-            rows = conn.execute(
-                "SELECT sequence, payload_json FROM envelope WHERE sent_at IS NULL ORDER BY sequence ASC"
-            ).fetchall()
-            counts = [(int(row["sequence"]), self._event_count(row["payload_json"])) for row in rows]
+            try:
+                counts = [
+                    (int(row["sequence"]), int(row["n"]))
+                    for row in conn.execute(
+                        "SELECT sequence, json_array_length(payload_json) AS n "
+                        "FROM envelope WHERE sent_at IS NULL ORDER BY sequence ASC"
+                    ).fetchall()
+                ]
+            except sqlite3.DatabaseError:
+                rows = conn.execute(
+                    "SELECT sequence, payload_json FROM envelope WHERE sent_at IS NULL ORDER BY sequence ASC"
+                ).fetchall()
+                counts = [(int(row["sequence"]), self._event_count(row["payload_json"])) for row in rows]
             total = sum(count for _sequence, count in counts)
             if total <= max_events:
                 return 0

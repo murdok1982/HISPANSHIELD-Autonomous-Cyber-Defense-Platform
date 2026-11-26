@@ -19,7 +19,7 @@ import inspect
 import logging
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass
 from typing import Any
 from uuid import UUID
@@ -61,7 +61,7 @@ class SyslogReceiver:
         resolver: Resolver,
         sink: Sink,
         default_token: str | None = None,
-        host: str = "0.0.0.0",  # noqa: S104 - listener default, overridable per deployment
+        host: str = "127.0.0.1",  # loopback by default; operators may bind explicitly
         udp_port: int = 5514,
         tcp_port: int = 5514,
         max_message_bytes: int = 16384,
@@ -247,8 +247,8 @@ class SyslogReceiver:
             result["accepted"] += 1
         return result
 
-    def _spawn(self, coroutine: Awaitable[Any]) -> None:
-        task = asyncio.create_task(coroutine)  # type: ignore[arg-type]
+    def _spawn(self, coroutine: Coroutine[Any, Any, Any]) -> None:
+        task: asyncio.Task[Any] = asyncio.create_task(coroutine)
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
 

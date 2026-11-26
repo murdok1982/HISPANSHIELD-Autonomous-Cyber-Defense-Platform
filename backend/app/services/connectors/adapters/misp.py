@@ -50,7 +50,8 @@ class MispAdapter(HttpAdapter):
         for entry in response:
             if not isinstance(entry, dict):
                 continue
-            event = entry.get("Event") if isinstance(entry.get("Event"), dict) else {}
+            raw_event = entry.get("Event")
+            event: dict[str, Any] = raw_event if isinstance(raw_event, dict) else {}
             attributes = entry.get("Attribute") or event.get("Attribute") or []
             if not isinstance(attributes, list):
                 continue

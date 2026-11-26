@@ -10,7 +10,7 @@ from uuid import UUID
 from pydantic import Field, field_validator, model_validator
 
 from app.core.schemas import ORMModel, StrictModel
-from app.services.normalization.ocsf import identify_ip
+from app.services.normalization.ocsf import identify_domain, identify_ip
 
 _SEVERITY_WORDS = {
     "unknown",
@@ -173,6 +173,16 @@ class EventIngestItem(StrictModel):
         normalized = identify_ip(value)
         if normalized is None:
             raise ValueError("Invalid IP address")
+        return normalized
+
+    @field_validator("domain")
+    @classmethod
+    def _domain_valid(cls, value: str | None) -> str | None:
+        if value is None or value == "":
+            return None
+        normalized = identify_domain(value)
+        if normalized is None:
+            raise ValueError("Invalid domain name")
         return normalized
 
     @field_validator("file_hash_sha256")

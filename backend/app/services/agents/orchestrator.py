@@ -236,9 +236,9 @@ def _selectors(bundle: dict[str, Any], context: dict[str, Any], db: Session, org
             if asset.name:
                 host_names.append(asset.name)
 
-    for asset in bundle.get("assets", []):
-        source_ips.extend(asset.get("ip_addresses") or [])
-        host_names.extend(asset.get("hostnames") or [])
+    for bundle_asset in bundle.get("assets", []):
+        source_ips.extend(bundle_asset.get("ip_addresses") or [])
+        host_names.extend(bundle_asset.get("hostnames") or [])
 
     def _dedupe(values: list[str]) -> list[str]:
         seen: list[str] = []
@@ -442,8 +442,8 @@ def _validate_llm_output(parsed: Any, bundle: dict[str, Any]) -> tuple[dict[str,
     if not isinstance(sections, dict):
         return None, "LLM output is missing sections"
     normalized_sections: dict[str, list[str]] = {}
-    for key in SECTION_KEYS:
-        normalized_sections[key] = _bounded_section(sections.get(key))
+    for section_key in SECTION_KEYS:
+        normalized_sections[section_key] = _bounded_section(sections.get(section_key))
     if not any(normalized_sections.values()):
         return None, "LLM output contains no analysable section content"
 

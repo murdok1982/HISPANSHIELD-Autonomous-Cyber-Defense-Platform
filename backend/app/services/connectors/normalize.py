@@ -301,6 +301,16 @@ def _first_nested(payload: dict[str, Any], *paths: str) -> Any:
     return None
 
 
+def _first_nested_dict(payload: dict[str, Any], *paths: str) -> dict[str, Any]:
+    """Return the first nested mapping among ``paths``; empty mapping when absent.
+
+    Vendor payloads are untrusted, so a non-mapping value at a path that is
+    expected to hold an object is treated as "not present".
+    """
+    value = _first_nested(payload, *paths)
+    return value if isinstance(value, dict) else {}
+
+
 def parse_timestamp(value: Any, *, default: datetime | None = None) -> datetime:
     """Parse ISO-8601, epoch seconds/milliseconds or Go-style expiry strings."""
     if isinstance(value, datetime):
@@ -482,10 +492,11 @@ def normalize_wazuh_alert(item: dict[str, Any], *, connector_name: str | None = 
 def normalize_elastic_signal(item: dict[str, Any], *, connector_name: str | None = None) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
-    source = item.get("_source") if isinstance(item.get("_source"), dict) else item
+    raw_source = item.get("_source")
+    source: dict[str, Any] = raw_source if isinstance(raw_source, dict) else item
     external_id = _first(item.get("_id"), source.get("event.id"), source.get("@timestamp"))
-    kibana_alert = _first_nested(source, "kibana.alert") or {}
-    rule = _first_nested(source, "signal.rule") or {}
+    kibana_alert = _first_nested_dict(source, "kibana.alert")
+    rule = _first_nested_dict(source, "signal.rule")
     rule_name = _first(
         _first_nested(kibana_alert, "rule.name"),
         _first_nested(rule, "name"),
@@ -500,9 +511,9 @@ def normalize_elastic_signal(item: dict[str, Any], *, connector_name: str | None
     occurred = parse_timestamp(_first(source.get("@timestamp"), kibana_alert.get("start")))
     src_ip = _normalize_ip(_first_nested(source, "source.ip", "client.ip"))
     dst_ip = _normalize_ip(_first_nested(source, "destination.ip", "server.ip"))
-    threat = _first_nested(source, "threat") or {}
+    threat = _first_nested_dict(source, "threat")
     techniques = _mitre_list(
-        threat.get("technique") if isinstance(threat, dict) else threat,
+        threat.get("technique"),
         _first_nested(kibana_alert, "rule.threat"),
         _first_nested(rule, "threat"),
     )
@@ -683,7 +694,8 @@ def normalize_suricata_event(item: dict[str, Any], *, connector_name: str | None
 def normalize_zeek_event(item: dict[str, Any], *, connector_name: str | None = None) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
-    identifiers = item.get("id") if isinstance(item.get("id"), dict) else {}
+    raw_identifiers = item.get("id")
+    identifiers: dict[str, Any] = raw_identifiers if isinstance(raw_identifiers, dict) else {}
     src_ip = _normalize_ip(_first(item.get("id.orig_h"), identifiers.get("orig_h")))
     dst_ip = _normalize_ip(_first(item.get("id.resp_h"), identifiers.get("resp_h")))
     occurred = parse_timestamp(item.get("ts"))
@@ -772,8 +784,10 @@ def normalize_misp_attribute(
     """Map a MISP attribute (optionally wrapped with its event) to an indicator."""
     if not isinstance(item, dict):
         return None
-    attribute = item.get("Attribute") if isinstance(item.get("Attribute"), dict) else item
-    event_meta = item.get("Event") if isinstance(item.get("Event"), dict) else {}
+    raw_attribute = item.get("Attribute")
+    attribute: dict[str, Any] = raw_attribute if isinstance(raw_attribute, dict) else item
+    raw_event = item.get("Event")
+    event_meta: dict[str, Any] = raw_event if isinstance(raw_event, dict) else {}
     misp_type = str(attribute.get("type") or "").strip().lower()
     indicator_type = _MISP_TYPE_MAP.get(misp_type)
     if indicator_type is None:
@@ -817,7 +831,8 @@ def normalize_opencti_indicator(
     source: str = "opencti",
     connector_name: str | None = None,
 ) -> dict[str, Any] | None:
-    node = item.get("node") if isinstance(item.get("node"), dict) else item
+    raw_node = item.get("node")
+    node: Any = raw_node if isinstance(raw_node, dict) else item
     if not isinstance(node, dict):
         return None
     pattern = sanitize_text(node.get("pattern"), limit=MAX_VALUE)

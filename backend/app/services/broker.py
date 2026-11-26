@@ -81,7 +81,9 @@ def _validate_approval(
 ) -> Approval | None:
     if approval_id is None:
         return None
-    approval = db.get(Approval, approval_id)
+    approval = db.execute(
+        select(Approval).where(Approval.id == approval_id).with_for_update()
+    ).scalar_one_or_none()
     if approval is None or approval.org_id != org.id:
         raise PolicyDenied("Approval does not exist in this organization")
     if approval.status != "approved":
@@ -95,6 +97,12 @@ def _validate_approval(
         raise PolicyDenied("Approval was granted for a different target type")
     if payload.get("target_id") and str(payload.get("target_id")) != str(target_id):
         raise PolicyDenied("Approval was granted for a different target")
+    if approval.consumed_at is not None:
+        raise PolicyDenied("Approval has already been consumed")
+    # Single-use approval: consume it under the row lock before any side effect.
+    # A failure still consumes it, so the operator must request a fresh approval.
+    approval.consumed_at = utcnow()
+    db.flush()
     return approval
 
 

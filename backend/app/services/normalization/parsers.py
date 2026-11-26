@@ -214,6 +214,7 @@ def _flatten(value: Any, prefix: str = "", out: dict[str, Any] | None = None, de
     if out is None:
         out = {}
     if depth > 6:
+        out[f"{prefix or '__root__'}.__depth_truncated__"] = True
         return out
     if isinstance(value, dict):
         for key, item in value.items():
@@ -253,8 +254,8 @@ def _lookup(flat: dict[str, Any], aliases: list[str]) -> tuple[str, Any] | None:
     for alias in aliases:
         target = alias.lower()
         for path, value in flat.items():
-            lowered = path.lower()
-            if lowered.endswith(f".{target}"):
+            lowered_path = path.lower()
+            if lowered_path.endswith(f".{target}"):
                 return path, value
     return None
 
@@ -558,6 +559,14 @@ def _parse_otel_document(document: Any) -> list[NormalizedEvent]:
     if not events:
         raise ParseError("empty_payload", "OpenTelemetry payload contains no log records")
     return events
+
+
+def _reject_json_constant(value: str) -> Any:
+    raise ValueError(f"Invalid JSON constant: {value}")
+
+
+def _loads_json(text: str) -> Any:
+    return json.loads(text, parse_constant=_reject_json_constant)
 
 
 def _parse_json_document(document: Any) -> list[NormalizedEvent]:
@@ -878,7 +887,7 @@ def _parse_leef_line(line: str) -> NormalizedEvent:
         values.setdefault(canonical, value)
 
     severity_raw = values.get("severity")
-    severity = severity_from_cef(severity_raw) if severity_raw is not None else 3
+    severity = severity_from_cef(severity_raw) if severity_raw is not None else 0
     message = values.get("message") or event_id or "LEEF event"
     unmapped = {key: _unescape(value) for key, value in attributes.items() if key not in consumed}
     extra: dict[str, Any] = {
@@ -1076,7 +1085,7 @@ def _parse_syslog_line(line: str, *, now: datetime | None = None) -> NormalizedE
             timestamp = timestamp.replace(year=year - 1)
         rest = time_match.group("rest")
 
-    host_name: str | None = None
+    host_name = None
     if rest:
         host_name, _, rest = rest.partition(" ")
         host_name = host_name if host_name not in {"-", ""} else None
@@ -1234,14 +1243,14 @@ def parse_payload(
 
     if raw_format in {"json", "otel"}:
         try:
-            document = json.loads(text)
-        except json.JSONDecodeError:
+            document = _loads_json(text)
+        except ValueError:
             # Tolerate NDJSON when every line is a complete JSON document.
             lines = [line for line in text.splitlines() if line.strip()]
             if len(lines) > 1:
                 try:
-                    decoded = [json.loads(line) for line in lines]
-                except json.JSONDecodeError as exc:
+                    decoded = [_loads_json(line) for line in lines]
+                except ValueError as exc:
                     raise ParseError("malformed_json", "Payload is not valid JSON") from exc
                 events: list[NormalizedEvent] = []
                 for item in decoded:

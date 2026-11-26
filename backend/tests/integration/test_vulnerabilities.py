@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.ti import ThreatIndicator
-from tests.conftest import login
+from tests.conftest import break_glass, login
 
 
 def _asset(client: TestClient, key: str, **overrides) -> dict:
@@ -27,17 +27,17 @@ def _make_foreign_tenant(admin: TestClient, slug: str, email: str) -> None:
     org = admin.post("/api/v1/organizations", json={"name": f"Org {slug}", "slug": slug})
     assert org.status_code == 201, org.text
     org_id = org.json()["id"]
-    member = admin.post(
-        "/api/v1/organizations/current/members",
-        json={
-            "email": email,
-            "full_name": "Foreign",
-            "role": "vulnerability_manager",
-            "password": "Str0ng-Viewer-Pass!2026",
-        },
-        headers={"X-Organization-Id": org_id},
-    )
-    assert member.status_code == 201, member.text
+    with break_glass(admin, org_id):
+        member = admin.post(
+            "/api/v1/organizations/current/members",
+            json={
+                "email": email,
+                "full_name": "Foreign",
+                "role": "vulnerability_manager",
+                "password": "Str0ng-Viewer-Pass!2026",
+            },
+        )
+        assert member.status_code == 201, member.text
 
 
 def _login(email: str) -> TestClient:

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
@@ -47,6 +47,7 @@ import {
   csvStamp,
   severityFromId,
   useDebouncedValue,
+  useDocumentVisible,
 } from "../components/features/detect/shared";
 import type { EventStats, IngestSource, SecurityEvent, SecurityEventDetail } from "../components/features/detect/types";
 
@@ -57,6 +58,7 @@ const COPY = {
     "monitoring.subtitle": "Flujo normalizado OCSF con filtros operativos, correlación ATT&CK y detalle forense del evento.",
     "monitoring.live": "EN VIVO · 10 s",
     "monitoring.paused": "EN PAUSA",
+    "monitoring.manual": "MANUAL",
     "monitoring.pause": "Pausar",
     "monitoring.resume": "Reanudar",
     "monitoring.export": "Exportar CSV",
@@ -71,7 +73,7 @@ const COPY = {
     "monitoring.kpi.noHost": "Sin host identificado",
     "monitoring.kpi.high": "altos",
     "monitoring.kpi.ofTotal": "del total",
-    "monitoring.feed": "Flujo de eventos normalizado",
+    "monitoring.feed": "Flujo normalizado",
     "monitoring.feedFooter": "Telemetría OCSF · la retención y el enmascaramiento se aplican en el servidor",
     "monitoring.search": "Buscar mensaje, IP, host o usuario…",
     "monitoring.filter.severity": "Severidad",
@@ -135,6 +137,7 @@ const COPY = {
     "monitoring.subtitle": "Normalized OCSF stream with operational filters, ATT&CK correlation and forensic event detail.",
     "monitoring.live": "LIVE · 10 s",
     "monitoring.paused": "PAUSED",
+    "monitoring.manual": "MANUAL",
     "monitoring.pause": "Pause",
     "monitoring.resume": "Resume",
     "monitoring.export": "Export CSV",
@@ -149,7 +152,7 @@ const COPY = {
     "monitoring.kpi.noHost": "No host identified",
     "monitoring.kpi.high": "high",
     "monitoring.kpi.ofTotal": "of total",
-    "monitoring.feed": "Normalized event stream",
+    "monitoring.feed": "Normalized stream",
     "monitoring.feedFooter": "OCSF telemetry · retention and masking are enforced server-side",
     "monitoring.search": "Search message, IP, host or user…",
     "monitoring.filter.severity": "Severity",
@@ -238,8 +241,8 @@ export function MonitoringPage() {
   const debouncedHost = useDebouncedValue(host, 450);
   const debouncedSrcIp = useDebouncedValue(srcIp, 450);
 
-  const occurredFrom = useMemo(() => new Date(Date.now() - RANGE_MS[range]).toISOString(), [range]);
-  const polling = autoRefresh && !paused;
+  const documentVisible = useDocumentVisible();
+  const polling = autoRefresh && !paused && documentVisible;
 
   const sourcesQuery = useQuery({
     queryKey: ["ingest-sources", "options"],
@@ -259,11 +262,13 @@ export function MonitoringPage() {
       "stream",
       { page, search: debouncedSearch, severity, classUid, sourceId, range, host: debouncedHost, srcIp: debouncedSrcIp },
     ],
-    queryFn: () =>
-      api.get<Page<SecurityEvent>>("/events", {
+    queryFn: () => {
+      const now = new Date();
+      return api.get<Page<SecurityEvent>>("/events", {
         page,
         page_size: 25,
-        occurred_from: occurredFrom,
+        occurred_from: new Date(now.getTime() - RANGE_MS[range]).toISOString(),
+        occurred_to: now.toISOString(),
         severity_id: severity || undefined,
         class_uid: classUid || undefined,
         source_id: sourceId || undefined,
@@ -272,7 +277,8 @@ export function MonitoringPage() {
         q: debouncedSearch || undefined,
         sort: "occurred_at",
         order: "desc",
-      }),
+      });
+    },
     refetchInterval: polling ? 10_000 : false,
   });
 
@@ -444,8 +450,8 @@ export function MonitoringPage() {
         subtitle={c("monitoring.subtitle")}
         actions={
           <>
-            <span className="live-dot" style={paused ? { color: "var(--warning)" } : undefined}>
-              {paused ? c("monitoring.paused") : c("monitoring.live")}
+            <span className="live-dot" style={paused || !autoRefresh ? { color: "var(--warning)" } : undefined}>
+              {paused ? c("monitoring.paused") : autoRefresh ? c("monitoring.live") : c("monitoring.manual")}
             </span>
             <Button icon={paused ? Play : Pause} onClick={() => setPaused((value) => !value)} data-testid="toggle-pause">
               {paused ? c("monitoring.resume") : c("monitoring.pause")}
@@ -468,7 +474,7 @@ export function MonitoringPage() {
             <span>
               {statsQuery.isError
                 ? c("monitoring.statsError")
-                : `${formatNumber(stats?.by_class.length ?? 0)} ${lang === "es" ? "clases" : "classes"}`}
+                : `${formatNumber(stats?.by_class.length ?? 0)} ${lang === "es" ? "clases principales" : "top classes"}`}
             </span>
           }
         />
@@ -528,22 +534,19 @@ export function MonitoringPage() {
       <div className="split-main">
         <Card
           title={c("monitoring.feed")}
-          subtitle={eventsQuery.data ? `${formatNumber(eventsQuery.data.meta.total)} ${c("monitoring.eventsCount")}` : undefined}
           actions={
-            <>
-              <Badge tone="neutral">
-                <Filter size={10} aria-hidden="true" /> {c(`monitoring.range.${range}`)}
-              </Badge>
-              <Button size="sm" variant="ghost" icon={Download} onClick={exportPage} data-testid="export-events">
-                {c("monitoring.export")}
-              </Button>
-            </>
+            <Button size="sm" variant="ghost" icon={Download} onClick={exportPage} data-testid="export-events">
+              {c("monitoring.export")}
+            </Button>
           }
           bodyClassName=""
           footer={
-            <span className="row" style={{ gap: 6 }}>
+            <span className="row wrap" style={{ gap: 6 }}>
               <Radar size={12} style={{ color: "var(--accent)" }} aria-hidden="true" />
-              {c("monitoring.feedFooter")}
+              <span>
+                {eventsQuery.data ? `${formatNumber(eventsQuery.data.meta.total)} ${c("monitoring.eventsCount")} · ` : ""}
+                {c("monitoring.feedFooter")}
+              </span>
             </span>
           }
         >
@@ -691,7 +694,6 @@ export function MonitoringPage() {
         <div className="stack">
           <Card
             title={c("monitoring.stats.severity")}
-            subtitle={c("monitoring.stats.window")}
             actions={
               <button
                 type="button"

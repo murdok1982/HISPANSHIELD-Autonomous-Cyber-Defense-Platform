@@ -14,7 +14,7 @@ from app.core.db import utcnow
 from app.models.edge import EdgeIngestEvent
 from app.models.events import SecurityEvent
 from app.modules.edge.security import compute_signature, sign_config_bundle
-from tests.conftest import login
+from tests.conftest import break_glass, login
 
 BASE = "/api/v1/edge"
 FINGERPRINT = "fp-unit-gateway-0001"
@@ -353,9 +353,8 @@ def test_gateway_listing_excludes_pending_enrollments(seeded, auth_client: TestC
 def test_gateway_tenant_isolation(seeded, auth_client: TestClient) -> None:
     other = auth_client.post("/api/v1/organizations", json={"name": "Edge Other Org", "slug": "edge-other-org"})
     assert other.status_code == 201, other.text
-    auth_client.headers["X-Organization-Id"] = other.json()["id"]
-    foreign = _bootstrap_gateway(auth_client, fingerprint="fp-foreign-0001")
-    auth_client.headers.pop("X-Organization-Id", None)
+    with break_glass(auth_client, other.json()["id"]):
+        foreign = _bootstrap_gateway(auth_client, fingerprint="fp-foreign-0001")
 
     assert auth_client.get(f"{BASE}/gateways/{foreign['gateway_id']}").status_code == 404
     assert auth_client.get(f"{BASE}/gateways/{foreign['gateway_id']}/events").status_code == 404

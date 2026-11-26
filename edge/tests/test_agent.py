@@ -59,8 +59,8 @@ def test_spool_collection_offline_then_strict_order_flush(tmp_path: Path, queue:
         assert summary["sent_batches"] == 0
         assert summary["error"] is not None
         pending = queue.pending(10)
-        assert [item.sequence for item in pending] == [1, 2]
-        assert [len(item.events) for item in pending] == [500, 500]
+        assert [item.sequence for item in pending] == [1, 2, 3, 4, 5, 6]
+        assert [len(item.events) for item in pending] == [200, 200, 100, 200, 200, 100]
         assert queue.stats()["max_attempts"] == 1
     finally:
         agent.stop_collectors()
@@ -70,13 +70,13 @@ def test_spool_collection_offline_then_strict_order_flush(tmp_path: Path, queue:
     try:
         online_agent = _agent(config, queue, tmp_path, client=EdgeClient(config, sleep=lambda _seconds: None))
         result = online_agent.flush_pending(max_batches=10)
-        assert result["sent_batches"] == 2
+        assert result["sent_batches"] == 6
         assert result["sent_events"] == 1000
         assert queue.pending(10) == []
-        assert queue.cursor() == 2
-        assert core.state.cursor == 2
+        assert queue.cursor() == 6
+        assert core.state.cursor == 6
         sequences = [json.loads(item["body"])["sequence"] for item in core.events_requests()]
-        assert sequences == [1, 2]
+        assert sequences == [1, 2, 3, 4, 5, 6]
         delivered = set()
         for item in core.events_requests():
             delivered.update(event["event_uid"] for event in json.loads(item["body"])["events"])
@@ -283,6 +283,32 @@ def test_once_keeps_collecting_while_offline(tmp_path: Path, queue: DurableQueue
         assert summary["error"]
         assert queue.stats()["pending_envelopes"] == 1
         assert queue.stats()["next_sequence"] == 2
+    finally:
+        agent.stop_collectors()
+        agent.client.close()
+
+
+def test_agent_respects_server_batch_size_when_collecting(tmp_path: Path, queue: DurableQueue):
+    config = GatewayConfig(
+        base_url="https://core.example.com",
+        fingerprint=FINGERPRINT,
+        gateway_id=GATEWAY_ID,
+        org_id=ORG_ID,
+        shared_key=SECRET,
+        allow_insecure_http=True,
+        config={"batch_size": 2},
+    )
+    agent = _agent(config, queue, tmp_path)
+    agent.start_collectors()
+    try:
+        spool = tmp_path / "spool"
+        spool.mkdir(exist_ok=True)
+        (spool / "three.jsonl").write_text(
+            "\n".join(json.dumps({"n": index}) for index in range(3)) + "\n",
+            encoding="utf-8",
+        )
+        assert agent.collect_once() == 3
+        assert [len(item.events) for item in queue.pending(10)] == [2, 1]
     finally:
         agent.stop_collectors()
         agent.client.close()

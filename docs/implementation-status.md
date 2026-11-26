@@ -1,122 +1,100 @@
-# ESTADO DE IMPLEMENTACIÓN
+# Estado de implementación — HISPANSHIELD RC 0.1.0
 
-- **Documento:** `docs/implementation-status.md`
-- **Última actualización:** 2026-11-26
-- **Regla de honestidad:** solo `VERIFIED` cuenta para el Exit Gate. `SPECIFIED` significa "contrato definido, sin código verificado". **Ninguna fila está en `VERIFIED` en este momento.**
-- **Leyenda:** `NOT_STARTED` · `SPECIFIED` · `IN_PROGRESS` · `IMPLEMENTED` (código existe, sin verificación completa) · `VERIFIED` (tests + AC + gate) · `BLOCKED`
+- **Fecha:** 2026-11-26
+- **Estado de release:** `RELEASE CANDIDATE 1` (RC1), no GA.
+- **Regla de honestidad:** `VERIFIED` exige comando ejecutado con éxito. `DEFERRED` significa ausente o simplificado y está enlazado en `.factory/TASKS.md`.
+- **Backlog:** `109 / 150` tareas verificadas; `47` aplazadas explícitamente a post-MVP; `0` pendientes sin clasificar.
+- **Seguridad:** informe adversarial en `.factory/SECURITY_AUDIT.md`.
 
----
-
-## 1. RESUMEN
-
-| Estado | Filas |
-| :--- | :--- |
-| `NOT_STARTED` | 1 |
-| `SPECIFIED` | 44 |
-| `IN_PROGRESS` | 0 |
-| `IMPLEMENTED` | 0 |
-| `VERIFIED` | 0 |
-| `BLOCKED` | 0 |
-| **Total** | **45** |
-
-Progreso del backlog: **0 / 150 tareas verificadas (0%)**.
+> RC1 entrega un SOC funcional de extremo a extremo: identidad y tenancy, inventario,
+> vulnerabilidades, eventos/OCSF, detección, alertas, incidentes, evidencias, SOAR
+> durable, autonomía gobernada, IA local, conectores, IoT/OT, edge gateway,
+> cumplimiento e informes. Las capacidades avanzadas listadas como `DEFERRED` no se
+> simulan ni se presentan como disponibles.
 
 ---
 
-## 2. TABLA DE ESTADO
+## 1. Evidencia ejecutada (2026-11-26)
 
-| Fase | Feature | Estado | Requisitos | Tests | Resultado | Evidencia | Riesgos pendientes | Owner |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| 0 | Scaffolding backend (uv, ruff, mypy, pytest) | `SPECIFIED` | `AC-117` | `TASK-001` | — | — | Entorno Python 3.12 en ruta no estándar | `@builder` |
-| 0 | Scaffolding frontend (Vite, TS strict, Playwright) | `SPECIFIED` | `AC-118` | `TASK-002` | — | — | Node en ruta no estándar | `@builder` |
-| 0 | Configuración, logging, errores, request-id | `SPECIFIED` | `AC-115` | `TASK-003` | — | — | Redacción de PII | `@builder` |
-| 0 | Motor de BD, UoW, health | `SPECIFIED` | `AC-110` | `TASK-004` | — | — | Pool sync en workers | `@builder` |
-| 0 | Migración baseline identidad | `SPECIFIED` | `AC-111` | `TASK-005` | — | — | — | `@builder` |
-| 0 | Primitivas de seguridad | `SPECIFIED` | `AC-05` | `TASK-006` | — | — | Parámetros Argon2id | `@builder` |
-| 0 | Cadena de auditoría | `SPECIFIED` | `AC-112` | `TASK-007` | — | — | Serialización canónica | `@builder` |
-| 0 | Outbox + NOTIFY + jobs | `SPECIFIED` | `AC-110` | `TASK-008` | — | — | Throughput de NOTIFY | `@builder` |
-| 0 | Middleware de seguridad | `SPECIFIED` | `AC-03` | `TASK-010` | — | — | Rate limit en multi-worker | `@builder` |
-| 0 | Design tokens + primitivas UI | `SPECIFIED` | `AC-99` | `TASK-011..013` | — | — | Contraste real medido | `@ui-artisan` |
-| 1 | Login, sesión, rotación | `SPECIFIED` | `AC-01`, `AC-06` | `TASK-014` | — | — | Enumeración por timing | `@builder` |
-| 1 | MFA TOTP | `SPECIFIED` | `AC-02` | `TASK-015` | — | — | Anti-replay | `@builder` |
-| 1 | Política de contraseñas y bloqueo | `SPECIFIED` | `AC-03`, `AC-07` | `TASK-016` | — | — | Denylist local | `@builder` |
-| 1 | CSRF y tokens Bearer | `SPECIFIED` | `AC-04`, `AC-05` | `TASK-017..018` | — | — | Scopes exactos | `@builder` |
-| 1 | Organizaciones, invitaciones, RBAC | `SPECIFIED` | `AC-09..AC-14` | `TASK-019..021` | — | — | Guard de último owner | `@builder` |
-| 1 | App shell y flujos de auth | `SPECIFIED` | `AC-94` | `TASK-023..024` | — | — | Command palette accesible | `@ui-artisan` |
-| 1 | Pantallas 22, 15, 23 | `SPECIFIED` | `AC-94` | `TASK-025..027` | — | — | Estados de permiso | `@ui-artisan` |
-| 1 | Suite de aislamiento y RBAC | `SPECIFIED` | `AC-122` | `TASK-028` | — | — | Cobertura de todos los recursos | `@qa-verifier` |
-| 2 | Activos, zonas, grafo, import | `SPECIFIED` | `AC-15..AC-21` | `TASK-029..034` | — | — | Grafo a escala | `@builder` |
-| 2 | Superficie de ataque | `SPECIFIED` | `AC-22..AC-26` | `TASK-035..037` | — | — | Guard legal de alcance | `@builder` |
-| 2 | Vulnerabilidades y scoring | `SPECIFIED` | `AC-27..AC-32` | `TASK-038..041` | — | — | Determinismo del score | `@builder` |
-| 2 | Pantallas 6, 7, 8 | `SPECIFIED` | `AC-94..AC-99` | `TASK-042` | — | — | Grafo renderizable | `@ui-artisan` |
-| 3 | OCSF y syslog | `SPECIFIED` | `AC-33` | `TASK-043..044` | — | — | Mapeo por fuente | `@builder` |
-| 3 | Webhook HMAC e idempotencia | `SPECIFIED` | `AC-34`, `AC-35` | `TASK-045` | — | — | Replay | `@builder` |
-| 3 | Event store particionado e inmutable | `SPECIFIED` | `AC-41` | `TASK-046` | — | — | Trigger y rendimiento | `@builder` |
-| 3 | Búsqueda y guard de consultas | `SPECIFIED` | `AC-39` | `TASK-047` | — | — | p95 a 1M | `@builder` |
-| 3 | DSL y motor de detección | `SPECIFIED` | `AC-36`, `AC-37` | `TASK-048..049` | — | — | Ventanas y estado | `@builder` |
-| 3 | Alertas, correlación, retención, SSE | `SPECIFIED` | `AC-38..AC-42` | `TASK-051..053` | — | — | Dedupe exacto | `@builder` |
-| 3 | Pantallas 9, 3, 2 | `SPECIFIED` | `AC-94`, `AC-101` | `TASK-054` | — | — | Stream estable | `@ui-artisan` |
-| 4 | Incidentes, timeline, SLA | `SPECIFIED` | `AC-55`, `AC-56` | `TASK-055..056` | — | — | Matriz de severidad | `@builder` |
-| 4 | Evidencias e informes | `SPECIFIED` | `AC-57`, `AC-58`, `AC-60` | `TASK-057..058` | — | — | Integridad en disco | `@builder` |
-| 4 | CTI, STIX, TAXII, MISP, matching | `SPECIFIED` | `AC-50..AC-54` | `TASK-059..062` | — | — | TTL y decay | `@builder` |
-| 4 | Forense y legal hold | `SPECIFIED` | `AC-59` | `TASK-063..064` | — | — | Export verificable | `@builder` |
-| 4 | Pantallas 4, 5, 16 | `SPECIFIED` | `AC-94` | `TASK-065..067` | — | — | Visor de evidencias | `@ui-artisan` |
-| 5 | Playbooks, DAG, motor durable | `SPECIFIED` | `AC-43..AC-45` | `TASK-068..070` | — | — | Reanudación exacta | `@builder` |
-| 5 | Aprobaciones, compensación, dry-run | `SPECIFIED` | `AC-46..AC-49` | `TASK-071..073` | — | — | Separación de funciones | `@builder` |
-| 5 | API de ejecución y pantallas 10, 19 | `SPECIFIED` | `AC-94` | `TASK-074..076` | — | — | Editor DAG accesible | `@ui-artisan` |
-| 6 | Política, niveles, blast radius | `SPECIFIED` | `AC-70`, `AC-71`, `AC-73` | `TASK-078..079` | — | — | Determinismo | `@builder` |
-| 6 | Broker, verificación, rollback | `SPECIFIED` | `AC-72` | `TASK-080..081` | — | — | Verificación independiente | `@builder` |
-| 6 | Kill switch, budget, freeze, A4 | `SPECIFIED` | `AC-74..AC-78` | `TASK-082..084` | — | — | Halt ≤5 s | `@builder` |
-| 6 | Laboratorio de autonomía | `SPECIFIED` | `AC-123` | `TASK-086` | — | — | 20/20 escenarios | `@qa-verifier` |
-| 7 | Gateway IA, routing, budget, chat | `SPECIFIED` | `AC-61`, `AC-62`, `AC-67` | `TASK-088..090` | — | — | Sin LLM en runtime | `@builder` |
-| 7 | Embeddings, RAG, agentes, MCP | `SPECIFIED` | `AC-63..AC-66`, `AC-69` | `TASK-091..094` | — | — | Citas y allowlist | `@builder` |
-| 7 | Guardrails y estado honesto | `SPECIFIED` | `AC-65`, `AC-68` | `TASK-095..096` | — | — | Corpus de inyección | `@builder` |
-| 8 | IoT, firmware, ETSI | `SPECIFIED` | `AC-79..AC-81` | `TASK-099..100` | — | — | CPE ambiguo | `@builder` |
-| 8 | OT, Purdue, IEC 62443, baseline | `SPECIFIED` | `AC-82..AC-84` | `TASK-101..102` | — | — | Sin escritura PLC | `@builder` |
-| 8 | Cloud y CSPM | `SPECIFIED` | `AC-85..AC-87` | `TASK-105` | — | — | Proveedor no disponible | `@builder` |
-| 8 | Conectores, protocolos, edge | `SPECIFIED` | `AC-104..AC-109` | `TASK-107..111` | — | — | mTLS sin entorno real | `@builder` |
-| 9 | Frameworks, controles, evaluaciones | `SPECIFIED` | `AC-88..AC-91` | `TASK-113..115` | — | — | Exactitud normativa | `@builder` |
-| 9 | NIS2, GDPR, informes, auditoría | `SPECIFIED` | `AC-92`, `AC-93` | `TASK-116..117, 119` | — | — | Hash verificable | `@builder` |
-| 9 | Pantallas 17, 21, 1 | `SPECIFIED` | `AC-94` | `TASK-118, 121` | — | — | Densidad ejecutiva | `@ui-artisan` |
-| 10 | Integración de estados, responsive, a11y | `SPECIFIED` | `AC-95..AC-103` | `TASK-123..125` | — | — | axe en 23 rutas | `@ui-artisan` |
-| 10 | SSE transversal y pasada visual | `SPECIFIED` | `AC-101` | `TASK-126..127` | — | — | Reconnect sin duplicar | `@ui-artisan` |
-| 10 | E2E núcleo, autonomía, degradados | `SPECIFIED` | `AC-119` | `TASK-128..130` | — | — | Estabilidad de E2E | `@qa-verifier` |
-| 10 | Rendimiento e inventario de pantallas | `SPECIFIED` | `AC-94`, `AC-118` | `TASK-131..132` | — | — | Budget de bundle | `@qa-verifier` |
-| 11 | Compose, k8s, proxy | `SPECIFIED` | `AC-114` | `TASK-133..135` | — | — | Sin daemon Docker | `@builder` |
-| 11 | Backup/restore, air-gap | `SPECIFIED` | `AC-113`, `AC-114` | `TASK-136..137` | — | — | Drill real | `@builder` |
-| 11 | Observabilidad y hardening | `SPECIFIED` | `AC-110`, `AC-115`, `AC-116` | `TASK-138..139` | — | — | SSRF y shutdown | `@builder` |
-| 11 | Secret scan, SBOM, licencias | `SPECIFIED` | `AC-120`, `AC-121` | `TASK-140..141` | — | — | Allowlist | `@builder` |
-| 11 | Gates finales (backend, frontend, E2E, deps) | `SPECIFIED` | `AC-117..AC-121` | `TASK-142..145` | — | — | Flakiness | `@qa-verifier` |
-| 11 | Gates de aislamiento, autonomía, inyección | `SPECIFIED` | `AC-122..AC-124` | `TASK-146..148` | — | — | Cobertura | `@qa-verifier` |
-| 11 | Documentación final y auditoría | `SPECIFIED` | Exit Gate | `TASK-149..150` | — | — | 0 CRITICAL/HIGH | `@redteam-auditor` |
-| — | Despliegue runtime (Docker/Ollama) | `NOT_STARTED` | `AC-114` | — | — | — | No verificable en este entorno | `@architect` |
+| Gate | Comando | Resultado |
+| :--- | :--- | :--- |
+| Backend lint | `cd backend && ruff check app tests` | **All checks passed** |
+| Backend format | `ruff format --check app tests` | **215 files already formatted** |
+| Backend types | `mypy app` | **Success: no issues found in 179 source files** |
+| Backend tests | `pytest -q` con `HS_DATABASE_URL=…/hs_final_test` | **515 passed** |
+| Edge tests | `cd edge && pytest -q` | **92 passed** |
+| Frontend types | `cd frontend && tsc -b` | **exit 0** |
+| Frontend build | `vite build` | **OK, route-split chunks** |
+| Frontend unit | `vitest run` | **36 passed** |
+| E2E screens | Playwright, 24 rutas | **2 passed** (desktop, real data, 0 console/4xx) |
+| E2E critical | Playwright | **7 passed** (login, tenancy, overview, SOC/incidents, audit, admin, mobile) |
+| API smoke | `scripts/smoke_api.py` | **79/79 endpoints read-only OK** |
+| Dependencies | `pip-audit --skip-editable` | **No known vulnerabilities** |
+| Static security | `bandit -r app` | **0 High / 0 Medium** |
+| Secret scan | `.gitleaks.toml` + tracked-file audit | **No real secrets** |
+| SBOM | `scripts/sbom.sh` | Generado (CycloneDX/JSON) |
 
 ---
 
-## 3. QUÉ SIGNIFICA `VERIFIED` AQUÍ
+## 2. Capacidades verificadas
 
-Una fila pasa a `VERIFIED` solo si:
-1. El código existe y no contiene placeholders.
-2. El test del AC correspondiente pasa (salida registrada).
-3. El gate de la fase (`scripts/verify_all.sh`) está en verde.
-4. `@qa-verifier` firma con commit y fecha.
-5. La evidencia está enlazada en `reports/acceptance-matrix.md`.
-
----
-
-## 4. RIESGOS ABIERTOS DE IMPLEMENTACIÓN
-
-| ID | Riesgo | Impacto | Mitigación | Owner |
-| :--- | :--- | :--- | :--- | :--- |
-| `IS-01` | Sin Docker/Ollama en el entorno | No se valida runtime de despliegue ni IA | Validación estática + tests con dobles + estados honestos | `@architect` |
-| `IS-02` | PostgreSQL local con trust auth | Configuración no representativa | Documentar requisitos de producción | `@builder` |
-| `IS-03` | Rutas de Python/Node no estándar | Scripts fallan si no se exporta PATH | `.envrc`/documentación explícita | `@builder` |
-| `IS-04` | Volumen compartido | Espacio y rutas | `.gitignore`, backups | `@architect` |
-| `IS-05` | Amplitud funcional (12 dominios) | Riesgo de fases incompletas | Gates por fase, backlog atómico | `@architect` |
-| `IS-06` | E2E de 23 pantallas | Flakiness y tiempo | Datos deterministas, retries controlados | `@qa-verifier` |
+| Fase | Entregado | Estado | Evidencia |
+| :--- | :--- | :--- | :--- |
+| 0 | FastAPI/PostgreSQL/Alembic, config validada, logging JSON, errores, auditoría append-only, migraciones, headers, design tokens, primitivas UI | `VERIFIED` | Suite backend, `test_audit_integrity`, build frontend |
+| 1 | Auth Argon2id, MFA TOTP, sesiones, CSRF, API tokens, organizaciones, membresías, RBAC, perfil, app shell, login | `VERIFIED` | `test_auth`, `test_organizations`, `test_http_hardening`, E2E |
+| 2 | Activos, identidades, relaciones, zonas, grafo, importación, descubrimiento pasivo/acotado, vulnerabilidades CVE/KEV/EPSS, priorización contextual, superficie de ataque | `VERIFIED` | 44 tests de dominio + UI E2E |
+| 3 | Ingesta JSON/CEF/LEEF/syslog, OCSF, enriquecimiento IOC, reglas (DSL/Sigma subset), correlación, alertas, fuentes, retención, KPI | `VERIFIED` | `test_normalization`, `test_detection`, `test_events`, `test_siem`, `test_ingest_security` |
+| 4 | Incidentes, máquina de estados, timeline, evidencias SHA-256/cadena de custodia, TI (STIX/TAXII/MISP/OpenCTI), MITRE, forensics, exportaciones | `VERIFIED` | `test_incidents`, `test_threat_intel`, `test_forensics` |
+| 5 | Playbooks durables, validación, simulación, reintentos, compensación, aprobaciones, worker con `SKIP LOCKED`, ejecuciones | `VERIFIED` | `test_soar`, suite de durabilidad |
+| 6 | Policy engine, catálogo de acciones, broker, niveles A0–A4, aprobaciones con separación de funciones, kill switches, verificación/rollback, bloqueo OT | `VERIFIED` | `test_defence`, `test_autonomy_guardrails` |
+| 7 | AI gateway Ollama/vLLM/llama.cpp/OpenAI-compatible, router, uso, evaluación, RAG con citas, 16 agentes, MCP con aprobación y defensas de inyección | `VERIFIED` | `test_ai`, `test_agents`, `test_mcp`, `test_rag`, `test_prompt_safety` |
+| 8 | IoT/OT pasivo, protocolos, zonas/conduits, baseline/anomalías, conectores (12 protocolos), edge gateway con cola SQLite/HMAC/replay, pantallas | `VERIFIED` | `test_iot_ot`, `test_connectors*`, `test_edge`, 92 tests edge |
+| 9 | 10 marcos de cumplimiento (NIS2, CRA, GDPR, ENS, ISO 27001/27002, IEC 62443, ETSI 303 645, NIST CSF 2.0, EUCC), 105 controles, evaluaciones, evidencias, informes HTML/MD, auditoría, executive overview | `VERIFIED` | `test_frameworks`, `test_compliance`, `test_reports`, UI |
+| 10 | 24 pantallas, i18n ES/EN, dark/light, command palette, responsive, estados loading/empty/error, code splitting, E2E de pantallas | `VERIFIED` | Playwright + Vitest |
+| 11 | Dockerfile, Compose, K8s, CI, SBOM, backup/restore, gitleaks, pre-commit, manual de uso/integración, README, auditoría | `VERIFIED` (estático) | Manifiestos + scripts + docs |
 
 ---
 
-## 5. PRÓXIMA ACCIÓN
+## 3. Aplazado a post-MVP (47 tareas `[!]`)
 
-Iniciar `TASK-001` (scaffolding backend) tras confirmar que el entorno exporta las rutas de Python 3.12, Node 22 y `HISPANSHIELD_DATABASE_URL` hacia PostgreSQL 18. Sin esa base, ninguna fila puede avanzar de `SPECIFIED`.
+No se presenta como implementado. Principales bloques:
+
+- **Workflow colaborativo:** invitaciones, recovery codes MFA, listado/revocación de sesiones activas, soft delete, outbox/jobs.
+- **SIEM a escala:** particiones mensuales, SSE, maintenance/legal hold, supresión avanzada de alertas.
+- **Importadores adicionales:** Nessus/OpenVAS/Trivy, export STIX de superficie, excepciones de riesgo, campañas CTI/relaciones/TLP.
+- **Autonomía avanzada:** doble aprobación A4 (no hay acciones A4), presupuestos de acciones, ventanas congeladas, break-glass, matriz completa de laboratorio.
+- **IA/agentes:** runtime durable con reanudación, presupuestos de coste por organización.
+- **IoT/OT/cloud:** checklist ETSI 13 provisiones, CPE/firmware/EOL, `required_sl` por zona, cuentas cloud/CSPM.
+- **Cumplimiento:** tracker NIS2 24h/72h/1mes, RoPA/DPIA, PDF, matriz exhaustiva AC.
+- **Frontend/gates:** axe-core automatizado, virtualización de tablas, E2E autónomo/degradado, Firefox/WebKit, umbral de cobertura, bundle air-gapped.
+
+Ver `.factory/TASKS.md` para IDs, motivos y comandos de verificación.
+
+---
+
+## 4. Limitaciones del entorno de entrega
+
+- **Docker/Kubernetes:** manifiestos escritos y revisados; no se ejecutaron en runtime
+  porque el entorno de construcción no tenía daemon Docker. Validar en la plataforma
+  destino (imagen, TLS, storage RWX, NetworkPolicy).
+- **IA local:** no había runtime ni modelo en el host. La suite usa servidores HTTP
+  locales simulados para probar protocolos; sin modelo real la API responde
+  `503 ai_unavailable` y los agentes usan modo determinista, como se especifica.
+- **Conectores externos:** probados contra servidores locales que implementan sus
+  protocolos; no se certifican versiones de terceros. La matriz de compatibilidad
+  declara el nivel de soporte.
+- **IdP externo:** SSO OIDC federado no está habilitado por defecto; login local y
+  conector administrativo Keycloak están implementados.
+- **Escalado:** PostgreSQL cubre búsqueda, colas, workflows y vectores en RC1; los
+  ADR documentan la migración a OpenSearch/Kafka/Qdrant/Temporal cuando se requiera.
+- **Licencia:** propietaria en evaluación; revisión jurídica pendiente antes de
+  distribución.
+
+---
+
+## 5. Veredicto
+
+**RC1 es apta para laboratorio, piloto controlado y evaluación técnica.** No es GA,
+no está certificada y no debe operarse en infraestructura crítica real sin auditoría
+independiente, cierre de los 47 elementos aplazados y aprobación del CISO. El gate
+de seguridad CRITICAL/HIGH se refleja en `.factory/SECURITY_AUDIT.md`.

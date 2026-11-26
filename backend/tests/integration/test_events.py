@@ -10,6 +10,7 @@ from app.core.crypto import hmac_sha256_hex
 from app.models.core import AuditRecord
 from app.models.events import IngestSource, SecurityEvent
 from app.models.ti import ThreatIndicator
+from tests.conftest import break_glass
 
 
 def _create_source(client, **overrides):
@@ -273,12 +274,11 @@ def test_events_search_filters_sort_and_cross_tenant(auth_client, seeded):
     )
 
     other_org = _create_org(auth_client, "events-other")
-    auth_client.headers["X-Organization-Id"] = other_org
-    other_source = _create_source(auth_client, name="Other source")
-    other_event = _ingest(auth_client, other_source["token"], b'{"message":"foreign event"}').json()["event_ids"][0]
-    assert auth_client.get(f"/api/v1/events/{other_event}").status_code == 200
+    with break_glass(auth_client, other_org):
+        other_source = _create_source(auth_client, name="Other source")
+        other_event = _ingest(auth_client, other_source["token"], b'{"message":"foreign event"}').json()["event_ids"][0]
+        assert auth_client.get(f"/api/v1/events/{other_event}").status_code == 200
 
-    auth_client.headers.pop("X-Organization-Id", None)
     assert auth_client.get(f"/api/v1/events/{other_event}").status_code == 404
 
 
@@ -398,9 +398,8 @@ def test_ioc_enrichment_attaches_matches_and_mitre(auth_client, seeded, db):
 def test_source_rbac_and_cross_tenant_isolation(auth_client, seeded):
     source = _create_source(auth_client, name="RBAC source")
     other_org = _create_org(auth_client, "events-rbac-other")
-    auth_client.headers["X-Organization-Id"] = other_org
-    foreign_source = _create_source(auth_client, name="Foreign source")
-    auth_client.headers.pop("X-Organization-Id", None)
+    with break_glass(auth_client, other_org):
+        foreign_source = _create_source(auth_client, name="Foreign source")
 
     assert auth_client.get(f"/api/v1/ingest-sources/{foreign_source['id']}").status_code == 404
     foreign_bulk = auth_client.post(

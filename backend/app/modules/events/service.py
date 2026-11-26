@@ -443,11 +443,10 @@ def _normalized_retention(definition: dict[str, Any] | None) -> dict[str, Any]:
 
 def get_retention_policy(db: Session, org_id: UUID) -> tuple[Policy | None, dict[str, Any]]:
     policy = db.execute(
-        select(Policy).where(
-            Policy.org_id == org_id,
-            Policy.kind == "retention",
-            Policy.name == RETENTION_POLICY_NAME,
-        )
+        select(Policy)
+        .where(Policy.org_id == org_id, Policy.kind == "retention")
+        .order_by(Policy.updated_at.desc(), Policy.version.desc())
+        .limit(1)
     ).scalar_one_or_none()
     definition = _normalized_retention(policy.definition if policy else None)
     return policy, definition
@@ -456,7 +455,7 @@ def get_retention_policy(db: Session, org_id: UUID) -> tuple[Policy | None, dict
 def serialize_retention(policy: Policy | None, definition: dict[str, Any]) -> dict[str, Any]:
     return {
         "policy_id": policy.id if policy else None,
-        "name": RETENTION_POLICY_NAME,
+        "name": policy.name if policy else RETENTION_POLICY_NAME,
         "kind": "retention",
         "version": policy.version if policy else 0,
         "enabled": policy.enabled if policy else True,

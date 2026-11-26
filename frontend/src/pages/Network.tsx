@@ -157,6 +157,7 @@ const copy = {
     "evidenced": "Evidencia citada",
     "state": "Estado",
     "networkRows": "Activos con dirección IP",
+    "rowsNote": "Muestra de hasta 50 activos de red devuelta por la API de postura.",
     "noRows": "Sin filas de activos en la muestra",
   },
   en: {
@@ -219,6 +220,7 @@ const copy = {
     "evidenced": "Cited evidence",
     "state": "Status",
     "networkRows": "Assets with an IP address",
+    "rowsNote": "Sample of up to 50 network assets returned by the posture API.",
     "noRows": "No asset rows in the sample",
   },
 };
@@ -253,6 +255,7 @@ export function NetworkPage() {
   const kindEntries = Object.entries(data.assets.by_kind);
   const criticalityEntries = Object.entries(data.assets.criticality_counts);
   const connectorStatuses = Object.entries(data.connectors.by_status);
+  const assetRows = data.assets.rows.filter((asset) => asset.ip_addresses.length > 0);
 
   const findingColumns: Column<ExposureFinding>[] = [
     {
@@ -524,7 +527,7 @@ export function NetworkPage() {
                 icon={Cable}
                 title={c("noConnectors")}
                 description={c("noConnectorsHint")}
-                action={<LinkButton to="/integrations" size="sm" variant="primary">Integraciones</LinkButton>}
+                action={<LinkButton to="/integrations" size="sm" variant="primary">{t("nav.integrations")}</LinkButton>}
               />
             ) : (
               <>
@@ -572,9 +575,13 @@ export function NetworkPage() {
           <RecommendationList recommendations={data.recommendations} />
         </Card>
 
-        <Card title={c("networkRows")} bodyClassName="">
-          {data.assets.rows.length === 0 ? (
-            <EmptyState icon={Server} title={c("assetsEmpty")} description={c("assetsEmptyHint")} />
+        <Card title={c("networkRows")} subtitle={c("rowsNote")} bodyClassName="">
+          {assetRows.length === 0 ? (
+            <EmptyState
+              icon={Server}
+              title={data.assets.total === 0 ? c("assetsEmpty") : c("noRows")}
+              description={c("assetsEmptyHint")}
+            />
           ) : (
             <div className="table-wrap">
               <table className="data">
@@ -586,7 +593,7 @@ export function NetworkPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.assets.rows.slice(0, 12).map((asset) => (
+                  {assetRows.slice(0, 12).map((asset) => (
                     <tr key={asset.id}>
                       <td>
                         <div className="primary-cell">{asset.name}</div>

@@ -254,7 +254,7 @@ class AlertPatch(StrictModel):
 
 
 class AlertBulkRequest(StrictModel):
-    ids: list[UUID] = Field(min_length=1, max_length=100)
+    ids: list[UUID] = Field(min_length=1, max_length=100, validation_alias=AliasChoices("ids", "alert_ids"))
     status: AlertStatus | None = None
     assignee_id: UUID | None = None
     note: str | None = Field(default=None, max_length=4000)

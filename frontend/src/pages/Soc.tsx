@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -109,8 +109,7 @@ export function SocPage() {
   }
 
   const data = query.data;
-  const eventColumns: Column<SecurityEvent>[] = useMemo(
-    () => [
+  const eventColumns: Column<SecurityEvent>[] = (([lang, t]: [string, (key: string) => string]) => [
       {
         key: "time",
         header: t("common.time"),
@@ -147,20 +146,7 @@ export function SocPage() {
           </div>
         ),
       },
-      {
-        key: "mitre",
-        header: "ATT&CK",
-        width: "150px",
-        render: (row) => (
-          <div className="chip-row">
-            {row.mitre_techniques.slice(0, 2).map((technique) => <span className="tag" key={technique}>{technique}</span>)}
-            {row.mitre_techniques.length > 2 ? <span className="tag">+{row.mitre_techniques.length - 2}</span> : null}
-          </div>
-        ),
-      },
-    ],
-    [lang, t],
-  );
+  ])([lang, t]);
 
   return (
     <div className="animate-in" data-testid="page-soc">
@@ -186,7 +172,7 @@ export function SocPage() {
         <Kpi label={t("soc.eventRate")} value={data.events_per_minute.toFixed(2)} suffix="/ min" icon={Activity} tone="accent" footer={<span>{formatNumber(data.events_last_hour)} {t("soc.eventsLastHour").toLowerCase()}</span>} />
         <Kpi label={t("soc.newAlerts")} value={formatNumber(data.new_alerts.length)} icon={BellRing} tone={data.new_alerts.some((alert) => alert.severity === "critical") ? "danger" : "warning"} footer={<span>{data.new_alerts.filter((alert) => alert.severity === "critical").length} críticas</span>} />
         <Kpi label={t("soc.activeIncidents")} value={formatNumber(data.active_incidents.length)} icon={Siren} tone="danger" footer={<span>{data.active_incidents.filter((incident) => incident.severity === "critical").length} críticos</span>} />
-        <Kpi label={t("overview.activeIndicators")} value={formatNumber(data.recent_events.filter((event) => event.ioc_matches.length > 0).length)} icon={Radar} tone="warning" footer={<span>Coincidencias IOC en la ventana</span>} />
+        <Kpi label={t("soc.eventsWithIoc")} value={formatNumber(data.recent_events.filter((event) => event.ioc_matches.length > 0).length)} icon={Radar} tone="warning" footer={<span>{t("soc.iocWindow")}</span>} />
       </div>
 
       <div className="split-main">

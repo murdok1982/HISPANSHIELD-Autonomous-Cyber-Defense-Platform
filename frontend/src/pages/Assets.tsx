@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ChevronDown,
+  ChevronUp,
   Download,
   Layers,
   Plus,
@@ -406,7 +408,7 @@ export function AssetsPage() {
 
   const zonesQuery = useQuery({
     queryKey: ["assets", "zones"],
-    queryFn: () => api.get<Page<Zone>>("/assets/zones", { page: 1, page_size: 200 }),
+    queryFn: () => api.get<Page<Zone>>("/zones", { page: 1, page_size: 200 }),
     staleTime: 120_000,
   });
 
@@ -452,6 +454,7 @@ export function AssetsPage() {
       void queryClient.invalidateQueries({ queryKey: ["assets"] });
     },
     onError: (error) => {
+      setImportError(errorMessage(error));
       push(`${c("assets.import.failed")}: ${errorMessage(error)}`, "error");
     },
   });
@@ -487,6 +490,13 @@ export function AssetsPage() {
     setStatus("");
     setZoneId("");
     setPage(1);
+  };
+
+  const openImport = () => {
+    setImportText("");
+    setImportError(null);
+    setImportResult(null);
+    setImportOpen(true);
   };
 
   const openCreate = () => {
@@ -665,7 +675,7 @@ export function AssetsPage() {
             <Button icon={Download} onClick={exportPage} aria-label={c("assets.export")} />
             {canWrite ? (
               <>
-                <Button icon={Upload} onClick={() => setImportOpen(true)} data-testid="open-import">
+                <Button icon={Upload} onClick={openImport} data-testid="open-import">
                   {c("assets.import")}
                 </Button>
                 <Button
@@ -685,11 +695,6 @@ export function AssetsPage() {
       <Card
         title={c("assets.title")}
         subtitle={assetsQuery.data ? `${formatNumber(assetsQuery.data.meta.total)} ${c("assets.count")}` : undefined}
-        actions={
-          <Button size="sm" variant="ghost" icon={Download} onClick={exportPage} data-testid="export-assets">
-            {c("assets.export")}
-          </Button>
-        }
         bodyClassName=""
       >
         <FilterBar ariaLabel={t("common.filters")}>
@@ -756,15 +761,17 @@ export function AssetsPage() {
               setPage(1);
             }}
             aria-label={c("assets.filter.order")}
+            icon={order === "desc" ? ChevronDown : ChevronUp}
             data-testid="toggle-order"
-          >
-            {order === "desc" ? "↓" : "↑"}
-          </Button>
+          />
           {filtersActive ? (
             <Button size="sm" variant="ghost" onClick={clearFilters} data-testid="clear-filters">
               {c("assets.filter.clear")}
             </Button>
           ) : null}
+          <Button size="sm" variant="ghost" icon={Download} onClick={exportPage} data-testid="export-assets">
+            {c("assets.export")}
+          </Button>
         </FilterBar>
 
         <div data-testid="table-assets">
@@ -902,7 +909,7 @@ export function AssetsPage() {
           <Field label={c("assets.create.owner")} htmlFor="asset-owner" error={fieldMessage("owner")}>
             <Input id="asset-owner" value={draft.owner} maxLength={200} onChange={(event) => setDraft({ ...draft, owner: event.target.value })} />
           </Field>
-          <Field label={c("assets.create.zone")} htmlFor="asset-zone">
+          <Field label={c("assets.create.zone")} htmlFor="asset-zone" error={fieldMessage("zone_id")}>
             <Select id="asset-zone" value={draft.zone_id} onChange={(event) => setDraft({ ...draft, zone_id: event.target.value })} data-testid="input-asset-zone">
               <option value="">—</option>
               {zones.map((zone) => (

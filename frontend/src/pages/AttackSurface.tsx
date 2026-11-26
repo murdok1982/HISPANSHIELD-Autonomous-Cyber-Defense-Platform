@@ -13,7 +13,7 @@ import {
   ShieldCheck,
   Zap,
 } from "lucide-react";
-import { api, errorMessage, type Page } from "../lib/api";
+import { api, apiRequest, errorMessage, type Page } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useI18n, usePageCopy } from "../lib/i18n";
 import { formatDateTime, formatNumber, humanize, relativeTime } from "../lib/format";
@@ -26,6 +26,7 @@ import {
   ErrorBanner,
   Field,
   Input,
+  Kpi,
   LinkButton,
   Modal,
   PageHeader,
@@ -132,7 +133,7 @@ const COPY = {
     "as.form.failed": "No se pudo crear el hallazgo",
     "as.form.invalidKind": "Tipo no válido",
     "as.form.required": "Obligatorio",
-    "as.jobs.title": "Trabajos de descubrimiento",
+    "as.jobs.title": "Descubrimiento",
     "as.jobs.subtitle": "Descubrimiento pasivo por defecto; el sondeo activo exige autorización escrita y alcance acotado.",
     "as.jobs.new": "Nuevo trabajo",
     "as.jobs.safety": "Los activos OT/ICS solo se descubren en modo pasivo. El sondeo activo es un reconocimiento acotado y autorizado sobre los rangos CIDR indicados; no explota vulnerabilidades ni modifica sistemas.",
@@ -157,6 +158,7 @@ const COPY = {
     "as.jobs.runDescription": "Se ejecutará un reconocimiento limitado al alcance del trabajo. El servidor revalida el alcance, el modo y la autorización antes de enviar tráfico.",
     "as.jobs.runConfirm": "Ejecutar ahora",
     "as.jobs.runDone": "Descubrimiento completado",
+    "as.jobs.discovered": "activos",
     "as.jobs.runFailed": "No se pudo ejecutar el descubrimiento",
     "as.jobs.form.title": "Nuevo trabajo de descubrimiento",
     "as.jobs.form.name": "Nombre",
@@ -168,6 +170,7 @@ const COPY = {
     "as.jobs.form.authRefHint": "Obligatoria para modo activo (ticket o documento de autorización)",
     "as.jobs.form.authRequired": "La referencia de autorización es obligatoria en modo activo",
     "as.jobs.form.scopeRequired": "El modo activo requiere al menos un rango CIDR",
+    "as.jobs.form.scopeTooMany": "Máximo 16 rangos CIDR",
     "as.jobs.form.submit": "Crear trabajo",
     "as.jobs.form.success": "Trabajo creado",
     "as.jobs.form.failed": "No se pudo crear el trabajo",
@@ -255,7 +258,7 @@ const COPY = {
     "as.form.failed": "Could not create the finding",
     "as.form.invalidKind": "Invalid kind",
     "as.form.required": "Required",
-    "as.jobs.title": "Discovery jobs",
+    "as.jobs.title": "Discovery",
     "as.jobs.subtitle": "Passive discovery by default; active probing requires written authorization and bounded scope.",
     "as.jobs.new": "New job",
     "as.jobs.safety": "OT/ICS assets are discovered passively only. Active discovery is bounded, authorized reconnaissance against the listed CIDR ranges; it does not exploit vulnerabilities or modify systems.",
@@ -280,6 +283,7 @@ const COPY = {
     "as.jobs.runDescription": "A reconnaissance run limited to the job scope will start. The server re-validates scope, mode and authorization before sending traffic.",
     "as.jobs.runConfirm": "Run now",
     "as.jobs.runDone": "Discovery completed",
+    "as.jobs.discovered": "assets",
     "as.jobs.runFailed": "Could not run the discovery",
     "as.jobs.form.title": "New discovery job",
     "as.jobs.form.name": "Name",
@@ -291,6 +295,7 @@ const COPY = {
     "as.jobs.form.authRefHint": "Required for active mode (ticket or authorization document)",
     "as.jobs.form.authRequired": "Authorization reference is required in active mode",
     "as.jobs.form.scopeRequired": "Active mode requires at least one CIDR range",
+    "as.jobs.form.scopeTooMany": "Maximum 16 CIDR ranges",
     "as.jobs.form.submit": "Create job",
     "as.jobs.form.success": "Job created",
     "as.jobs.form.failed": "Could not create the job",
@@ -352,6 +357,7 @@ export function AttackSurfacePage() {
   const [createErrors, setCreateErrors] = useState<Record<string, string>>({});
   const [assetSearch, setAssetSearch] = useState("");
   const [assetId, setAssetId] = useState("");
+  const debouncedAssetSearch = useDebouncedValue(assetSearch, 300);
 
   const [jobOpen, setJobOpen] = useState(false);
   const [jobDraft, setJobDraft] = useState<JobDraft>({ name: "", mode: "passive", scope: "", authorized_by: "", authorization_reference: "" });
@@ -390,9 +396,9 @@ export function AttackSurfacePage() {
   });
 
   const assetSearchQuery = useQuery({
-    queryKey: ["assets", "finding-target", assetSearch],
-    queryFn: () => api.get<Page<Asset>>("/assets", { q: assetSearch, page: 1, page_size: 8 }),
-    enabled: createOpen && assetSearch.trim().length >= 2,
+    queryKey: ["assets", "finding-target", debouncedAssetSearch],
+    queryFn: () => api.get<Page<Asset>>("/assets", { q: debouncedAssetSearch, page: 1, page_size: 8 }),
+    enabled: createOpen && debouncedAssetSearch.trim().length >= 2,
   });
 
   const analyzeMutation = useMutation({
@@ -470,11 +476,16 @@ export function AttackSurfacePage() {
   });
 
   const runJob = useMutation({
-    mutationFn: (jobId: string) => api.post<DiscoveryRunResult>(`/attack-surface/discovery-jobs/${jobId}/run`, { ports: [] }),
+    mutationFn: (jobId: string) =>
+      apiRequest<DiscoveryRunResult>(`/attack-surface/discovery-jobs/${jobId}/run`, {
+        method: "POST",
+        body: { ports: [] },
+        timeoutMs: 120_000,
+      }),
     onSuccess: (result) => {
       const summary = result.summary as { discovered?: number; hosts?: number; error?: string } | null;
       push(
-        `${c("as.jobs.runDone")}${summary && typeof summary.discovered === "number" ? ` · ${summary.discovered} assets` : ""}`,
+        `${c("as.jobs.runDone")}${summary && typeof summary.discovered === "number" ? ` · ${summary.discovered} ${c("as.jobs.discovered")}` : ""}`,
         "success",
       );
       setRunTarget(null);
@@ -701,26 +712,39 @@ export function AttackSurfacePage() {
       <div className="kpi-grid" style={{ marginBottom: 12 }}>
         {summary ? (
           <>
-            <div className="card kpi animate-in">
-              <div className="kpi-label"><Crosshair size={13} style={{ color: "var(--accent)" }} aria-hidden="true" />{c("as.kpi.total")}</div>
-              <div className="kpi-value kpi-accent">{formatNumber(summary.total)}</div>
-              <div className="kpi-foot">{formatNumber(Object.keys(summary.by_kind).length)} {c("as.kpi.kinds").toLowerCase()}</div>
-            </div>
-            <div className="card kpi animate-in">
-              <div className="kpi-label"><ShieldAlert size={13} style={{ color: "var(--danger)" }} aria-hidden="true" />{c("as.kpi.critical")}</div>
-              <div className="kpi-value kpi-danger">{formatNumber((summary.by_severity.critical ?? 0) + (summary.by_severity.high ?? 0))}</div>
-              <div className="kpi-foot">{formatNumber(summary.by_severity.critical ?? 0)} {t("common.critical").toLowerCase()} · {formatNumber(summary.by_severity.high ?? 0)} {t("common.high").toLowerCase()}</div>
-            </div>
-            <div className="card kpi animate-in">
-              <div className="kpi-label"><Zap size={13} style={{ color: "var(--warning)" }} aria-hidden="true" />{c("as.kpi.open")}</div>
-              <div className="kpi-value kpi-warning">{formatNumber((summary.by_status.open ?? 0) + (summary.by_status.triaged ?? 0))}</div>
-              <div className="kpi-foot">{formatNumber(summary.by_status.resolved ?? 0)} {t("common.closed").toLowerCase()}</div>
-            </div>
-            <div className="card kpi animate-in">
-              <div className="kpi-label"><Radar size={13} style={{ color: "var(--success)" }} aria-hidden="true" />{c("as.kpi.kinds")}</div>
-              <div className="kpi-value kpi-success">{formatNumber(Object.keys(summary.by_kind).length)}</div>
-              <div className="kpi-foot">{formatNumber(Object.keys(summary.by_status).length)} {c("as.byStatus").toLowerCase()}</div>
-            </div>
+            <Kpi
+              label={c("as.kpi.total")}
+              value={formatNumber(summary.total)}
+              icon={Crosshair}
+              tone="accent"
+              footer={<span>{formatNumber(Object.keys(summary.by_kind).length)} {c("as.kpi.kinds").toLowerCase()}</span>}
+            />
+            <Kpi
+              label={c("as.kpi.critical")}
+              value={formatNumber((summary.by_severity.critical ?? 0) + (summary.by_severity.high ?? 0))}
+              icon={ShieldAlert}
+              tone="danger"
+              footer={
+                <span>
+                  {formatNumber(summary.by_severity.critical ?? 0)} {t("common.critical").toLowerCase()} ·{" "}
+                  {formatNumber(summary.by_severity.high ?? 0)} {t("common.high").toLowerCase()}
+                </span>
+              }
+            />
+            <Kpi
+              label={c("as.kpi.open")}
+              value={formatNumber((summary.by_status.open ?? 0) + (summary.by_status.triaged ?? 0))}
+              icon={Zap}
+              tone="warning"
+              footer={<span>{formatNumber(summary.by_status.resolved ?? 0)} {t("common.closed").toLowerCase()}</span>}
+            />
+            <Kpi
+              label={c("as.kpi.kinds")}
+              value={formatNumber(Object.keys(summary.by_kind).length)}
+              icon={Radar}
+              tone="success"
+              footer={<span>{formatNumber(Object.keys(summary.by_status).length)} {c("as.byStatus").toLowerCase()}</span>}
+            />
           </>
         ) : summaryQuery.isError ? (
           <div style={{ gridColumn: "1 / -1" }}>
@@ -805,7 +829,7 @@ export function AttackSurfacePage() {
           <Pagination meta={findingsQuery.data?.meta} onPage={setPage} />
         </Card>
 
-        <Card title={c("as.bySeverity")} subtitle={c("as.byStatus")}>
+        <Card title={c("as.bySeverity")}>
           {summary ? (
             <div className="stack">
               <div className="metric-list">
@@ -858,7 +882,6 @@ export function AttackSurfacePage() {
 
       <Card
         title={c("as.jobs.title")}
-        subtitle={c("as.jobs.subtitle")}
         actions={
           canWrite ? (
             <Button size="sm" icon={Plus} onClick={() => { setJobErrors({}); setJobOpen(true); }} data-testid="open-create-job">
@@ -868,6 +891,9 @@ export function AttackSurfacePage() {
         }
         bodyClassName=""
       >
+        <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--border)", fontSize: 11.5, color: "var(--dim)" }}>
+          {c("as.jobs.subtitle")}
+        </div>
         <div data-testid="table-jobs">
           <DataTable
             columns={jobColumns}
@@ -1065,7 +1091,7 @@ export function AttackSurfacePage() {
           <Field label={c("as.form.source")} htmlFor="finding-source" error={createErrors.source}>
             <Input id="finding-source" value={draft.source} maxLength={80} onChange={(event) => setDraft({ ...draft, source: event.target.value })} />
           </Field>
-          <div className="span-2"><Field label={c("as.form.asset")} htmlFor="finding-asset" error={createErrors.asset_id}>
+          <div className="span-2"><Field label={c("as.form.asset")} error={createErrors.asset_id}>
             <div className="row wrap" style={{ gap: 8 }}>
               <div style={{ flex: 1, minWidth: 180 }}>
                 <SearchInput value={assetSearch} onChange={setAssetSearch} placeholder={c("as.form.assetSearch")} ariaLabel={c("as.form.assetSearch")} />
@@ -1078,7 +1104,7 @@ export function AttackSurfacePage() {
               <div className="notice notice-accent" style={{ marginTop: 8, fontSize: 11 }}>
                 <span className="mono">{assetSearchQuery.data?.items.find((item) => item.id === assetId)?.name ?? assetId}</span>
               </div>
-            ) : assetSearch.trim().length >= 2 ? (
+            ) : debouncedAssetSearch.trim().length >= 2 ? (
               <div className="metric-list" style={{ marginTop: 8, maxHeight: 170, overflowY: "auto" }}>
                 {assetSearchQuery.isLoading ? (
                   <span className="dim" style={{ fontSize: 11 }}>{t("common.loading")}</span>
@@ -1141,7 +1167,7 @@ export function AttackSurfacePage() {
                 if (jobDraft.mode === "active" && !jobDraft.authorization_reference.trim()) {
                   errors.authorization_reference = c("as.jobs.form.authRequired");
                 }
-                if (scopes.length > 16) errors.scope_cidrs = c("as.jobs.form.scopeHint");
+                if (scopes.length > 16) errors.scope_cidrs = c("as.jobs.form.scopeTooMany");
                 setJobErrors(errors);
                 if (Object.keys(errors).length) return;
                 createJob.mutate();
@@ -1185,7 +1211,7 @@ export function AttackSurfacePage() {
               id="job-scope"
               className="mono"
               value={jobDraft.scope}
-              placeholder="10.0.0.0/24"
+              placeholder="192.0.2.0/24"
               onChange={(event) => setJobDraft({ ...jobDraft, scope: event.target.value })}
               aria-invalid={Boolean(jobErrors.scope_cidrs)}
               data-testid="input-job-scope"

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import ValidationError
@@ -69,12 +69,18 @@ def _validation_error(exc: ValidationError) -> ValidationFailure:
     return ValidationFailure(details, message="Invalid framework document")
 
 
-def parse_framework_document(content: str, document_format: str = "auto") -> tuple[FrameworkDocument, str]:
+def parse_framework_document(
+    content: str, document_format: Literal["auto", "yaml", "json"] = "auto"
+) -> tuple[FrameworkDocument, Literal["yaml", "json"]]:
     """Parse and strictly validate a YAML or JSON framework document."""
-    resolved = document_format
     stripped = content.lstrip()
-    if resolved == "auto":
+    resolved: Literal["yaml", "json"]
+    if document_format == "auto":
         resolved = "json" if stripped.startswith("{") else "yaml"
+    elif document_format == "json":
+        resolved = "json"
+    else:
+        resolved = "yaml"
     if resolved == "json":
         try:
             payload = json.loads(content)

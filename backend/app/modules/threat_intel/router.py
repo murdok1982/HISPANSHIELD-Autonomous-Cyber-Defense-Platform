@@ -27,6 +27,7 @@ from app.modules.threat_intel.schemas import (
     FeedOut,
     FeedPatch,
     FeedSyncResult,
+    ImportErrorItem,
     ImportResult,
     IndicatorCreate,
     IndicatorOut,
@@ -247,7 +248,7 @@ def import_stix(
         created=summary.created,
         updated=summary.updated,
         skipped=summary.skipped,
-        errors=summary.errors[:50],
+        errors=[ImportErrorItem.model_validate(item) for item in summary.errors[:50]],
         total_received=len(records),
     )
 
@@ -298,7 +299,7 @@ async def import_csv(request: Request, ctx: RequestContext = Depends(require_per
         created=summary.created,
         updated=summary.updated,
         skipped=summary.skipped,
-        errors=summary.errors[:50],
+        errors=[ImportErrorItem.model_validate(item) for item in summary.errors[:50]],
         total_received=len(records) + parse_summary.skipped,
     )
 

@@ -180,23 +180,25 @@ def _ports_from_metadata(metadata: dict[str, Any]) -> list[tuple[int | None, str
             seen.add(key)
             results.append(key)
     for raw in metadata.get("services") or []:
-        name: str | None = None
-        port: int | None = None
+        service_name: str | None = None
+        service_port: int | None = None
         if isinstance(raw, dict):
             candidate_port = raw.get("port")
             if isinstance(candidate_port, int):
-                port = candidate_port
+                service_port = candidate_port
             candidate_name = raw.get("name") or raw.get("service")
             if isinstance(candidate_name, str):
-                name = candidate_name.strip()[:80]
+                service_name = candidate_name.strip()[:80]
         elif isinstance(raw, str):
-            name = raw.strip()[:80]
-        if name is not None and port is None:
-            port = SERVICE_PORT_HINTS.get(name.lower())
-        label = name or (PORT_RISK.get(port, (f"port {port}", "medium"))[0] if port else None)
+            service_name = raw.strip()[:80]
+        if service_name is not None and service_port is None:
+            service_port = SERVICE_PORT_HINTS.get(service_name.lower())
+        label = service_name or (
+            PORT_RISK.get(service_port, (f"port {service_port}", "medium"))[0] if service_port else None
+        )
         if label is None:
             continue
-        key = (port, label)
+        key = (service_port, label)
         if key not in seen:
             seen.add(key)
             results.append(key)

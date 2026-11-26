@@ -21,6 +21,7 @@ from hispanshield_edge import AGENT_VERSION
 from hispanshield_edge.agent import GatewayAgent, configure_logging
 from hispanshield_edge.client import (
     ConfigFetchUnavailable,
+    ConflictError,
     EdgeClient,
     EdgeClientError,
     FatalAuthError,
@@ -69,6 +70,8 @@ def _map_error(exc: BaseException) -> int:
         return EXIT_UNAVAILABLE
     if isinstance(exc, PermanentHTTPError):
         return EXIT_ERROR
+    if isinstance(exc, ConflictError):
+        return EXIT_CONFIG
     if isinstance(exc, CollectorError):
         return EXIT_CONFIG
     if isinstance(exc, EdgeClientError):
@@ -79,19 +82,22 @@ def _map_error(exc: BaseException) -> int:
 # --------------------------------------------------------------------------- #
 # Commands
 # --------------------------------------------------------------------------- #
+def _resolve_token(explicit: str | None) -> str:
+    token = (explicit or os.environ.get(ENROLL_TOKEN_ENV, "")).strip()
+    if not token and sys.stdin.isatty():
+        token = getpass.getpass("Enrollment token: ").strip()
+    return token
+
+
 def cmd_enroll(args: argparse.Namespace) -> int:
     path = Path(args.config)
     if path.exists() and not args.force:
         _error(f"config already exists at {path}; use --force to replace it")
         return EXIT_CONFIG
-    token = args.token or os.environ.get(ENROLL_TOKEN_ENV, "")
+    token = _resolve_token(args.token)
     if not token:
-        if sys.stdin.isatty():
-            token = getpass.getpass("Enrollment token: ")
-        else:
-            _error(f"enrollment token required via --token or {ENROLL_TOKEN_ENV}")
-            return EXIT_CONFIG
-    token = token.strip()
+        _error(f"enrollment token required via --token or {ENROLL_TOKEN_ENV}")
+        return EXIT_CONFIG
     if len(token) < 16:
         _error("enrollment token is too short")
         return EXIT_CONFIG
@@ -148,8 +154,34 @@ def _open_queue(path: Path) -> DurableQueue:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    config = load_config(args.config)
-    data_dir = Path(args.data_dir) if args.data_dir else Path(args.config).parent
+    config_path = Path(args.config)
+    enrollment_token = ""
+    needs_enrollment = False
+    if config_path.exists():
+        config = load_config(config_path)
+        needs_enrollment = not config.is_enrolled
+    else:
+        if not args.url:
+            _error(f"config not found: {config_path}; pass --url and an enrollment token to auto-enroll")
+            return EXIT_CONFIG
+        config = new_config(
+            base_url=args.url,
+            fingerprint=args.fingerprint,
+            name=args.name or socket.gethostname(),
+            allow_insecure_http=args.insecure,
+            ca_bundle=args.ca_bundle,
+            client_cert=args.client_cert,
+            client_key=args.client_key,
+            version=AGENT_VERSION,
+        )
+        needs_enrollment = True
+    if needs_enrollment:
+        enrollment_token = _resolve_token(args.token)
+        if not enrollment_token:
+            _error(f"gateway is not enrolled; provide --token or {ENROLL_TOKEN_ENV}")
+            return EXIT_CONFIG
+
+    data_dir = Path(args.data_dir) if args.data_dir else config_path.parent
     data_dir.mkdir(parents=True, exist_ok=True)
     queue_db = Path(args.queue_db) if args.queue_db else data_dir / "edge-queue.sqlite3"
     spool_dir = Path(args.spool_dir) if args.spool_dir else data_dir / "spool"
@@ -167,8 +199,23 @@ def cmd_run(args: argparse.Namespace) -> int:
             syslog_port=args.syslog_port,
             syslog_bind=args.syslog_bind,
             data_dir=data_dir,
-            config_path=args.config,
+            config_path=config_path,
         )
+        if needs_enrollment:
+            try:
+                enrolled = agent.enroll(
+                    enrollment_token,
+                    name=args.name,
+                    certificate_serial=args.certificate_serial,
+                )
+            except (EdgeClientError, ConfigError, OSError) as exc:
+                _error(f"enrollment failed: {exc}")
+                return _map_error(exc)
+            logging.getLogger("hispanshield_edge.cli").info(
+                "gateway enrolled gateway_id=%s fingerprint=%s",
+                enrolled["gateway_id"],
+                enrolled["fingerprint"],
+            )
         if args.once:
             agent.start_collectors()
             summary = agent.once()
@@ -367,6 +414,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run", help="run the collection and shipping loop")
     run.add_argument("--config", default=DEFAULT_CONFIG, help="config file path")
+    run.add_argument("--url", help="core base URL (only needed when the config does not exist yet)")
+    run.add_argument("--token", help=f"enrollment token for auto-enrollment (prefer ${ENROLL_TOKEN_ENV})")
+    run.add_argument("--name", help="gateway display name for auto-enrollment (default: hostname)")
+    run.add_argument("--fingerprint", help="explicit fingerprint for auto-enrollment")
+    run.add_argument("--certificate-serial", help="mTLS certificate serial for auto-enrollment")
+    run.add_argument("--insecure", action="store_true", help="allow plain http:// during auto-enrollment (lab only)")
+    run.add_argument("--ca-bundle", help="custom CA bundle for auto-enrollment")
+    run.add_argument("--client-cert", help="client certificate for auto-enrollment (mTLS)")
+    run.add_argument("--client-key", help="client private key for auto-enrollment (mTLS)")
     run.add_argument("--spool-dir", help="JSON/JSONL spool directory (default: <data-dir>/spool)")
     run.add_argument("--ot-spool", help="read-only OT observation spool (JSONL)")
     run.add_argument("--syslog-port", type=int, help="enable the passive UDP syslog listener on this port")
@@ -413,6 +469,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_OK
     except (ConfigError, ValueError) as exc:
         _error(str(exc))
+        return EXIT_CONFIG
+    except CollectorError as exc:
+        _error(f"collector error: {exc}")
         return EXIT_CONFIG
     except (FatalAuthError, InvalidBundleError, EdgeClientError) as exc:
         _error(str(exc))

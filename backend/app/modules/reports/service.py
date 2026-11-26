@@ -144,7 +144,9 @@ def collect_snapshot(
                 .where(IncidentTimeline.org_id == org_id, IncidentTimeline.incident_id.in_(incident_ids))
                 .order_by(IncidentTimeline.at.desc())
                 .limit(200)
-            ).all()
+            )
+            .tuples()
+            .all()
         )
 
     resolved = [incident for incident in incidents if incident.resolved_at is not None]

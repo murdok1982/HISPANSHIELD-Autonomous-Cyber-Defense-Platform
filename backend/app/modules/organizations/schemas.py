@@ -131,6 +131,7 @@ class ApprovalOut(ORMModel):
     requested_by: str | None
     decided_by: UUID | None
     decided_at: datetime | None
+    consumed_at: datetime | None = None
     reason: str | None
     expires_at: datetime | None
     created_at: datetime

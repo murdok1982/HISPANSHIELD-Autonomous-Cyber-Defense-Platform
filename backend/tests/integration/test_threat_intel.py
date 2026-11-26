@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 from app.core.config import settings
 from app.core.db import utcnow
 from app.models.events import SecurityEvent
-from tests.conftest import login
+from tests.conftest import break_glass, login
 
 BASE = "/api/v1/threat-intel"
 
@@ -457,12 +457,10 @@ def test_tenant_isolation_returns_404(seeded, auth_client: TestClient) -> None:
     assert other.status_code == 201, other.text
     other_id = other.json()["id"]
 
-    auth_client.headers["X-Organization-Id"] = other_id
-    foreign = _create_indicator(auth_client, value="192.0.2.44")
-    foreign_actor = auth_client.post(f"{BASE}/actors", json={"name": "Foreign Actor"})
-    assert foreign_actor.status_code == 201
-
-    auth_client.headers.pop("X-Organization-Id", None)
+    with break_glass(auth_client, other_id):
+        foreign = _create_indicator(auth_client, value="192.0.2.44")
+        foreign_actor = auth_client.post(f"{BASE}/actors", json={"name": "Foreign Actor"})
+        assert foreign_actor.status_code == 201
     assert auth_client.get(f"{BASE}/indicators/{foreign['id']}").status_code == 404
     assert auth_client.get(f"{BASE}/actors/{foreign_actor.json()['id']}").status_code == 404
     assert auth_client.get(f"{BASE}/indicators/{created_indicator['id']}").status_code == 200

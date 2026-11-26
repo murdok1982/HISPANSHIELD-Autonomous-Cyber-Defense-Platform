@@ -298,7 +298,7 @@ def build_case_manifest(
         included += 1
         total_bytes += len(payload)
 
-    manifest = {
+    manifest: dict[str, Any] = {
         "manifest_version": "1.0",
         "generated_at": generated_at.isoformat(),
         "generated_by": ctx.actor_email or ctx.actor_id,

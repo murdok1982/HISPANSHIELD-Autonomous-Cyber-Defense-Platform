@@ -598,3 +598,23 @@ def test_incident_tenant_validation_on_execute(auth_client: TestClient, seeded, 
         },
     )
     assert response.status_code == 404
+
+
+def test_approval_is_single_use(auth_client: TestClient, seeded, db, local_server) -> None:
+    _reset()
+    url, _received = local_server
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id, base_url=url)
+    approval_id, remediation_id = _approved_remediation(auth_client, target="198.51.100.99")
+    first = auth_client.post(f"{API}/remediations/{remediation_id}/execute")
+    assert first.status_code == 200, first.text
+    replay = auth_client.post(
+        f"{API}/execute",
+        json={
+            "action_type": "ip.block",
+            "target_type": "ip",
+            "target_id": "198.51.100.99",
+            "approval_id": approval_id,
+        },
+    )
+    assert replay.status_code in {403, 409}, replay.text

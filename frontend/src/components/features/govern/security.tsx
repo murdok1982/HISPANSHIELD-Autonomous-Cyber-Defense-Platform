@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { api, errorMessage } from "../../../lib/api";
 import { useAuth } from "../../../lib/auth";
-import { useI18n } from "../../../lib/i18n";
+import { useI18n, type Lang } from "../../../lib/i18n";
 import { formatDateTime, formatNumber, relativeTime } from "../../../lib/format";
 import {
   Badge,
@@ -25,7 +25,153 @@ import {
   useToast,
   type Column,
 } from "../../ui";
-import { ConfirmDialog, MetaRows, SecretOnce, apiFieldErrors } from "./common";
+import { ConfirmDialog, MetaRows, SecretOnce, apiFieldErrors, useGovernCopy } from "./common";
+
+
+const SECURE_COPY: Record<Lang, Record<string, string>> = {
+  es: {
+    "secure.enabled": "Activado",
+    "secure.disabled": "Desactivado",
+    "secure.mfaOnHint": "La verificación en dos pasos protege el acceso a acciones sensibles.",
+    "secure.mfaOffHint": "Recomendado: activa TOTP antes de operar con autonomía.",
+    "secure.disableMfa": "Desactivar MFA",
+    "secure.enrollMfa": "Activar MFA (TOTP)",
+    "secure.step1": "1. Registra el secreto en tu aplicación TOTP",
+    "secure.scanHint": "Introduce el secreto en tu autenticador o importa el URI otpauth. El secreto no se volverá a mostrar.",
+    "secure.totpSecret": "Secreto TOTP",
+    "secure.otpauthUri": "URI otpauth",
+    "secure.step2": "2. Confirma con un código",
+    "secure.activationCode": "Código de activación",
+    "secure.activate": "Activar",
+    "secure.password": "Contraseña",
+    "secure.totpCode": "Código TOTP",
+    "secure.lastLogin": "Último acceso",
+    "secure.enrollStarted": "Enrolamiento iniciado",
+    "secure.mfaEnabled": "MFA activado",
+    "secure.mfaDisabled": "MFA desactivado",
+    "secure.disableWarning": "Al desactivar MFA tu cuenta queda protegida solo por contraseña. La acción requiere contraseña actual y código TOTP válido.",
+    "secure.currentPassword": "Contraseña actual",
+    "secure.newPassword": "Nueva contraseña",
+    "secure.confirmPassword": "Repetir nueva contraseña",
+    "secure.passwordPolicy": "Mínimo 12 caracteres y al menos 3 de: minúsculas, mayúsculas, dígitos, símbolos. No puede contener tu usuario.",
+    "secure.passwordTooShort": "La contraseña debe tener al menos 12 caracteres.",
+    "secure.passwordMismatch": "Las contraseñas no coinciden.",
+    "secure.passwordChanged": "Contraseña actualizada",
+    "secure.changePassword": "Cambiar contraseña",
+    "secure.passwordSessionHint": "El cambio se aplica a tu cuenta y queda auditado.",
+    "secure.account": "Cuenta",
+    "secure.role": "Rol",
+    "secure.organization": "Organización",
+    "secure.permissions": "Permisos",
+    "secure.sessionExpires": "La sesión expira",
+    "secure.mfa": "Verificación en dos pasos",
+    "secure.locale": "Idioma y zona horaria",
+    "secure.apiTokens": "Tokens de API",
+    "secure.apiTokensHint": "Credenciales de automatización limitadas a tus permisos. Se muestran una sola vez.",
+    "secure.createToken": "Crear token",
+    "secure.noTokens": "Sin tokens activos",
+    "secure.noTokensHint": "Crea un token para automatizaciones y guárdalo en tu gestor de secretos.",
+    "secure.tokenName": "Nombre del token",
+    "secure.tokenNamePlaceholder": "Automatización SOC",
+    "secure.scopes": "Scopes",
+    "secure.expires": "Caduca",
+    "secure.expired": "Caducado",
+    "secure.neverExpires": "Sin caducidad",
+    "secure.lastUsed": "Último uso",
+    "secure.revoke": "Revocar",
+    "secure.tokenCreated": "Token creado",
+    "secure.tokenRevoked": "Token revocado",
+    "secure.expiresDays": "Días de validez",
+    "secure.expiresDaysHint": "1–365 días; vacío para sin caducidad.",
+    "secure.expiresInvalid": "Introduce un número entre 1 y 365.",
+    "secure.scopesHint": "Sin scopes seleccionados, el token hereda todos tus permisos actuales. Aplica mínimo privilegio.",
+    "secure.scopeSearch": "Buscar scope…",
+    "secure.selectVisible": "Seleccionar visibles",
+    "secure.clearAll": "Quitar todos",
+    "secure.noScopeMatches": "Ningún scope coincide.",
+    "secure.prefix": "Prefijo",
+    "secure.tokenValue": "Valor del token",
+    "secure.tokenOnceWarning": "Copia este token ahora. No se volverá a mostrar y el servidor solo guarda su hash.",
+    "secure.revokeToken": "Revocar token",
+    "secure.revokeTokenDesc": "El token dejará de autenticar de inmediato.",
+    "secure.revokeTokenWarning": "Cualquier automatización que use este token fallará. No se puede deshacer.",
+    "secure.session": "Sesión actual",
+    "secure.sessionSub": "Contexto de autenticación y ámbito activo.",
+    "secure.mfaSub": "Segundo factor TOTP para operadores.",
+    "secure.passwordSub": "Rotación de credencial con política de robustez.",
+  },
+  en: {
+    "secure.enabled": "Enabled",
+    "secure.disabled": "Disabled",
+    "secure.mfaOnHint": "Two-step verification protects access to sensitive actions.",
+    "secure.mfaOffHint": "Recommended: enable TOTP before operating with autonomy.",
+    "secure.disableMfa": "Disable MFA",
+    "secure.enrollMfa": "Enable MFA (TOTP)",
+    "secure.step1": "1. Register the secret in your TOTP app",
+    "secure.scanHint": "Enter the secret in your authenticator or import the otpauth URI. The secret is never shown again.",
+    "secure.totpSecret": "TOTP secret",
+    "secure.otpauthUri": "otpauth URI",
+    "secure.step2": "2. Confirm with a code",
+    "secure.activationCode": "Activation code",
+    "secure.activate": "Activate",
+    "secure.password": "Password",
+    "secure.totpCode": "TOTP code",
+    "secure.lastLogin": "Last sign-in",
+    "secure.enrollStarted": "Enrollment started",
+    "secure.mfaEnabled": "MFA enabled",
+    "secure.mfaDisabled": "MFA disabled",
+    "secure.disableWarning": "Disabling MFA leaves your account protected by password only. The action requires the current password and a valid TOTP code.",
+    "secure.currentPassword": "Current password",
+    "secure.newPassword": "New password",
+    "secure.confirmPassword": "Repeat new password",
+    "secure.passwordPolicy": "At least 12 characters and 3 of: lowercase, uppercase, digits, symbols. It must not contain your account name.",
+    "secure.passwordTooShort": "Password must be at least 12 characters.",
+    "secure.passwordMismatch": "Passwords do not match.",
+    "secure.passwordChanged": "Password updated",
+    "secure.changePassword": "Change password",
+    "secure.passwordSessionHint": "The change applies to your account and is audited.",
+    "secure.account": "Account",
+    "secure.role": "Role",
+    "secure.organization": "Organization",
+    "secure.permissions": "Permissions",
+    "secure.sessionExpires": "Session expires",
+    "secure.mfa": "Two-step verification",
+    "secure.locale": "Locale and timezone",
+    "secure.apiTokens": "API tokens",
+    "secure.apiTokensHint": "Automation credentials limited to your permissions. Shown exactly once.",
+    "secure.createToken": "Create token",
+    "secure.noTokens": "No active tokens",
+    "secure.noTokensHint": "Create a token for automation and store it in your secret manager.",
+    "secure.tokenName": "Token name",
+    "secure.tokenNamePlaceholder": "SOC automation",
+    "secure.scopes": "Scopes",
+    "secure.expires": "Expires",
+    "secure.expired": "Expired",
+    "secure.neverExpires": "No expiry",
+    "secure.lastUsed": "Last used",
+    "secure.revoke": "Revoke",
+    "secure.tokenCreated": "Token created",
+    "secure.tokenRevoked": "Token revoked",
+    "secure.expiresDays": "Validity days",
+    "secure.expiresDaysHint": "1–365 days; empty for no expiry.",
+    "secure.expiresInvalid": "Enter a number between 1 and 365.",
+    "secure.scopesHint": "With no scopes selected the token inherits all your current permissions. Apply least privilege.",
+    "secure.scopeSearch": "Search scope…",
+    "secure.selectVisible": "Select visible",
+    "secure.clearAll": "Clear all",
+    "secure.noScopeMatches": "No scope matches.",
+    "secure.prefix": "Prefix",
+    "secure.tokenValue": "Token value",
+    "secure.tokenOnceWarning": "Copy this token now. It is never shown again and the server only stores its hash.",
+    "secure.revokeToken": "Revoke token",
+    "secure.revokeTokenDesc": "The token stops authenticating immediately.",
+    "secure.revokeTokenWarning": "Any automation using this token will fail. This cannot be undone.",
+    "secure.session": "Current session",
+    "secure.sessionSub": "Authentication context and active scope.",
+    "secure.mfaSub": "TOTP second factor for operators.",
+    "secure.passwordSub": "Credential rotation with a strength policy.",
+  },
+};
 
 /* ------------------------------------------------------------------- types */
 
@@ -78,7 +224,8 @@ function isExpired(value: string | null): boolean {
 
 export function MfaPanel() {
   const { session, refresh } = useAuth();
-  const { t, lang } = useI18n();
+  const { lang } = useI18n();
+  const t = useGovernCopy(SECURE_COPY);
   const toast = useToast();
   const idPrefix = useId();
   const [enrollment, setEnrollment] = useState<MfaEnrollment | null>(null);
@@ -266,7 +413,7 @@ export function MfaPanel() {
 /* -------------------------------------------------------- change password */
 
 export function ChangePasswordPanel() {
-  const { t } = useI18n();
+  const t = useGovernCopy(SECURE_COPY);
   const toast = useToast();
   const idPrefix = useId();
   const [currentPassword, setCurrentPassword] = useState("");
@@ -373,7 +520,8 @@ export function ChangePasswordPanel() {
 
 export function SessionSummary() {
   const { session } = useAuth();
-  const { t, lang } = useI18n();
+  const { lang } = useI18n();
+  const t = useGovernCopy(SECURE_COPY);
   if (!session) return null;
   return (
     <div className="stack" data-testid="security-session">
@@ -407,7 +555,8 @@ interface TokenFormState {
 const EMPTY_TOKEN_FORM: TokenFormState = { name: "", expiresDays: "90", scopes: [] };
 
 export function ApiTokensPanel() {
-  const { t, lang } = useI18n();
+  const { lang } = useI18n();
+  const t = useGovernCopy(SECURE_COPY);
   const toast = useToast();
   const queryClient = useQueryClient();
   const idPrefix = useId();
@@ -736,7 +885,7 @@ export function ApiTokensPanel() {
 /* --------------------------------------------------------------- composite */
 
 export function SecurityCards() {
-  const { t } = useI18n();
+  const t = useGovernCopy(SECURE_COPY);
   return (
     <div className="stack">
       <Card title={t("secure.session")} subtitle={t("secure.sessionSub")}>

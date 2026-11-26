@@ -105,10 +105,6 @@ def _iso(value: datetime | None = None) -> str | None:
     return (value or _utc_now()).isoformat(timespec="seconds")
 
 
-class AgentBlockedError(RuntimeError):
-    """The head of the queue cannot be delivered; operator action is required."""
-
-
 class GatewayAgent:
     def __init__(
         self,
@@ -133,9 +129,17 @@ class GatewayAgent:
         self.sleep = sleep
         self.config_path = Path(config_path) if config_path else None
         self.data_dir = Path(data_dir) if data_dir else Path("edge-data")
+        created = not self.data_dir.exists()
         self.data_dir.mkdir(parents=True, exist_ok=True)
-        with contextlib.suppress(OSError):
-            self.data_dir.chmod(0o700)
+        if created:
+            with contextlib.suppress(OSError):
+                self.data_dir.chmod(0o700)
+        else:
+            try:
+                if self.data_dir.stat().st_mode & 0o077:
+                    logger.warning("data directory %s is group/world accessible; expected 0700", self.data_dir)
+            except OSError:  # pragma: no cover
+                pass
         self.status_path = self.data_dir / "status.json"
         self.spool_dir = Path(spool_dir) if spool_dir else self.data_dir / "spool"
         self.ot_spool_dir = Path(ot_spool_dir) if ot_spool_dir else None
@@ -174,6 +178,50 @@ class GatewayAgent:
         self.syslog: SyslogUDPCollector | None = None
 
     # ------------------------------------------------------------------ #
+    # Enrollment and lifecycle
+    # ------------------------------------------------------------------ #
+    def enroll(
+        self,
+        enrollment_token: str,
+        *,
+        name: str | None = None,
+        certificate_serial: str | None = None,
+    ) -> dict[str, Any]:
+        """Enroll this gateway, verify the bundle, and persist the config."""
+        if self.config.is_enrolled:
+            raise ConfigError("gateway is already enrolled")
+        result = self.client.enroll(
+            enrollment_token=enrollment_token,
+            name=name or self.config.name or self.config.fingerprint,
+            version=AGENT_VERSION,
+            certificate_serial=certificate_serial,
+            attempts=2,
+        )
+        self.config.set_enrolled(
+            gateway_id=result.gateway_id,
+            org_id=result.org_id,
+            shared_key=result.shared_key,
+            server_config=result.bundle.get("config", {}),
+        )
+        self.config.config_version = str(int(result.enrolled_at.timestamp()))
+        if self.config_path is not None:
+            save_config(self.config, self.config_path)
+        log_event(
+            logging.INFO,
+            "agent.enrolled",
+            gateway_id=result.gateway_id,
+            org_id=result.org_id,
+            fingerprint=result.fingerprint,
+        )
+        return {
+            "enrolled": True,
+            "gateway_id": result.gateway_id,
+            "org_id": result.org_id,
+            "fingerprint": result.fingerprint,
+            "config": dict(self.config.config),
+        }
+
+    # ------------------------------------------------------------------ #
     # Lazily built resources
     # ------------------------------------------------------------------ #
     @property
@@ -183,15 +231,22 @@ class GatewayAgent:
         return self._client
 
     def _build_collectors(self) -> None:
-        self.spool = SpoolCollector(self.queue, self.spool_dir)
+        batch_size = self._batch_size()
+        self.spool = SpoolCollector(self.queue, self.spool_dir, batch_size=batch_size)
         if self.ot_spool_dir is not None:
             self.ot_spool = OtSpoolCollector(
                 self.queue,
                 self.ot_spool_dir,
                 self.data_dir / "ot-offsets.json",
+                batch_size=batch_size,
             )
         if self.syslog_port is not None:
-            self.syslog = SyslogUDPCollector(self.queue, host=self.syslog_bind, port=self.syslog_port)
+            self.syslog = SyslogUDPCollector(
+                self.queue,
+                host=self.syslog_bind,
+                port=self.syslog_port,
+                batch_size=batch_size,
+            )
 
     def start_collectors(self) -> None:
         if self.spool is None:
@@ -554,6 +609,9 @@ class GatewayAgent:
         try:
             self.start_collectors()
             self.write_status(state="starting")
+            # Drain local sources into SQLite before any network call, so a
+            # slow or unreachable core can never delay ingestion.
+            self.collect_once()
             try:
                 self.heartbeat_once()
             except FatalAuthError:
@@ -617,7 +675,6 @@ class GatewayAgent:
 
 __all__ = [
     "CONFIG_REFRESH_SECONDS",
-    "AgentBlockedError",
     "GatewayAgent",
     "JsonFormatter",
     "configure_logging",

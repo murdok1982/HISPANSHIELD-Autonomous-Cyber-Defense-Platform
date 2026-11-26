@@ -327,14 +327,26 @@ class GatewayConfig:
 # --------------------------------------------------------------------------- #
 # Private atomic file handling
 # --------------------------------------------------------------------------- #
+_WARNED_LOOSE_DIRS: set[str] = set()
+
+
 def _ensure_private_dir(path: Path) -> None:
+    created = not path.exists()
     path.mkdir(mode=0o700, parents=True, exist_ok=True)
-    try:
-        current = path.stat().st_mode & 0o777
-        if current != 0o700:
+    if created:
+        try:
             path.chmod(0o700)
-    except OSError as exc:  # pragma: no cover - exotic filesystems
-        logger.warning("could not enforce 0700 on %s: %s", path, exc)
+        except OSError as exc:  # pragma: no cover - exotic filesystems
+            logger.warning("could not set 0700 on %s: %s", path, exc)
+        return
+    try:
+        if path.stat().st_mode & 0o077:
+            key = str(path.absolute())
+            if key not in _WARNED_LOOSE_DIRS:
+                _WARNED_LOOSE_DIRS.add(key)
+                logger.warning("directory %s is accessible by group/other; expected 0700", path)
+    except OSError:  # pragma: no cover - exotic filesystems
+        pass
 
 
 def write_private_json(path: Path | str, payload: Any, *, mode: int = 0o600) -> Path:

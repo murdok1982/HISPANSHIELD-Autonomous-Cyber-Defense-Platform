@@ -25,16 +25,26 @@
 ## Vista del producto
 
 <div align="center">
-  <img src="docs/assets/dashboard.jpg" alt="HISPANSHIELD Executive Overview" width="100%" />
+  <img src="docs/assets/ui-overview.png" alt="HISPANSHIELD Executive Overview" width="100%" />
   <sub>Executive Overview: riesgo consolidado, KPIs reales, salud de integraciones y superficie expuesta.</sub>
 </div>
 
-> **Estado honesto:** release candidata `0.1.0`. El producto es funcional y se
-> entrega con pruebas automatizadas, auditoría adversarial y manifiestos de
-> despliegue. **No está certificado** para ningún marco regulatorio y no debe
-> operarse en infraestructura crítica real sin evaluación independiente,
-> análisis de riesgos y aprobación del CISO. Las limitaciones se documentan en
-> [§ Estado y límites](#estado-y-límites).
+### Capturas del SOC Command Center
+
+| | |
+| :---: | :---: |
+| ![Visión ejecutiva](docs/assets/ui-overview.png)<br><sub>Visión ejecutiva · riesgo, KPIs y salud de integraciones</sub> | ![Centro de mando SOC](docs/assets/ui-soc.png)<br><sub>Centro de mando SOC · flujo de eventos y alertas en vivo</sub> |
+| ![Gestión de incidentes](docs/assets/ui-incidents.png)<br><sub>Gestión de incidentes · cola operativa, SLA y trazabilidad</sub> | ![Seguridad IoT/OT](docs/assets/ui-iot-ot.png)<br><sub>Seguridad IoT/OT · postura IEC 62443 y monitorización pasiva</sub> |
+| ![Cumplimiento normativo](docs/assets/ui-compliance.png)<br><sub>Cumplimiento normativo · catálogo de marcos y autoevaluación técnica</sub> | |
+
+> **Estado honesto:** release candidata `0.1.0` (RC1). El producto es funcional y
+> se entrega con **515 tests backend**, **92 tests del gateway**, **36 tests
+> frontend**, E2E de las 24 pantallas, `mypy` limpio, `pip-audit` sin
+> vulnerabilidades conocidas y manifiestos de despliegue. **No está certificado**
+> para ningún marco regulatorio y no debe operarse en infraestructura crítica
+> real sin evaluación independiente, análisis de riesgos y aprobación del CISO.
+> **109/150** tareas del backlog están verificadas; las **47 restantes** están
+> aplazadas de forma explícita en [`.factory/TASKS.md`](.factory/TASKS.md).
 
 ---
 
@@ -325,7 +335,7 @@ regulatorios reproducibles.
 ## Estructura del repositorio
 
 ```text
-backend/        FastAPI · dominios · servicios · migraciones · 300+ tests
+backend/        FastAPI · dominios · servicios · migraciones · 515 tests
 frontend/       React 19 + TS + Vite · design system propio · 23 vistas
 edge/           Gateway offline-first con cola SQLite durable y HMAC/mTLS
 specs/          Constitución · producto · arquitectura · 15 dominios · ADR
@@ -365,8 +375,10 @@ Esta release es **funcional y verificable**, no una promesa:
 - La licencia es propietaria en evaluación y requiere revisión jurídica antes de
   su distribución.
 
-Hoja de ruta, riesgos y evidencias: [`docs/implementation-status.md`](docs/implementation-status.md)
-y [`docs/roadmap.md`](docs/roadmap.md).
+Evidencias completas: [`docs/implementation-status.md`](docs/implementation-status.md).
+El backlog post-MVP (47 tareas marcadas `[!]` con motivo) está en
+[`.factory/TASKS.md`](.factory/TASKS.md); hoja de ruta y riesgos en
+[`docs/roadmap.md`](docs/roadmap.md) y [`docs/risk-matrix.md`](docs/risk-matrix.md).
 
 ---
 

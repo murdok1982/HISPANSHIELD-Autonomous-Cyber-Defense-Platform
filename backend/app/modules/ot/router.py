@@ -77,7 +77,11 @@ def list_devices(
         ).scalars()
     }
     items = [
-        service.serialize_device(device, asset, zones.get(service.effective_zone_id(device, asset)))
+        service.serialize_device(
+            device,
+            asset,
+            zones.get(zone_id) if (zone_id := service.effective_zone_id(device, asset)) is not None else None,
+        )
         for device, asset in rows
     ]
     return Page[OTDeviceOut](**paginate(items, int(total), page, page_size))
