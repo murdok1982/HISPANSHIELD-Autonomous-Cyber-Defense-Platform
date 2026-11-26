@@ -52,7 +52,17 @@ container:
 | Deploy job | `render.sh values.ci.env` + `validate_deploy.py` | PASS |
 | Unrendered template must fail | `validate_deploy.py deploy/k8s/manifests.yaml` | FAIL as expected |
 
-## 4. Limitations
+## 4. Remote run findings (fixed)
+
+1. `aquasecurity/trivy-action@0.28.0` no longer resolves (tags are `vX.Y.Z`);
+   pinned to `v0.36.0`.
+2. Shell scripts were tracked as `100644`; the deploy job failed invoking
+   `./deploy/k8s/render.sh`. All `.sh` files are now `100755`.
+3. Trivy found a fixable HIGH in the base image (`libzstd1`
+   CVE-2026-124851); the Dockerfile now upgrades `libzstd1` instead of
+   suppressing the gate.
+
+## 5. Limitations
 
 - GitHub Actions itself was **NOT RUN** from this host before the commit; the
   first remote run must be checked after pushing. Every command the workflow
