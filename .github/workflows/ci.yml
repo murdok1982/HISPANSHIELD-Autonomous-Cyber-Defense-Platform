@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, "rewrite/**"]
+    branches: [main, "rewrite/**", "fix/**"]
   pull_request:
   workflow_dispatch:
 
