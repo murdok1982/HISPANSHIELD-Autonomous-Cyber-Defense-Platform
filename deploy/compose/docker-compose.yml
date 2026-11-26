@@ -1,0 +1,70 @@
+name: hispanshield
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: hispanshield
+      POSTGRES_USER: hispanshield
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hispanshield -d hispanshield"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    security_opt: ["no-new-privileges:true"]
+    networks: [internal]
+
+  app:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../../.env
+    environment:
+      HS_ENV: production
+      HS_DATABASE_URL: postgresql+psycopg://hispanshield:${POSTGRES_PASSWORD}@postgres:5432/hispanshield
+      HS_COOKIE_SECURE: "true"
+      HS_FRONTEND_DIST: /app/frontend/dist
+      HS_EVIDENCE_DIR: /app/data/evidence
+      HS_RUN_MIGRATIONS: "true"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - evidence:/app/data/evidence
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=4).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    security_opt: ["no-new-privileges:true"]
+    read_only: false
+    tmpfs: [/tmp]
+    networks: [internal]
+
+  # Optional local AI runtime. Enable with: docker compose --profile ai up -d
+  ollama:
+    image: ollama/ollama:0.6.2
+    profiles: ["ai"]
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    networks: [internal]
+
+volumes:
+  pgdata:
+  evidence:
+  ollama:
+
+networks:
+  internal:
+    driver: bridge

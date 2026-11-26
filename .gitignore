@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Node
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+
+# Environment & secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!deploy/**/*.example
+
+# Runtime data
+data/
+*.sqlite
+*.sqlite3
+*.db
+logs/
+reports/generated/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+# Factory working scratch
+.factory/tmp/

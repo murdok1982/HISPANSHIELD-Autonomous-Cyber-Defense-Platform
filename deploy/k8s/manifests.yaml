@@ -1,0 +1,262 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: hispanshield
+  labels:
+    app.kubernetes.io/name: hispanshield
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hispanshield-config
+  namespace: hispanshield
+data:
+  HS_ENV: "production"
+  HS_DEBUG: "false"
+  HS_LOG_LEVEL: "INFO"
+  HS_COOKIE_SECURE: "true"
+  HS_ALLOWED_ORIGINS: "https://shield.example.eu"
+  HS_FRONTEND_DIST: "/app/frontend/dist"
+  HS_EVIDENCE_DIR: "/app/data/evidence"
+  HS_RUN_MIGRATIONS: "false"
+  HS_WORKERS: "4"
+  HS_RATE_LIMIT_ENABLED: "true"
+  HS_RATE_LIMIT_PER_MINUTE: "240"
+  HS_LOGIN_RATE_LIMIT_PER_MINUTE: "10"
+  HS_CONNECTOR_ALLOW_PRIVATE_NETWORKS: "false"
+  HS_SEED_DEMO: "false"
+  HS_PUBLIC_URL: "https://shield.example.eu"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: hispanshield-secrets
+  namespace: hispanshield
+type: Opaque
+stringData:
+  # REPLACE EVERY VALUE. Prefer External Secrets / Vault; never commit real keys.
+  HS_DATABASE_URL: "postgresql+psycopg://hispanshield:CHANGE_ME@postgres.example.internal:5432/hispanshield?sslmode=require"
+  HS_SECRET_KEY: "CHANGE_ME_64_BYTES_RANDOM"
+  HS_ENCRYPTION_KEY: "CHANGE_ME_FERNET_KEY"
+  HS_METRICS_TOKEN: "CHANGE_ME_METRICS_TOKEN"
+  HS_BOOTSTRAP_ADMIN_EMAIL: "admin@example.eu"
+  HS_BOOTSTRAP_ADMIN_PASSWORD: "CHANGE_ME_STRONG_PASSWORD"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hispanshield-evidence
+  namespace: hispanshield
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 50Gi
+  # storageClassName: encrypted-rwx
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: hispanshield-migrate
+  namespace: hispanshield
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hispanshield
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      containers:
+        - name: migrate
+          image: ghcr.io/example/hispanshield:0.1.0
+          command: ["python", "-m", "alembic", "upgrade", "head"]
+          workingDir: /app/backend
+          envFrom:
+            - configMapRef: { name: hispanshield-config }
+            - secretRef: { name: hispanshield-secrets }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 512Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hispanshield
+  namespace: hispanshield
+  labels:
+    app.kubernetes.io/name: hispanshield
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hispanshield
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hispanshield
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: app
+          image: ghcr.io/example/hispanshield:0.1.0
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: hispanshield-config }
+            - secretRef: { name: hispanshield-secrets }
+          volumeMounts:
+            - { name: evidence, mountPath: /app/data/evidence }
+            - { name: tmp, mountPath: /tmp }
+          readinessProbe:
+            httpGet: { path: /readyz, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+      volumes:
+        - name: evidence
+          persistentVolumeClaim: { claimName: hispanshield-evidence }
+        - name: tmp
+          emptyDir: {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: hispanshield }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hispanshield
+  namespace: hispanshield
+spec:
+  selector:
+    app.kubernetes.io/name: hispanshield
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: hispanshield
+  namespace: hispanshield
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hispanshield
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: hispanshield
+  namespace: hispanshield
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: hispanshield
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 65 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hispanshield
+  namespace: hispanshield
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: hispanshield
+  policyTypes: ["Ingress", "Egress"]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+      ports:
+        - { protocol: TCP, port: 8080 }
+  egress:
+    # Optional DNS egress (some CNIs require it).
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    # HTTPS to SIEM/EDR/IdP integrations and PostgreSQL. Tighten to explicit CIDRs.
+    - ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 5432 }
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hispanshield
+  namespace: hispanshield
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "30m"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/ssl-protocols: "TLSv1.2 TLSv1.3"
+    nginx.ingress.kubernetes.io/hsts: "true"
+    # Rate limiting is enforced by the application; keep an outer coarse limit.
+    nginx.ingress.kubernetes.io/limit-rps: "20"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: ["shield.example.eu"]
+      secretName: hispanshield-tls
+  rules:
+    - host: shield.example.eu
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: hispanshield
+                port: { name: http }

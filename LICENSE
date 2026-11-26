@@ -1,0 +1,60 @@
+HISPANSHIELD — PROPRIETARY EVALUATION LICENSE
+
+Copyright (c) 2026 HISPANSHIELD. All rights reserved.
+
+IMPORTANT — LEGAL REVIEW REQUIRED BEFORE DISTRIBUTION OR COMMERCIAL USE.
+The ownership of the HISPANSHIELD name is not established by this repository.
+This license is a technical placeholder for an evaluation build and must be
+replaced by a counsel-approved agreement before any external distribution.
+
+1. GRANT
+   Subject to the terms below, the copyright holder grants a limited,
+   non-exclusive, non-transferable, revocable license to evaluate, test and
+   demonstrate this software internally, for a maximum of ninety (90) days
+   from receipt, unless a separate written agreement states otherwise.
+
+2. RESTRICTIONS
+   Without prior written authorization you may not:
+   a) use the software in production, for commercial services, for government
+      operations or on critical infrastructure;
+   b) copy, publish, sublicense, sell, rent, distribute or make available the
+      software or derivative works to third parties;
+   c) remove or alter copyright, license, security or audit notices;
+   d) use the software to conduct offensive operations, unauthorized scanning,
+      exploitation, or any activity outside an authorized scope;
+   e) circumvent technical controls, authorization checks, audit logging or
+      autonomy guardrails.
+
+3. NO THIRD-PARTY CODE
+   This repository was built clean-room. The sibling project "SmartNationDefense"
+   (SESIS-FEDERATION) was audited and explicitly excluded due to its restrictive
+   license. No code from it is included. Open-source dependencies retain their
+   own licenses; a dependency inventory is produced by `make sbom`.
+
+4. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS
+   FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, OR FITNESS FOR REGULATED OR
+   SAFETY-CRITICAL USE.
+
+5. LIMITATION OF LIABILITY
+   TO THE MAXIMUM EXTENT PERMITTED BY LAW, THE COPYRIGHT HOLDER SHALL NOT BE
+   LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL OR PUNITIVE
+   DAMAGES, OR FOR LOSS OF DATA, PROFITS OR BUSINESS INTERRUPTION, ARISING FROM
+   USE OF THE SOFTWARE.
+
+6. COMPLIANCE
+   The software provides technical self-assessment capabilities. It does not
+   certify compliance with NIS2, CRA, GDPR, ENS, ISO/IEC 27001, IEC 62443 or any
+   other framework. Operators remain solely responsible for legal compliance,
+   operator agreements, DPIA, incident notification and supervisory authority
+   communication.
+
+7. TERMINATION
+   Rights terminate automatically on breach. On termination you must cease use
+   and destroy all copies, except audit records you are legally required to
+   retain.
+
+8. GOVERNING LAW
+   To be defined by the copyright holder's counsel. Until then, this license
+   grants no rights beyond internal evaluation.

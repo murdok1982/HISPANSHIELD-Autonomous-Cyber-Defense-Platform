@@ -1,0 +1,10 @@
+{
+  "name": "HISPANSHIELD Cyber Defence Command",
+  "short_name": "HISPANSHIELD",
+  "description": "European AI-driven cyber defence platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070B10",
+  "theme_color": "#070B10",
+  "icons": [{ "src": "/shield.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

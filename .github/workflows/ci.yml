@@ -1,0 +1,134 @@
+name: ci
+
+on:
+  push:
+    branches: [main, "rewrite/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: hispanshield
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: hispanshield
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hispanshield"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      HS_DATABASE_URL: postgresql+psycopg://hispanshield:ci_password@localhost:5432/hispanshield_test
+      HS_SECRET_KEY: ci-secret-key-0123456789-abcdefghijklmnopqrstuvwxyz
+      HS_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      HS_ENV: test
+      HS_RATE_LIMIT_ENABLED: "false"
+      HS_ALLOWED_ORIGINS: http://testserver
+      HS_CONNECTOR_ALLOW_PRIVATE_NETWORKS: "true"
+      HS_FRONTEND_DIST: /tmp/nonexistent
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install
+        run: pip install -e "./backend[dev]"
+      - name: Create test database
+        run: PGPASSWORD=ci_password psql -h localhost -U hispanshield -d hispanshield -c "CREATE DATABASE hispanshield_test;"
+      - name: Lint
+        run: |
+          cd backend
+          ruff check app tests
+          ruff format --check app tests
+      - name: Type check
+        run: cd backend && mypy app
+      - name: Tests
+        run: cd backend && pytest -q --cov=app --cov-report=term-missing --cov-report=xml
+      - name: Dependency audit
+        run: pip-audit --skip-editable
+      - name: Static security scan
+        run: bandit -q -r backend/app -x backend/tests -f json -o bandit.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: backend-security
+          path: |
+            backend/coverage.xml
+            bandit.json
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install
+        run: cd frontend && npm ci --no-audit --no-fund
+      - name: Type check and build
+        run: cd frontend && npm run build
+      - name: Unit tests
+        run: cd frontend && npm run test
+      - name: Dependency audit
+        run: cd frontend && npm audit --audit-level=high
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install cyclonedx-bom
+      - run: pip install -e "./backend" && cyclonedx-py environment -o sbom-python.json
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - run: cd frontend && npm ci --no-audit --no-fund && npx --yes @cyclonedx/cyclonedx-npm --output-file ../sbom-frontend.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom-*.json
+
+  container:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: hispanshield:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: hispanshield:ci
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
