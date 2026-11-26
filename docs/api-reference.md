@@ -1,7 +1,7 @@
 # REFERENCIA DE API
 
 - **Documento:** `docs/api-reference.md`
-- **Estado:** `APPROVED` v1.1 (0.1.2)
+- **Estado:** `APPROVED` v1.2 (0.1.3)
 - **Contrato normativo:** `specs/api/rest-contract.md`
 - **OpenAPI en runtime:** `GET /api/openapi.json` · Swagger UI en `/api/docs` (no expuesto en producción)
 - **Base:** `/api/v1`
@@ -97,45 +97,46 @@ curl -H "Authorization: Bearer hs_pat_xxx" \
 | Método | Ruta | Descripción |
 | :--- | :--- | :--- |
 | GET/POST | `/assets` | Lista con filtros / crea |
-| GET/PATCH/DELETE | `/assets/{id}` | Detalle / actualiza / soft delete |
-| POST | `/assets/{id}/restore` | Restaura |
+| GET/PATCH/DELETE | `/assets/{id}` | Detalle / actualiza / soft delete (`deleted_at`) |
+| POST | `/assets/{id}/restore` | Restaura el activo y sus relaciones |
 | POST | `/assets/import` | CSV/JSON `207` |
-| GET/POST/DELETE | `/assets/{id}/relationships` | Grafo |
+| GET/POST/DELETE | `/assets/{id}/relationships` | Relaciones del activo |
 | GET | `/assets/{id}/graph?depth=2` | Subgrafo |
-| POST | `/assets/{id}/iot` · `/ot` | Perfil especializado |
-| GET/POST/PATCH/DELETE | `/zones` | Zonas |
+| GET/POST | `/zones` | Zonas y conductos IEC 62443 (`required_sl` obligatorio en conduits) |
+| GET/PATCH/DELETE | `/zones/{id}` | Detalle, actualización, borrado con reasignación |
 
 ```bash
 curl -X POST https://hs.example.eu/api/v1/assets \
   -b jar.txt -H "X-Organization-Id: $ORG" -H "X-CSRF-Token: $CSRF" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"srv-db-01","kind":"host","criticality":5,"owner":"ops@example.eu","tags":["produccion"],"attributes":{"ip":"10.0.4.12","os":"rhel9"},"source":"manual"}'
+  -d '{"asset_key":"srv-db-01","name":"srv-db-01","kind":"host","criticality":5,"environment":"production","owner":"ops@example.eu","ip_addresses":["10.0.4.12"],"tags":["produccion"]}'
 ```
 
 ### 3.4 `attack_surface`
 
 | Método | Ruta | Descripción |
 | :--- | :--- | :--- |
-| GET | `/attack-surface` | Observaciones |
-| GET | `/attack-surface/diffs` | Cambios de exposición |
-| POST | `/attack-surface/import` | Importa escáner |
-| GET/POST | `/attack-surface/ranges` | Alcance autorizado |
-| GET | `/attack-surface/export?format=stix2.1` | Exporta |
-| GET | `/jobs/{id}` | Estado de job |
+| GET/POST | `/attack-surface/findings` | Hallazgos (lista / crea) |
+| GET/PATCH | `/attack-surface/findings/{id}` | Detalle / estado |
+| POST | `/attack-surface/analyze` | Analiza inventario y crea hallazgos deduplicados |
+| GET | `/attack-surface/summary` | Resumen por severidad/estado |
+| GET | `/attack-surface/export?format=stix2.1\|csv` | Export STIX 2.1 / CSV con ip/puerto |
+| GET/POST | `/attack-surface/authorizations` | Autorizaciones de descubrimiento |
+| POST | `/attack-surface/authorizations/{id}/approve` · `/revoke` | Doble control |
+| GET/POST | `/attack-surface/discovery-jobs` | Jobs de descubrimiento |
+| GET/PATCH/DELETE | `/attack-surface/discovery-jobs/{id}` | Estado / edición / borrado |
+| POST | `/attack-surface/discovery-jobs/{id}/run` | Ejecuta dentro del alcance autorizado |
 
 ### 3.5 `vulnerabilities`
 
 | Método | Ruta | Descripción |
 | :--- | :--- | :--- |
-| GET | `/vulnerabilities` | Lista priorizada |
-| GET | `/vulnerabilities/{id}` | Detalle + `score_breakdown` |
-| GET | `/vulnerabilities/stats` | Agregados |
-| PATCH | `/vulnerabilities/{id}/status` | Transición |
-| PATCH | `/vulnerabilities/{id}/assignee` | Asignación |
-| POST | `/vulnerabilities/{id}/exception` | Aceptación de riesgo |
-| POST | `/vulnerabilities/{id}/false-positive` | Requiere evidencia |
-| POST | `/vulnerabilities/import` | Nessus/OpenVAS/Trivy |
-| GET | `/vulnerabilities/export` | CSV/JSON |
+| GET/POST | `/vulnerabilities` | Lista priorizada / crea |
+| GET/PATCH/DELETE | `/vulnerabilities/{id}` | Detalle / transición / borrado |
+| POST | `/vulnerabilities/{id}/recalculate` | Recalcula prioridad |
+| GET | `/vulnerabilities/summary` | Agregados |
+| POST | `/vulnerabilities/import` | Nessus / OpenVAS / Trivy (XML/JSON) |
+| POST | `/vulnerabilities/import/cve` · `/kev` · `/epss` | Catálogo CVE / KEV / EPSS |
 
 ### 3.6 `events` y `detections`
 

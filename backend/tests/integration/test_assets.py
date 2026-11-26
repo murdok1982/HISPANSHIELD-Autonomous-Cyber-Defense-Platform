@@ -322,7 +322,14 @@ def test_zones_crud_reassign_and_cycle_guard(auth_client: TestClient) -> None:
     zone_id = zone.json()["id"]
 
     conduit = auth_client.post(
-        "/api/v1/zones", json={"name": "Conduit 1", "kind": "conduit", "purdue_level": 3, "parent_id": zone_id}
+        "/api/v1/zones",
+        json={
+            "name": "Conduit 1",
+            "kind": "conduit",
+            "purdue_level": 3,
+            "parent_id": zone_id,
+            "metadata": {"required_sl": 2},
+        },
     )
     assert conduit.status_code == 201
     conduit_id = conduit.json()["id"]

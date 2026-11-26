@@ -117,9 +117,10 @@ def _event(
     raw: dict[str, Any] | None = None,
 ) -> SecurityEvent:
     occurred = utcnow() - timedelta(minutes=offset_minutes)
+    event_uid = f"demo-{occurred.timestamp():.0f}-{random.randint(1000, 9999)}"
     return SecurityEvent(
         org_id=org_id,
-        event_uid=f"demo-{occurred.timestamp():.0f}-{random.randint(1000, 9999)}",
+        event_uid=event_uid,
         source_id=source_id,
         occurred_at=occurred,
         received_at=occurred,
@@ -137,7 +138,11 @@ def _event(
         host_name=host,
         mitre_techniques=mitre or [],
         ioc_matches=iocs or [],
-        dedupe_key=hashlib.sha256(f"{message}{host}{user}{src_ip}".encode()).hexdigest(),
+        # Demo telemetry intentionally repeats message/host/user pairs in
+        # different minutes. The ingest dedupe constraint is per-organization,
+        # so the demo key must also include the unique event uid; otherwise a
+        # fresh seed violates uq_events_org_dedupe.
+        dedupe_key=hashlib.sha256(f"{event_uid}{message}{host}{user}{src_ip}".encode()).hexdigest(),
         source_connector="demo",
         is_demo=True,
     )
@@ -1662,6 +1667,14 @@ def seed_demo(db: Session) -> tuple[Organization, bool]:
     )
 
     db.commit()
+
+    # Demo environments must show the real compliance catalogue (NIS2, CRA,
+    # ENS, ISO 27001...) that the UI and assessments depend on. The seed is
+    # idempotent and safe when frameworks already exist.
+    from app.modules.compliance.service import seed_builtin_frameworks
+
+    seed_builtin_frameworks(db)
+
     return org, True
 
 

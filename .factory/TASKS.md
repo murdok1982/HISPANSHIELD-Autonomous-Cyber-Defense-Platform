@@ -1,8 +1,8 @@
 # AUTONOMOUS EXECUTION BACKLOG
 
 - **Project Name:** HISPANSHIELD — Autonomous Cyber Defence Platform
-- **Current Phase:** `PHASE_13 — evolution wave 1 (0.1.2)`
-- **Progress:** `138 / 176` tasks verified (`78.4%`) · `37` deferred/blocked · `1` in progress · release candidate 0.1.2
+- **Current Phase:** `PHASE_14 — remediation wave (0.1.3)`
+- **Progress:** `143 / 176` tasks verified (`81.3%`) · `33` deferred/blocked · `0` in progress · release candidate 0.1.3
 - **State Legend:**
   - `- [ ]` Pending (Listo para ejecutar)
   - `- [~]` In Progress (Asignado a subagente activo)
@@ -82,13 +82,13 @@
   - **Verification:** `cd backend && ruff check app tests && mypy app && pytest -q`
   - **Retries:** `0/3`
 
-- [~] **TASK-008:** Transactional outbox + dispatcher `LISTEN/NOTIFY` + tabla `jobs` con `SKIP LOCKED` y leases.
+- [x] **TASK-008:** Transactional outbox + dispatcher `LISTEN/NOTIFY` + cola durable con `SKIP LOCKED` y leases.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-004`
-  - **Spec Ref:** `ARCHITECTURE.md §4.1, §4.2`, `AC-110`
-  - **Target Files:** `backend/app/core/events.py`, `backend/app/models/platform.py`, `backend/migrations/versions/0003_outbox_jobs.py`, `backend/app/workers/dispatcher.py`
-  - **Verification:** `cd backend && ruff check app tests && mypy app && pytest -q`
-  - **Partial:** outbox, leases, retries, DLQ and notification consumer delivered (`app/services/outbox.py`, `test_outbox.py`); `LISTEN/NOTIFY` and a separate `jobs` table remain pending.
+  - **Spec Ref:** `ARCHITECTURE.md §4.1, §4.2`, `AC-110`, `ADR-013`
+  - **Target Files:** `backend/app/services/outbox.py`, `backend/app/workers/outbox_listener.py`, `backend/migrations/versions/0015_outbox_notify.py`, `backend/tests/integration/test_outbox_notify.py`
+  - **Verification:** `cd backend && pytest -q tests/integration/test_outbox.py tests/integration/test_outbox_notify.py`
+  - **Evidence:** 11 tests passed: commit-time `pg_notify`, rollback suppression, listener wake-up, lease reclaim, retries and DLQ. A generic `jobs` table was rejected in ADR-013 because typed domain queues already exist.
   - **Retries:** `0/3`
 
 - [x] **TASK-009:** Harness de migraciones (upgrade/downgrade limpio desde BD vacía) y script de seed de desarrollo idempotente.
@@ -271,13 +271,13 @@
   - **Verification:** `cd backend && pytest -q tests/integration/test_assets.py tests/integration/test_vulnerabilities.py tests/integration/test_attack_surface.py tests/unit/test_risk.py`
   - **Retries:** `0/3`
 
-- [!] **TASK-030:** CRUD de activos con validación estricta, criticidad 1..5, soft delete/restore y eventos de outbox.
+- [x] **TASK-030:** CRUD de activos con validación estricta, criticidad 1..5, soft delete/restore y eventos de outbox.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-029, TASK-021`
   - **Spec Ref:** `AC-15, AC-18`
-  - **Target Files:** `backend/app/services/assets.py`, `backend/app/api/v1/assets.py`, `backend/tests/integration/test_assets_crud.py`
-  - **Verification:** `cd backend && pytest -q tests/integration/test_assets.py tests/integration/test_vulnerabilities.py tests/integration/test_attack_surface.py tests/unit/test_risk.py`
-  - **Deferred:** Soft delete/restore deferred; guarded delete delivered.
+  - **Target Files:** `backend/app/models/assets.py`, `backend/app/modules/assets/router.py`, `backend/app/modules/assets/service.py`, `backend/migrations/versions/0016_asset_soft_delete.py`, `backend/tests/integration/test_asset_soft_delete.py`
+  - **Verification:** `cd backend && pytest -q tests/integration/test_assets.py tests/integration/test_asset_soft_delete.py`
+  - **Evidence:** 15 tests passed. `deleted_at` + global ORM read filter hide soft-deleted rows; `POST /assets/{id}/restore` restores status and relationships; key collisions in trash return `409 asset_key_in_trash`.
   - **Retries:** `0/3`
 
 - [x] **TASK-031:** Grafo de relaciones de activos con detección de ciclos y validación de tipos de relación.
@@ -330,13 +330,13 @@
   - **Verification:** `cd backend && pytest -q tests/integration/test_assets.py tests/integration/test_vulnerabilities.py tests/integration/test_attack_surface.py tests/unit/test_risk.py`
   - **Retries:** `0/3`
 
-- [!] **TASK-037:** Exportación de superficie de ataque a STIX 2.1 y CSV con bundle válido y round-trip.
+- [x] **TASK-037:** Exportación de superficie de ataque a STIX 2.1 y CSV con bundle válido y round-trip.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-036`
   - **Spec Ref:** `AC-25`
-  - **Target Files:** `backend/app/integrations/stix.py`, `backend/app/api/v1/attack_surface.py`, `backend/tests/integration/test_asm_export.py`
-  - **Verification:** `cd backend && pytest -q tests/integration/test_assets.py tests/integration/test_vulnerabilities.py tests/integration/test_attack_surface.py tests/unit/test_risk.py`
-  - **Deferred:** STIX export of attack surface deferred.
+  - **Target Files:** `backend/app/modules/attack_surface/stix.py`, `backend/app/modules/attack_surface/router.py`, `backend/tests/integration/test_asm_export.py`
+  - **Verification:** `cd backend && pytest -q tests/integration/test_asm_export.py`
+  - **Evidence:** 3 tests passed. `GET /attack-surface/export?format=stix2.1` emits `infrastructure` + `ipv4-addr`/`ipv6-addr` with `x_hispanshield_observations`; parser round-trip preserves asset/ip/port. CSV is formula-injection safe.
   - **Retries:** `0/3`
 
 - [x] **TASK-038:** Modelo de vulnerabilidades, scoring determinista explicable (`score_breakdown`) y SLA por severidad.
@@ -355,13 +355,13 @@
   - **Verification:** `cd backend && pytest -q tests/integration/test_assets.py tests/integration/test_vulnerabilities.py tests/integration/test_attack_surface.py tests/unit/test_risk.py`
   - **Retries:** `0/3`
 
-- [!] **TASK-040:** Importadores Nessus/OpenVAS/Trivy con normalización a `vulnerability_instance` e informe parcial.
+- [x] **TASK-040:** Importadores Nessus/OpenVAS/Trivy con normalización a instancias de vulnerabilidad e informe parcial.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-039`
-  - **Spec Ref:** `AC-31`
-  - **Target Files:** `backend/app/integrations/vuln_importers/{nessus,openvas,trivy}.py`, `backend/tests/integration/test_vuln_importers.py`, `examples/vuln/`
-  - **Verification:** `cd backend && pytest -q tests/integration/test_assets.py tests/integration/test_vulnerabilities.py tests/integration/test_attack_surface.py tests/unit/test_risk.py`
-  - **Deferred:** Nessus/OpenVAS/Trivy importers deferred; CVE/KEV/EPSS imports delivered.
+  - **Spec Ref:** `AC-31`, `ADR-014`
+  - **Target Files:** `backend/app/modules/vulnerabilities/importers.py`, `backend/app/modules/vulnerabilities/router.py`, `backend/tests/unit/test_scanner_importers.py`, `backend/tests/integration/test_vuln_importers.py`
+  - **Verification:** `cd backend && pytest -q tests/unit/test_scanner_importers.py tests/integration/test_vuln_importers.py`
+  - **Evidence:** 9 tests passed. `POST /vulnerabilities/import` accepts Nessus/OpenVAS XML and Trivy JSON, resolves hosts within the tenant, dedupes across scanners by fingerprint, rejects DTD/entity XML and supports `Idempotency-Key`.
   - **Retries:** `0/3`
 
 - [!] **TASK-041:** Excepciones de riesgo con justificación, caducidad ≤365 días y job de revocación automática notificada.
@@ -885,13 +885,13 @@
   - **Deferred:** Firmware CPE/CVE matching and EOL marking deferred; vulnerability linking delivered.
   - **Retries:** `0/3`
 
-- [!] **TASK-101:** Modelo OT: nivel Purdue, safety function, zonas y conductos IEC 62443 con `required_sl` obligatorio.
+- [x] **TASK-101:** Modelo OT: nivel Purdue, safety function, zonas y conductos IEC 62443 con `required_sl` obligatorio.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-034`
   - **Spec Ref:** `REQ-OTC-001`, `AC-84`
-  - **Target Files:** `backend/app/services/ot.py`, `backend/app/api/v1/ot.py`, `backend/tests/integration/test_iec62443_zones.py`
-  - **Verification:** `cd backend && pytest -q tests/integration/test_iot_ot.py tests/integration/test_connectors.py tests/integration/test_connectors_adapters.py tests/integration/test_connectors_security.py tests/integration/test_edge.py && cd ../edge && pytest -q`
-  - **Deferred:** Per-zone required_sl deferred; Purdue zones/conduits delivered.
+  - **Target Files:** `backend/app/modules/assets/zones.py`, `backend/app/modules/compliance/checks.py`, `backend/tests/integration/test_iec62443_zones.py`
+  - **Verification:** `cd backend && pytest -q tests/integration/test_iec62443_zones.py tests/integration/test_iot_ot.py`
+  - **Evidence:** 2 new tests passed. Conduits require `metadata.required_sl` (1..4); SL>=3 without a documented compensating control produces a `non_compliant` IEC-5 assessment with a FAIL segmentation note.
   - **Retries:** `0/3`
 
 - [x] **TASK-102:** Línea base de tráfico Modbus/DNP3/OPC-UA y detección de anomalías de función de escritura con severidad por Purdue.
@@ -1096,7 +1096,7 @@
   - **Spec Ref:** `AC-99, AC-100, AC-103`
   - **Target Files:** `frontend/e2e/{a11y,keyboard,reduced-motion}.spec.ts`, `frontend/src/components/ui/Modal.tsx`
   - **Verification:** `cd frontend && node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build && node node_modules/vitest/vitest.mjs run && node node_modules/@playwright/test/cli.js test e2e --project=chromium-desktop`
-  - **Deferred:** Automated axe-core violation gate deferred; keyboard/contrast review delivered.
+  - **Deferred:** axe-core gate y responsive ejecutados (`a11y.spec.ts`, `responsive.spec.ts`, 0 contrast/critical, 24 rutas × 3 viewports); quedan pendientes el test automatizado de orden de tabulación/focus trap y `reduced-motion`.
   - **Retries:** `0/3`
 
 - [!] **TASK-126:** Integración SSE transversal: reconexión con backoff, dedupe por `event_id`, pausa/reanudar y `aria-live` en vistas en vivo.
@@ -1457,22 +1457,27 @@
 
 ---
 
-## DELIVERY EVIDENCE — 0.1.2 (2026-11-26)
+## DELIVERY EVIDENCE — 0.1.3 remediation (2026-11-26)
 
-- `.factory/EVIDENCE/METRICS.json` — 138/176 tasks, 650 backend tests, 92 edge,
-  36 frontend, 305 operations, 233 paths, 65 tables, 14 migrations, 12 adapters,
-  13 actions, 0 A4.
-- `.factory/EVIDENCE/BACKEND_TEST_RUN.md` — 650 passed, ruff, mypy, bandit,
-  pip-audit.
-- `.factory/EVIDENCE/FRONTEND_TEST_RUN.md` — tsc, vite build, 36 Vitest,
-  npm audit.
-- `.factory/EVIDENCE/DEPLOY_VALIDATION.md` — render PASS, unrendered template
-  FAIL (expected).
-- `.factory/EVIDENCE/WAVE_0_RECONCILIATION.md` — contradictory counts resolved.
-- `.factory/AC_TRACEABILITY.md` — 70 VERIFIED / 32 PARTIAL / 22 NOT_VERIFIED.
-- `.factory/reports/` — executive, architecture, security, functional,
-  performance, tests, deployment, risk and release readiness.
+- `.factory/EVIDENCE/REMEDIATION_WAVE_0.1.3.md` — defects found, fixes and exact
+  tests/commands.
+- `.factory/EVIDENCE/tests/backend-full.log` — full backend suite (see final
+  count in the log; ruff/format/mypy/bandit also green).
+- `.factory/EVIDENCE/e2e/` — Playwright core suite 10/10, responsive and axe
+  gates (Chromium 1255), against a fresh seeded PostgreSQL database.
+- `.factory/EVIDENCE/backup-restore/REPORT.md` — backup → restore → counts →
+  audit chain → API smoke test, all verified.
+- `.factory/EVIDENCE/security/` — pip-audit, bandit (0 MEDIUM/HIGH), gitleaks
+  (0 leaks), npm audit (0).
+- `.factory/EVIDENCE/sbom/` — CycloneDX Python (1.6, 84) and Node (1.7, 154).
+- `.factory/EVIDENCE/infrastructure/` — K8s render/validate PASS; unrendered
+  template rejected.
+- `.factory/reports/CI_CD_REPORT.md` — P0 YAML fix, least privilege,
+  fail-closed quality gate.
+- `.factory/AC_TRACEABILITY.md` — regenerated from the status map.
 
-**Exit Gate status: NOT MET for GA.** Playwright E2E, Docker/K8s runtime,
-backup restore, performance benchmarks and independent review remain open. This
-is an evidence-backed release candidate, not a production-ready claim.
+**Exit Gate status: NOT MET for GA.** Cloud CSPM, legal hold, partitions,
+A4, durable agent runs, Firefox/WebKit E2E, Docker/K8s runtime, performance
+benchmarks, air-gapped install and a truly independent external review remain
+open. This is a pilot-ready evidence-backed release candidate, not a
+production-ready claim.

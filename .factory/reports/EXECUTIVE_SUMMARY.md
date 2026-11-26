@@ -1,55 +1,36 @@
-# EXECUTIVE SUMMARY — HISPANSHIELD 0.1.2
+# EXECUTIVE SUMMARY — HISPANSHIELD 0.1.3
 
-## Qué estaba mal
+## Qué cambia respecto a 0.1.2
 
-- Las cifras de estado no coincidían: 128/172 vs 109/150 tareas, 44 vs 47
-  aplazadas, 23 vs 24 pantallas, 284 vs 283 operaciones OpenAPI y 0 AC marcados
-  pese a tareas “verificadas”.
-- El README y la matriz de compatibilidad anunciaban EDR, cloud CSPM,
-  importadores Nessus/OpenVAS/Trivy, OIDC/SAML y A4 sin implementación real.
-- Faltaban outbox transaccional, SSE, `Idempotency-Key`, cursor pagination,
-  `/setup`, invitaciones y endpoints de política de contraseñas.
-- La cadena de auditoría era SHA-256 sin clave; un administrador de PostgreSQL
-  podía recomputarla.
-- La plantilla Kubernetes parecía producción pero contenía
-  `ghcr.io/example`, `CHANGE_ME` y hosts de ejemplo.
+- **CI reparado (P0):** el job `container` tenía `steps:` fusionado con `needs:`.
+  Ahora el workflow parsea, aplica permisos mínimos y un `quality-gate`
+  fail-closed.
+- **Instalación limpia reparada:** el seed demo ya no colisiona en
+  `uq_events_org_dedupe`; `/setup` siembra los 10 marcos de cumplimiento.
+- **Backup/restore reparado y verificado:** los scripts pasan un DSN válido a
+  libpq; restauración aislada con conteos, cadena de auditoría y smoke API.
+- **Capacidades cerradas:** outbox `LISTEN/NOTIFY`, soft delete/restore de
+  activos, export STIX 2.1/CSV, importadores Nessus/OpenVAS/Trivy y
+  `required_sl` IEC 62443.
+- **Evidencia E2E real:** Playwright 10/10 sobre 24 rutas, gate responsive
+  375/768/1440 y axe-core 0 contrast/0 critical.
 
-## Qué se ha corregido
+## Estado medido
 
-- Reconciliación medida con `scripts/factory_metrics.py` y
-  `scripts/ac_traceability.py`: 138/176 tareas, 70/124 AC verificados, 32
-  parciales, 22 no verificados.
-- Auditoría HMAC v3 con rotación de clave y checkpoints firmados; producción
-  exige `HS_AUDIT_REQUIRE_HMAC=true`.
-- Outbox transaccional con leases, reintentos, DLQ y consumidor de
-  notificaciones; SSE con `Last-Event-ID`; cursor pagination; `Idempotency-Key`
-  en incidentes/imports; `/setup`; invitaciones single-use; política de
-  contraseñas; sesiones activas en UI.
-- Manifiesto Kubernetes convertido en plantilla renderizable con gate que
-  rechaza placeholders, `:latest`, variables sin renderizar y ausencia de
-  controles de seguridad.
-- Documentación corregida: README, matriz de compatibilidad, roadmap,
-  implementation-status, CHANGELOG, SPEC, TASKS, REPO_INVENTORY y
-  RELEASE_READINESS.
+- `143/176` tareas verificadas; `33` bloqueadas; `0` en progreso.
+- `81/124` AC verificados; `27` parciales; `16` no verificados.
+- Backend `669` tests, edge `92`, frontend `36`; migraciones `16`;
+  OpenAPI `308` operaciones / `236` rutas.
+- pip-audit, bandit, gitleaks y npm audit limpios.
 
-## Qué está realmente operativo y probado
+## Qué sigue fuera de alcance
 
-Backend 650 tests, edge 92, frontend 36, `tsc`/`vite build`, `ruff`, `mypy`,
-bandit, pip-audit, npm audit, render+validación K8s. Ver
-`.factory/EVIDENCE/`.
+Cloud/CSPM, legal hold, particiones/retención, A4, runtime durable de agentes,
+tracker NIS2, ETSI/CPE, Firefox/WebKit, Docker/K8s runtime, benchmarks 5k/100k,
+air-gap y revisión externa independiente.
 
-## Qué no se ha podido probar
+## Veredicto
 
-Playwright E2E, Docker/K8s runtime, restauración de backup, gitleaks en esta
-ola, benchmarks de 5k/100k y revisión independiente real.
-
-## Riesgos que permanecen
-
-Outbox sin `LISTEN/NOTIFY`/tabla `jobs`; cloud CSPM/importadores/legal
-hold/particiones/A4/agente durable ausentes; clave HMAC y PostgreSQL en las
-mismas manos siguen permitiendo forja; revisión independiente pendiente.
-
-## Recomendación
-
-**0.1.2 release candidate para laboratorio/piloto controlado.** No es GA, no
-está certificado y no debe etiquetarse `PRODUCTION READY`.
+**PILOT READY** para un piloto controlado con entorno aislado y riesgos
+residuales aceptados. **No** PRODUCTION READY. Detalle en
+`.factory/RELEASE_READINESS.md` y `.factory/reports/FINAL_RELEASE_REPORT.md`.

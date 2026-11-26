@@ -1,0 +1,3 @@
+upgrade head: exit 0
+upgrade head -> downgrade base -> upgrade head: exit 0
+final alembic current: 0016_asset_soft_delete (head)

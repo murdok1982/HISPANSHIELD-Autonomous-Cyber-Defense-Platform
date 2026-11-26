@@ -120,10 +120,10 @@
 | :--- | :--- | :--- | :--- |
 | CSV | Activos/observaciones | ✅ | 10 MB |
 | JSON | Import/export | ✅ | 10 MB |
-| Nessus `.nessus` | Vulnerabilidades | ❌ No implementado | — |
-| OpenVAS XML | Vulnerabilidades | ❌ No implementado | — |
-| Trivy JSON | Vulnerabilidades | ❌ No implementado | — |
-| STIX 2.1 | CTI | ✅ | 50 MB |
+| Nessus `.nessus` | Vulnerabilidades | ✅ `POST /vulnerabilities/import` | 20 MB |
+| OpenVAS XML | Vulnerabilidades | ✅ `POST /vulnerabilities/import` | 20 MB |
+| Trivy JSON | Vulnerabilidades | ✅ `POST /vulnerabilities/import` | 20 MB |
+| STIX 2.1 | CTI / ASM export | ✅ import CTI + export ASM | 50 MB |
 | PDF / PNG / JPEG | Evidencias | ✅ | 50 MB |
 | ZIP | Export forense (salida) | ❌ No implementado (export JSON/CSV) | — |
 | PCAP | — | ❌ | Sin analizador |

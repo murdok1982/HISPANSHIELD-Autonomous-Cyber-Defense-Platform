@@ -1,0 +1,15 @@
+
+Running 10 tests using 1 worker
+
+  ✓   1 [chromium-desktop] › e2e/all-screens.spec.ts:54:1 › all SOC screens render with real data and no client errors (37.6s)
+  ✓   2 [chromium-desktop] › e2e/all-screens.spec.ts:93:1 › key page interactions work (5.7s)
+  ✓   3 [chromium-desktop] › e2e/critical-flows.spec.ts:38:3 › authentication and tenant scoping › rejects invalid credentials with a generic error (838ms)
+  ✓   4 [chromium-desktop] › e2e/critical-flows.spec.ts:47:3 › authentication and tenant scoping › protects application routes (652ms)
+  ✓   5 [chromium-desktop] › e2e/critical-flows.spec.ts:55:3 › SOC command center › executive overview renders real KPI data and risk (3.0s)
+  ✓   6 [chromium-desktop] › e2e/critical-flows.spec.ts:63:3 › SOC command center › live monitoring and incident management are reachable (3.3s)
+  ✓   7 [chromium-desktop] › e2e/critical-flows.spec.ts:72:3 › SOC command center › mobile navigation has no horizontal overflow (919ms)
+  ✓   8 [chromium-desktop] › e2e/critical-flows.spec.ts:81:3 › governance › audit center verifies the hash chain (3.3s)
+  ✓   9 [chromium-desktop] › e2e/critical-flows.spec.ts:92:3 › governance › authentication security settings are visible (2.9s)
+  ✓  10 [chromium-desktop] › e2e/screenshots.spec.ts:26:1 › capture product screenshots (11.6s)
+
+  10 passed (1.2m)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -145,6 +145,34 @@ class CVEImportResult(StrictModel):
     catalog_updated: int
     vulnerabilities_created: int
     vulnerabilities_updated: int
+    errors: list[ImportRowError]
+
+
+class ScannerImportRequest(StrictModel):
+    """Raw Nessus/OpenVAS XML or Trivy JSON report.
+
+    ``asset_key`` is optional; when omitted the importer resolves hosts against
+    the organization's inventory (asset_key, name, hostnames and IPs).
+    """
+
+    format: Literal["nessus", "openvas", "trivy"]
+    content: str = Field(min_length=1, max_length=20_000_000)
+    asset_key: str | None = Field(default=None, max_length=200)
+
+    @field_validator("content")
+    @classmethod
+    def _no_null_bytes(cls, value: str) -> str:
+        if "\x00" in value:
+            raise ValueError("content contains NUL bytes")
+        return value
+
+
+class ScannerImportResult(StrictModel):
+    format: str
+    total: int
+    created: int
+    updated: int
+    skipped: int
     errors: list[ImportRowError]
 
 

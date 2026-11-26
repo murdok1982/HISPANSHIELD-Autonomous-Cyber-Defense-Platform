@@ -1,0 +1,7 @@
+
+Running 2 tests using 1 worker
+
+  ✓  1 [chromium-desktop] › e2e/a11y.spec.ts:65:1 › axe-core: no color-contrast or critical violations on authenticated routes (37.1s)
+  ✓  2 [chromium-desktop] › e2e/responsive.spec.ts:56:1 › no horizontal overflow on any route at 375/768/1440 (1.2m)
+
+  2 passed (1.8m)

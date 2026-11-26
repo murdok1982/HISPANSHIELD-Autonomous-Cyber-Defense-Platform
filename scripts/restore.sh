@@ -43,7 +43,9 @@ if [[ ! -f "$EVIDENCE_ARCHIVE" && -f "${SOURCE}/evidence.tar.gz.gpg" ]]; then
 fi
 
 echo "[restore] restoring database (clean)"
-pg_restore --clean --if-exists --no-owner --no-privileges --dbname="$HS_DATABASE_URL" "$DUMP"
+# pg_restore speaks libpq DSNs, not SQLAlchemy driver URLs.
+PG_URL="$(printf '%s' "$HS_DATABASE_URL" | sed -E 's#^postgresql\+[a-z0-9_]+://#postgresql://#')"
+pg_restore --clean --if-exists --no-owner --no-privileges --dbname="$PG_URL" "$DUMP"
 
 if [[ -f "$EVIDENCE_ARCHIVE" ]]; then
   echo "[restore] restoring evidence"

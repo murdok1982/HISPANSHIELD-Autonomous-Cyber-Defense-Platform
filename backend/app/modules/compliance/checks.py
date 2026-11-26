@@ -79,6 +79,8 @@ class Signals:
     ingest_sources_enabled: int
     published_playbooks: int
     evidence_total: int
+    conduits_total: int = 0
+    conduits_missing_compensating_control: int = 0
     last_access_review_at: datetime | None = None
     captured_at: datetime = field(default_factory=utcnow)
 
@@ -133,12 +135,15 @@ def build_signals(db: Session, org_id: uuid.UUID, org_settings: dict[str, Any]) 
         ).scalars()
     )
 
-    assets_total = db.execute(select(func.count()).select_from(Asset).where(Asset.org_id == org_id)).scalar_one()
+    assets_total = db.execute(
+        select(func.count()).select_from(Asset).where(Asset.org_id == org_id, Asset.deleted_at.is_(None))
+    ).scalar_one()
     assets_covered = db.execute(
         select(func.count())
         .select_from(Asset)
         .where(
             Asset.org_id == org_id,
+            Asset.deleted_at.is_(None),
             or_(
                 Asset.owner.isnot(None),
                 Asset.zone_id.isnot(None),
@@ -149,12 +154,23 @@ def build_signals(db: Session, org_id: uuid.UUID, org_settings: dict[str, Any]) 
     assets_by_kind = {
         str(kind): int(count)
         for kind, count in db.execute(
-            select(Asset.kind, func.count()).where(Asset.org_id == org_id).group_by(Asset.kind)
+            select(Asset.kind, func.count())
+            .where(Asset.org_id == org_id, Asset.deleted_at.is_(None))
+            .group_by(Asset.kind)
         ).all()
     }
 
     zone_rows = db.execute(select(Zone.kind, func.count()).where(Zone.org_id == org_id).group_by(Zone.kind)).all()
     zones_total = sum(int(count) for kind, count in zone_rows if str(kind) == "zone")
+
+    conduits = list(db.execute(select(Zone).where(Zone.org_id == org_id, Zone.kind == "conduit")).scalars())
+    conduits_missing_control = 0
+    for conduit in conduits:
+        metadata = conduit.metadata_json if isinstance(conduit.metadata_json, dict) else {}
+        required_sl = metadata.get("required_sl")
+        compensating = metadata.get("compensating_controls") or metadata.get("compensating_control")
+        if isinstance(required_sl, int) and required_sl >= 3 and not compensating:
+            conduits_missing_control += 1
 
     ot_total = db.execute(select(func.count()).select_from(OTDevice).where(OTDevice.org_id == org_id)).scalar_one()
     ot_passive = db.execute(
@@ -235,6 +251,8 @@ def build_signals(db: Session, org_id: uuid.UUID, org_settings: dict[str, Any]) 
         ot_passive=int(ot_passive),
         ot_zoned=int(ot_zoned),
         zones_total=int(zones_total),
+        conduits_total=len(conduits),
+        conduits_missing_compensating_control=conduits_missing_control,
         vulns_open=int(vulns_open),
         vulns_overdue=int(vulns_overdue),
         vulns_kev=int(vulns_kev),
@@ -623,6 +641,19 @@ def _patch_management(signals: Signals, params: dict[str, Any]) -> dict[str, Any
 
 def _network_segmentation(signals: Signals, params: dict[str, Any]) -> dict[str, Any]:
     minimum = _float_param(params, "min_ratio", 0.8)
+    if signals.conduits_missing_compensating_control:
+        return _result(
+            True,
+            False,
+            {
+                "conduits": signals.conduits_total,
+                "missing_compensating_control": signals.conduits_missing_compensating_control,
+            },
+            (
+                f"{signals.conduits_missing_compensating_control} conduit(s) require SL >= 3 and do not document "
+                "a compensating control."
+            ),
+        )
     if signals.zones_total == 0:
         return _result(True, False, {"zones": 0}, "No security zones are defined for the organization.")
     if signals.ot_total == 0:

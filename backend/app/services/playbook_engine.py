@@ -291,7 +291,9 @@ def _investigate(db: Session, org: Organization, execution: PlaybookExecution) -
             .select_from(SecurityEvent)
             .where(SecurityEvent.org_id == org.id, SecurityEvent.occurred_at >= since)
         ).scalar_one(),
-        "assets": db.execute(select(func.count()).select_from(Asset).where(Asset.org_id == org.id)).scalar_one(),
+        "assets": db.execute(
+            select(func.count()).select_from(Asset).where(Asset.org_id == org.id, Asset.deleted_at.is_(None))
+        ).scalar_one(),
     }
 
 

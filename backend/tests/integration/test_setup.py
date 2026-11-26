@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
+from app.models.compliance import ComplianceFramework
 from app.models.core import Membership, Organization, User
 
 
@@ -30,6 +31,12 @@ def test_setup_creates_first_org_at_a0_and_refuses_replay(client, db) -> None:
         select(Membership).where(Membership.org_id == org.id, Membership.user_id == user.id)
     ).scalar_one()
     assert membership.role == "org_admin"
+
+    # A fresh installation must expose the built-in compliance catalogue
+    # without a manual seed step (AC-88).
+    frameworks = db.execute(select(ComplianceFramework.code).distinct()).scalars().all()
+    assert len(frameworks) >= 10
+    assert "NIS2" in frameworks
 
     replay = client.post("/api/v1/setup", json=payload)
     assert replay.status_code == 409

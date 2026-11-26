@@ -12,6 +12,24 @@
   - `LOW`: **3 open/partial aceptados** (`023`, `026`, `027`) / **4 resolved**
   - `NEW-001..005`: **5 resolved** (fuera de los 28)
 
+## Addendum 0.1.3 — re-verificación (2026-11-26)
+
+- **Nuevo código auditado:** importadores Nessus/OpenVAS/Trivy, export STIX/CSV,
+  soft delete/restore, trigger `LISTEN/NOTIFY`, endpoint IEC 62443.
+- **XML no confiable:** `defusedxml==0.7.1` + rechazo explícito de
+  `DOCTYPE`/`ENTITY` + límite de 20 MB. Bandit B314 resuelto, no silenciado.
+- **Tenant isolation:** los importadores resuelven hosts solo contra el
+  inventario de la organización; un host desconocido genera error de fila y no
+  se adjunta a un activo ajeno.
+- **CSV:** export de superficie de ataque con neutralización de fórmulas
+  (`= + - @`, tab, CR).
+- **Escaneos ejecutados:** pip-audit (0), bandit `-ll` (0 MEDIUM/HIGH),
+  gitleaks 8.30.1 sobre 7 commits (0 leaks), npm audit (0). Evidencia en
+  `.factory/EVIDENCE/security/`.
+- **Sin cambios en el veredicto de hallazgos:** `0 CRITICAL / 0 HIGH` abiertos.
+  Los residuales MEDIUM/LOW y la ausencia de revisión externa siguen vigentes;
+  ver `.factory/RELEASE_READINESS.md §3`.
+
 > **EXIT GATE RULE:** El proyecto NO puede darse por finalizado mientras exista cualquier hallazgo `CRITICAL` o `HIGH` en estado `OPEN`.
 > **Regla adicional HISPANSHIELD:** cualquier hallazgo que permita (a) cruzar `organization_id`, (b) ejecutar una acción autónoma sin decisión `allow` de política, (c) saltarse un kill switch, o (d) leer un secreto de conector en claro, se clasifica como `CRITICAL` aunque su exploit requiera autenticación.
 

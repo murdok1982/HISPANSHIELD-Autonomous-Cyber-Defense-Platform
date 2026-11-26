@@ -64,7 +64,7 @@ def list_assets(
     sort: str = Query(default="last_seen", pattern="^(" + "|".join(ASSET_SORTS) + ")$"),
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
 ) -> Page[AssetOut]:
-    stmt = select(Asset).where(Asset.org_id == ctx.org.id)
+    stmt = select(Asset).where(Asset.org_id == ctx.org.id, Asset.deleted_at.is_(None))
     if kind:
         stmt = stmt.where(Asset.kind == kind)
     if subtype:
@@ -189,7 +189,13 @@ def read_asset(asset_id: UUID, ctx: RequestContext = Depends(require_permission(
 
 @assets_router.post("", response_model=AssetOut, status_code=201, summary="Create an asset")
 def create_asset(payload: AssetCreate, ctx: RequestContext = Depends(require_permission("asset:write"))) -> Asset:
-    if service.asset_or_none_by_key(ctx.db, ctx.org.id, payload.asset_key) is not None:
+    existing = service.asset_or_none_by_key(ctx.db, ctx.org.id, payload.asset_key)
+    if existing is not None:
+        if existing.deleted_at is not None:
+            raise Conflict(
+                "An asset with this asset_key is in the trash; restore it or choose another key",
+                code="asset_key_in_trash",
+            )
         raise Conflict("An asset with this asset_key already exists")
     service.ensure_zone_exists(ctx.db, ctx.org.id, payload.zone_id)
     asset = Asset(
@@ -253,11 +259,38 @@ def delete_asset(
         action="asset.delete",
         resource_type="asset",
         resource_id=str(asset.id),
-        payload={"asset_key": asset.asset_key, "kind": asset.kind, "confirm": confirm},
+        payload={"asset_key": asset.asset_key, "kind": asset.kind, "confirm": confirm, "soft": True},
     )
-    ctx.db.delete(asset)
+    # Soft delete: findings, evidence, incident references and the audit trail
+    # keep pointing at a real row. Active ORM reads hide it via deleted_at.
+    asset.deleted_at = utcnow()
+    if asset.status != "retired":
+        asset.status = "retired"
     ctx.db.commit()
     return Response(status_code=204)
+
+
+@assets_router.post(
+    "/{asset_id}/restore",
+    response_model=AssetDetailOut,
+    summary="Restore a soft-deleted asset with its relationships",
+)
+def restore_asset(asset_id: UUID, ctx: RequestContext = Depends(require_permission("asset:write"))) -> AssetDetailOut:
+    asset = service.get_asset_including_deleted(ctx.db, ctx.org.id, asset_id)
+    if asset.deleted_at is not None:
+        asset.deleted_at = None
+        if asset.status == "retired":
+            asset.status = "active"
+        asset.last_seen = utcnow()
+        ctx.audit(
+            action="asset.restore",
+            resource_type="asset",
+            resource_id=str(asset.id),
+            payload={"asset_key": asset.asset_key, "kind": asset.kind},
+        )
+        ctx.db.commit()
+        ctx.db.refresh(asset)
+    return service.asset_detail(ctx.db, asset)
 
 
 @assets_router.get("/{asset_id}/identities", response_model=list[IdentityOut], summary="List asset identities")

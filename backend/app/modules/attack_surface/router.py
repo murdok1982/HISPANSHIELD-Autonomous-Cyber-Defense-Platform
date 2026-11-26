@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
@@ -12,7 +13,7 @@ from app.core.deps import RequestContext, require_permission
 from app.core.errors import AppError, Conflict, Forbidden, NotFound, PolicyDenied
 from app.core.schemas import Page, paginate
 from app.models.assets import Asset, AttackSurfaceFinding, DiscoveryAuthorization, DiscoveryJob
-from app.modules.attack_surface import discovery, service
+from app.modules.attack_surface import discovery, service, stix
 from app.modules.attack_surface.schemas import (
     AnalyzeResult,
     DiscoveryAuthorizationCreate,
@@ -196,6 +197,39 @@ def analyze(
     )
     ctx.db.commit()
     return result
+
+
+@router.get("/export", summary="Export the attack surface as STIX 2.1 or CSV")
+def export_attack_surface(
+    format: str = Query(default="stix2.1", pattern="^(stix2.1|csv)$"),
+    ctx: RequestContext = Depends(require_permission("attack_surface:read")),
+) -> Response:
+    """Portable evidence export; IP/port observations survive a round-trip."""
+    if format == "csv":
+        content = stix.build_csv(ctx.db, ctx.org.id)
+        ctx.audit(
+            action="attack_surface.export",
+            resource_type="attack_surface",
+            payload={"format": "csv"},
+        )
+        ctx.db.commit()
+        return Response(
+            content=content,
+            media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="attack-surface.csv"'},
+        )
+    bundle = stix.build_bundle(ctx.db, ctx.org.id)
+    ctx.audit(
+        action="attack_surface.export",
+        resource_type="attack_surface",
+        payload={"format": "stix2.1", "objects": len(bundle["objects"])},
+    )
+    ctx.db.commit()
+    return Response(
+        content=json.dumps(bundle, ensure_ascii=False),
+        media_type="application/stix+json;version=2.1",
+        headers={"Content-Disposition": 'attachment; filename="attack-surface.stix2.1.json"'},
+    )
 
 
 @router.get("/summary", response_model=FindingSummaryOut, summary="Attack-surface summary")
