@@ -31,6 +31,7 @@ from app.models.connectors import Connector
 from app.modules.connectors.sync import run_sync
 from app.services.outbox import dispatch_once as dispatch_outbox_once
 from app.services.playbook_engine import worker_run_once
+from app.workers.outbox_listener import OutboxListener
 
 logger = get_logger("hispanshield.worker")
 
@@ -78,6 +79,10 @@ class StopFlag:
     @property
     def stopped(self) -> bool:
         return self._event.is_set()
+
+    @property
+    def event(self) -> threading.Event:
+        return self._event
 
     def wait(self, seconds: float) -> bool:
         return self._event.wait(seconds)
@@ -154,10 +159,31 @@ def run_outbox_once(db: Session, *, limit: int = 100) -> dict[str, int]:
 
 
 def run_forever(stop: StopFlag, stats: WorkerStats, *, role: str = "all") -> None:
+    # LISTEN/NOTIFY is an optimisation on top of polling: the event only avoids
+    # up to OUTBOX_INTERVAL_SECONDS of latency and is never required for
+    # correctness.
+    notify_wake = threading.Event()
+    listener: OutboxListener | None = None
+    if role in {"all", "outbox"}:
+        listener = OutboxListener(wake=notify_wake, stop=stop.event).start()
+
+    try:
+        _run_loop(stop, stats, role=role, notify_wake=notify_wake)
+    finally:
+        if listener is not None:
+            listener.join(timeout=5)
+
+    logger.info("worker_stopped", extra={"extra_fields": stats.as_dict()})
+
+
+def _run_loop(stop: StopFlag, stats: WorkerStats, *, role: str, notify_wake: threading.Event) -> None:
     next_playbooks = 0.0
     next_scheduler = 0.0
     next_outbox = 0.0
     while not stop.stopped:
+        if notify_wake.is_set():
+            notify_wake.clear()
+            next_outbox = 0.0
         now = time.monotonic()
         if role in {"all", "playbooks"} and now >= next_playbooks:
             try:
@@ -192,9 +218,10 @@ def run_forever(stop: StopFlag, stats: WorkerStats, *, role: str = "all") -> Non
                 logger.error("connector_pass_failed", extra={"extra_fields": {"error": str(exc)[:300]}})
             next_scheduler = time.monotonic() + SCHEDULER_INTERVAL_SECONDS
 
-        stop.wait(0.5)
-
-    logger.info("worker_stopped", extra={"extra_fields": stats.as_dict()})
+        # Wake immediately on a LISTEN/NOTIFY signal; otherwise poll at 500 ms.
+        if notify_wake.wait(0.5):
+            notify_wake.clear()
+            next_outbox = 0.0
 
 
 def main(argv: list[str] | None = None) -> int:

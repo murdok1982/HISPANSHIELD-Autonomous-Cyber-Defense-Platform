@@ -16,6 +16,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     HS_FRONTEND_DIST=/app/frontend/dist \
     HS_EVIDENCE_DIR=/app/data/evidence
 
+# Keep the runtime base patched: the slim image can lag behind Debian security
+# updates (e.g. libzstd1 CVE-2026-124851). Upgrade the affected package rather
+# than suppressing the Trivy gate.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libzstd1 \
+ && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system --gid 10001 hispanshield \
  && useradd --system --uid 10001 --gid hispanshield --home /app --shell /usr/sbin/nologin hispanshield
 

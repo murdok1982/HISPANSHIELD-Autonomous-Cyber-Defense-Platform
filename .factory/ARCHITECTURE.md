@@ -18,9 +18,9 @@
 | **Validation** | Pydantic v2 + pydantic-settings | `^2.9` / `^2.6` | Validación estricta en frontera, `model_config = ConfigDict(extra="forbid")` |
 | **ORM / DB access** | SQLAlchemy 2.0 (sync) + psycopg 3 | `^2.0` / `^3.2` | Sesiones síncronas en threadpool: simple, depurable, sin `greenlet`; SQL explícito en consultas críticas |
 | **Migrations** | Alembic | `^1.14` | Migraciones versionadas, upgrade/downgrade testeados |
-| **Database** | PostgreSQL | `18.x` | Fuente de verdad única: JSONB, FTS (`tsvector`, `pg_trgm`), row-level scoping por `organization_id`. Particiones declarativas y `LISTEN/NOTIFY` son objetivo, no estado actual. |
-| **Jobs / colas** | Tabla `jobs` + `FOR UPDATE SKIP LOCKED` | — | Cola durable sin broker externo; leases, reintentos, dead-letter |
-| **Event bus** | Transactional outbox | — | Outbox con leases/retries/DLQ implementado; fan-out a notificaciones y SSE. `LISTEN/NOTIFY` y tabla `jobs` separada siguen pendientes (`TASK-008`). |
+| **Database** | PostgreSQL | `18.x` | Fuente de verdad única: JSONB, FTS (`tsvector`, `pg_trgm`), row-level scoping por `organization_id`. Particiones declarativas siguen siendo objetivo. |
+| **Jobs / colas** | Colas tipadas + `FOR UPDATE SKIP LOCKED` | — | `outbox_events`, `playbook_executions` y `idempotency_records` con leases/reintentos/DLQ; sin tabla `jobs` genérica (ADR-013) |
+| **Event bus** | Transactional outbox | — | Outbox con leases/retries/DLQ y `LISTEN/NOTIFY` (trigger + listener) con polling como red de seguridad; fan-out a notificaciones y SSE. |
 | **Auth crypto** | Argon2id (`argon2-cffi`), `itsdangerous`, `pyotp` | `^23.1` / `^2.2` / `^2.9` | Hashing memorio-duro, cookies firmadas, TOTP RFC 6238 |
 | **Secrets at rest** | `cryptography` Fernet (AES-128-CBC + HMAC-SHA256) | `^44` | Cifrado de secretos de conectores con clave externa (`HISPANSHIELD_SECRET_KEY`) |
 | **HTTP client** | `httpx` | `^0.28` | Cliente con timeouts, retries explícitos, límites de tamaño de respuesta |
@@ -184,12 +184,12 @@ flowchart LR
 
 ---
 
-> **Nota de realidad (0.1.2):** esta arquitectura describe el objetivo y el
-> estado actual. Lo implementado en esta ola: outbox transaccional, SSE,
-> auditoría HMAC v3 con checkpoints, cursor pagination e `Idempotency-Key`.
-> Siguen siendo objetivo, no realidad: `LISTEN/NOTIFY`, tabla `jobs` separada,
-> capa `repository.py`, particiones mensuales de eventos/auditoría y soft delete
-> genérico. Ver `.factory/ARCHITECTURE_GAP_ANALYSIS.md` y `.factory/TASKS.md`.
+> **Nota de realidad (0.1.3):** esta arquitectura describe el objetivo y el
+> estado actual. Implementado: outbox transaccional con `LISTEN/NOTIFY`, SSE,
+> auditoría HMAC v3, cursor pagination, `Idempotency-Key`, soft delete/restore
+> de activos e importadores/export STIX. Siguen siendo objetivo: capa
+> `repository.py` uniforme y particiones mensuales de eventos/auditoría. Ver
+> `.factory/ARCHITECTURE_GAP_ANALYSIS.md` y `.factory/TASKS.md`.
 
 ## 3. DATA LAYER & SCHEMA CONTRACTS
 
@@ -385,7 +385,9 @@ Entrega **at-least-once** con deduplicación por `event_id` en consumidores. `ou
 
 ### 4.2 Motor de workflow durable (PostgreSQL)
 
-- Tabla `jobs(id, queue, payload, state, attempts, max_attempts, lease_owner, lease_expires_at, available_at, last_error, idempotency_key, created_at)`.
+- Colas tipadas por dominio (`playbook_executions`, `outbox_events`); una tabla
+  `jobs` genérica fue rechazada en `ADR-013` por duplicar máquinas de estado ya
+  existentes. Los campos de lease/idempotencia se aplican en cada cola.
 - Claim: `SELECT ... WHERE state='pending' AND available_at<=now() ORDER BY priority, available_at FOR UPDATE SKIP LOCKED LIMIT :n` → `state='running'`, lease 60 s renovable por heartbeat.
 - Reanudación: si `lease_expires_at < now()` el job vuelve a `pending` con `attempts+1`; los pasos completados se leen de `execution_steps` (idempotencia por `step_key`).
 - Backoff: `min(cap, base * 2^attempts) * (0.5 + random()/2)`; `max_attempts=3` → `dead_letter`.

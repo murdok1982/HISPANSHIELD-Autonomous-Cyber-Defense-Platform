@@ -1,0 +1,18 @@
+INFO  [alembic.runtime.migration] Context impl PostgresqlImpl.
+INFO  [alembic.runtime.migration] Will assume transactional DDL.
+INFO  [alembic.runtime.migration] Running downgrade 0016_asset_soft_delete -> 0015_outbox_notify, asset soft delete (deleted_at) instead of physical deletion
+INFO  [alembic.runtime.migration] Running downgrade 0015_outbox_notify -> 0014_invitations, outbox LISTEN/NOTIFY signal (polling remains the safety net)
+INFO  [alembic.runtime.migration] Running downgrade 0014_invitations -> 0013_idempotency, invitations, pending-email uniqueness and A0 default autonomy
+INFO  [alembic.runtime.migration] Running downgrade 0013_idempotency -> 0012_outbox, Idempotency-Key ledger for mutating JSON endpoints
+INFO  [alembic.runtime.migration] Running downgrade 0012_outbox -> 0011_audit_hmac, transactional outbox and notification idempotency
+INFO  [alembic.runtime.migration] Running downgrade 0011_audit_hmac -> 0010_break_glass_dual_control, keyed audit hashes (v3) and signed checkpoints
+INFO  [alembic.runtime.migration] Running downgrade 0010_break_glass_dual_control -> 0009_recovery_codes, dual control for platform break-glass grants
+INFO  [alembic.runtime.migration] Running downgrade 0009_recovery_codes -> 0008_ingest_replay_scope, hashed one-time MFA recovery codes
+INFO  [alembic.runtime.migration] Running downgrade 0008_ingest_replay_scope -> 0007_edge_fingerprint_scope, ingest replay protection and dual-control discovery authorization
+INFO  [alembic.runtime.migration] Running downgrade 0007_edge_fingerprint_scope -> 0006_break_glass_ticket, scope edge gateway fingerprints per organization
+INFO  [alembic.runtime.migration] Running downgrade 0006_break_glass_ticket -> 0005_break_glass, break-glass change ticket
+INFO  [alembic.runtime.migration] Running downgrade 0005_break_glass -> 0004_approval_single_use, time-boxed break-glass grants for platform administrators
+INFO  [alembic.runtime.migration] Running downgrade 0004_approval_single_use -> 0003_audit_truncate, single-use approvals
+INFO  [alembic.runtime.migration] Running downgrade 0003_audit_truncate -> 0002_hardening, block TRUNCATE on the audit trail
+INFO  [alembic.runtime.migration] Running downgrade 0002_hardening -> 83825cd958ca, audit append-only trigger and event full-text index
+INFO  [alembic.runtime.migration] Running downgrade 83825cd958ca -> , initial schema

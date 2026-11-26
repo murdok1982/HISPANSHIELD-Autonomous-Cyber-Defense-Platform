@@ -34,7 +34,11 @@ encrypt_artifact() {
 }
 
 echo "[backup] dumping database"
-pg_dump --format=custom --no-owner --no-privileges --file="${TARGET}/database.dump" "$HS_DATABASE_URL"
+# pg_dump speaks libpq DSNs, not SQLAlchemy driver URLs. Strip the driver
+# suffix (postgresql+psycopg:// -> postgresql://) so the script works with the
+# same HS_DATABASE_URL the application uses.
+PG_URL="$(printf '%s' "$HS_DATABASE_URL" | sed -E 's#^postgresql\+[a-z0-9_]+://#postgresql://#')"
+pg_dump --format=custom --no-owner --no-privileges --file="${TARGET}/database.dump" "$PG_URL"
 chmod 600 "${TARGET}/database.dump"
 
 if [[ -d "$EVIDENCE_DIR" ]]; then

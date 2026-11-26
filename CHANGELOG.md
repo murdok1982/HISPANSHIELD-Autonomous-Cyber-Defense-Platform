@@ -4,6 +4,49 @@ All notable changes to HISPANSHIELD are documented here. The format follows
 Keep a Changelog and the project uses Semantic Versioning once a stable API is
 declared.
 
+## [0.1.3] — 2026-11-26 — Remediation wave: CI recovery, fresh install and closed gaps
+
+### Fixed
+
+- **CI/CD P0:** the `container` job had `needs: [backend, frontend]    steps:`
+  fused into one line. Fixed, added least-privilege permissions, timeouts,
+  image `load: true` for Trivy and a fail-closed `quality-gate` job.
+- **Fresh demo seed** aborted with `uq_events_org_dedupe`; dedupe keys now
+  include the unique event uid (`test_seed_demo.py`).
+- **Fresh `/setup`** left the compliance catalogue empty; setup, demo seed and
+  `scripts/seed_frameworks.py` now load the 10 built-in frameworks.
+- **Backup/restore** passed a SQLAlchemy DSN to `pg_dump`/`pg_restore`; the
+  driver suffix is stripped before calling libpq.
+
+### Added
+
+- Outbox **`LISTEN/NOTIFY`** trigger + listener thread; polling/leases remain
+  the correctness fallback. No generic `jobs` table (ADR-013).
+- **Asset soft delete/restore** (`deleted_at`, global ORM read filter,
+  `POST /assets/{id}/restore`, `409 asset_key_in_trash`).
+- **Attack-surface STIX 2.1 / CSV export** with lossless asset/ip/port
+  round-trip and formula-safe CSV.
+- **Nessus / OpenVAS / Trivy importers** (`POST /vulnerabilities/import`) with
+  tenant-scoped host resolution, cross-scanner dedupe, idempotency and
+  `defusedxml` hardening (ADR-014).
+- IEC 62443 conduits now require `metadata.required_sl`; SL>=3 without a
+  compensating control produces a compliance gap.
+- Playwright **responsive** (24×3 viewports) and **axe-core** gates; axe-core
+  4.10.2 vendored test-only for offline runs.
+- Baseline, CI/CD and backup/restore reports; CycloneDX SBOMs.
+
+### Changed
+
+- Backend suite 650 → 669 tests; migrations 14 → 16.
+- README/status/AC matrix reconciled with executed evidence; E2E contradiction
+  removed.
+
+### Known limitations
+
+- Cloud/CSPM, legal hold, partitions/retention, A4, durable agent runs, NIS2
+  tracker, ETSI/CPE, Firefox/WebKit, Docker/K8s runtime, performance benchmarks
+  and external independent review remain open.
+
 ## [0.1.2] — 2026-11-26 — Evolution wave 1: evidence, durability and contract
 
 ### Added

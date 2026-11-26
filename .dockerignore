@@ -1,0 +1,28 @@
+# Keep the build context minimal and free of local secrets/artefacts.
+# Leading slashes keep these paths anchored to the context root so that
+# backend/app/data (built-in compliance frameworks) is still copied.
+/.git
+/.github
+/.env
+/.env.*
+!/.env.example
+/.factory
+/docs
+/specs
+/reports
+/backups
+/data
+/backend/data
+/backend/.mypy_cache
+/backend/.pytest_cache
+/backend/.ruff_cache
+**/__pycache__
+**/*.pyc
+/frontend/node_modules
+/frontend/dist
+/frontend/e2e
+/frontend/playwright-report
+/frontend/test-results
+/frontend/.vite
+**/*.log
+**/.DS_Store

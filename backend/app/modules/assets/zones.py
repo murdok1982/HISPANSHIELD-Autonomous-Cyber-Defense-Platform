@@ -35,6 +35,22 @@ def _ensure_name_available(db, org_id: UUID, name: str, *, exclude: UUID | None 
         raise Conflict("A zone with this name already exists")
 
 
+def _validate_conduit_metadata(kind: str, metadata: dict | None) -> None:
+    """IEC 62443 conduits must declare a target security level (SL-T 1..4)."""
+    if kind != "conduit":
+        return
+    value = (metadata or {}).get("required_sl")
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 4:
+        raise ValidationFailure(
+            [
+                {
+                    "field": "metadata.required_sl",
+                    "message": "A conduit requires metadata.required_sl as an integer between 1 and 4",
+                }
+            ]
+        )
+
+
 def _validate_parent(db, org_id: UUID, zone: Zone | None, parent_id: UUID | None) -> Zone | None:
     if parent_id is None:
         return None
@@ -78,6 +94,7 @@ def list_zones(
 
 @zones_router.post("", response_model=ZoneOut, status_code=201, summary="Create a zone or conduit")
 def create_zone(payload: ZoneCreate, ctx: RequestContext = Depends(require_permission("asset:write"))) -> Zone:
+    _validate_conduit_metadata(payload.kind, payload.metadata)
     _ensure_name_available(ctx.db, ctx.org.id, payload.name)
     _validate_parent(ctx.db, ctx.org.id, None, payload.parent_id)
     zone = Zone(
@@ -113,6 +130,9 @@ def update_zone(
 ) -> Zone:
     zone = get_zone(ctx.db, ctx.org.id, zone_id)
     changes = payload.model_dump(exclude_unset=True)
+    next_kind = changes.get("kind", zone.kind)
+    next_metadata = changes.get("metadata", zone.metadata_json)
+    _validate_conduit_metadata(next_kind, next_metadata)
     if "name" in changes and changes["name"] is not None and changes["name"].strip().lower() != zone.name.lower():
         _ensure_name_available(ctx.db, ctx.org.id, changes["name"], exclude=zone.id)
         zone.name = changes["name"].strip()

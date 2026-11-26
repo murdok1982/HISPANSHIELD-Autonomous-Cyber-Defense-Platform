@@ -75,3 +75,23 @@ The previous `SECURITY_AUDIT.md` had **`VERIFIED` rows whose detailed sections s
 3. Cursor/idempotency contract alignment (or update specs).
 4. Cloud/CSPM and vulnerability importers must be marked "not implemented" until real.
 5. Documentation must stop advertising A4 or connectors that have no adapter.
+
+## 6. 0.1.3 remediation update (2026-11-26)
+
+The items above are preserved as the historical baseline. Current state:
+
+| Baseline item | 0.1.3 status | Evidence |
+| --- | --- | --- |
+| R-01 outbox `LISTEN/NOTIFY` | **FIXED** — trigger + listener, polling fallback; generic `jobs` table rejected in ADR-013 | `test_outbox_notify.py`, `test_outbox.py` |
+| R-05 fresh clone compliance seed | **FIXED** — `/setup`, demo seed and `scripts/seed_frameworks.py` load the catalogue | `test_setup.py`, `test_seed_demo.py` |
+| R-08 Nessus/OpenVAS/Trivy importers | **FIXED** — hardened XML/JSON import with dedupe | `test_vuln_importers.py`, `test_scanner_importers.py` |
+| R-09 asset soft delete/restore | **FIXED** — `deleted_at`, global read filter, restore endpoint | `test_asset_soft_delete.py` |
+| AC-25 STIX export | **FIXED** — STIX 2.1 + CSV with ip/port round-trip | `test_asm_export.py` |
+| AC-84 `required_sl` | **FIXED** — mandatory on conduits; SL3 gap without compensating control | `test_iec62443_zones.py` |
+| E2E contradiction | **RESOLVED** — core 10/10 plus responsive and axe gates executed on a fresh DB | `EVIDENCE/e2e/` |
+| Backup/restore | **EXECUTED** — counts, audit chain and API smoke test | `EVIDENCE/backup-restore/REPORT.md` |
+| CI P0 YAML defect | **FIXED** — job graph, least privilege, fail-closed gate | `.factory/reports/CI_CD_REPORT.md` |
+
+Still open and explicitly not claimed: R-07 cloud/CSPM, legal hold, partitions,
+A4, durable agent runtime, NIS2 tracker, ETSI/CPE, Firefox/WebKit,
+Docker/K8s runtime, performance benchmarks and external independent review.

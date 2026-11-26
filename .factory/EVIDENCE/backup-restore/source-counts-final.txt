@@ -1,0 +1,8 @@
+orgs=2
+users=2
+assets=24
+vulns=15
+events=24
+audit=33
+frameworks=10
+migration=0016_asset_soft_delete

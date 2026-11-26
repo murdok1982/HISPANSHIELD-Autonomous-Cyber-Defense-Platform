@@ -307,7 +307,10 @@ def test_ot_telemetry_baseline_anomaly_and_dedupe(seeded, auth_client: TestClien
 
 def test_ot_posture_iec62443(auth_client: TestClient) -> None:
     zone = auth_client.post("/api/v1/zones", json={"name": "Cell A", "purdue_level": 2}).json()
-    auth_client.post("/api/v1/zones", json={"name": "Conduit A", "kind": "conduit", "purdue_level": 3})
+    auth_client.post(
+        "/api/v1/zones",
+        json={"name": "Conduit A", "kind": "conduit", "purdue_level": 3, "metadata": {"required_sl": 2}},
+    )
 
     zoned = auth_client.post("/api/v1/ot/devices", json=_ot_payload("posture-zoned", zone_id=zone["id"])).json()
     auth_client.post("/api/v1/ot/devices", json=_ot_payload("posture-unzoned", safety_critical=False))

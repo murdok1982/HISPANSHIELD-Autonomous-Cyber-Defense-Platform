@@ -1,0 +1,5 @@
+No known vulnerabilities found
+Name              Skip Reason
+----------------- -------------------------------
+hispanshield      distribution marked as editable
+hispanshield-edge distribution marked as editable

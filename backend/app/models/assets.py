@@ -16,10 +16,11 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column, with_loader_criteria
 
 from app.core.db import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
 
@@ -80,6 +81,10 @@ class Asset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     tags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Soft delete preserves findings, evidence and audit references. Active
+    # inventory queries hide rows with a timestamp; the restore endpoint is the
+    # only supported path back into the inventory.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
 
 class AssetIdentity(UUIDPrimaryKeyMixin, Base):
@@ -280,6 +285,27 @@ class DiscoveryJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     summary: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _hide_soft_deleted_assets(execute_state: object) -> None:
+    """Exclude soft-deleted assets from every ORM read by default.
+
+    Soft-deleted rows keep their vulnerabilities, evidence and relationships
+    for forensic and reporting purposes, but they must disappear from the
+    inventory, graph, posture and agent tooling. Callers that genuinely need
+    deleted rows (the restore endpoint) opt in with
+    ``execution_options(include_soft_deleted=True)``.
+    """
+    state = execute_state
+    if not getattr(state, "is_select", False):
+        return
+    options = getattr(state, "execution_options", {}) or {}
+    if options.get("include_soft_deleted"):
+        return
+    state.statement = state.statement.options(  # type: ignore[attr-defined]
+        with_loader_criteria(Asset, Asset.deleted_at.is_(None), include_aliases=True)
+    )
 
 
 __all__ = [

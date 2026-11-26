@@ -8,7 +8,7 @@
 
 *Plataforma europea de ciberdefensa autónoma gobernada por políticas, para administraciones públicas, empresas privadas e infraestructuras críticas.*
 
-[![Release](https://img.shields.io/badge/release-0.1.2-38BDF8?style=for-the-badge)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-0.1.3-38BDF8?style=for-the-badge)](CHANGELOG.md)
 [![Backend](https://img.shields.io/badge/backend-Python%203.12%20·%20FastAPI-3776AB?style=for-the-badge&logo=python&logoColor=white)](backend/)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20·%20TypeScript-3178C6?style=for-the-badge&logo=react&logoColor=white)](frontend/)
 [![Data](https://img.shields.io/badge/data-PostgreSQL%2018-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](backend/migrations/)
@@ -37,18 +37,22 @@
 | ![Gestión de incidentes](docs/assets/ui-incidents.png)<br><sub>Gestión de incidentes · cola operativa, SLA y trazabilidad</sub> | ![Seguridad IoT/OT](docs/assets/ui-iot-ot.png)<br><sub>Seguridad IoT/OT · postura IEC 62443 y monitorización pasiva</sub> |
 | ![Cumplimiento normativo](docs/assets/ui-compliance.png)<br><sub>Cumplimiento normativo · catálogo de marcos y autoevaluación técnica</sub> | |
 
-> **Estado honesto:** release candidata `0.1.2`. El producto es funcional y se
-> entrega con **650 tests backend**, **92 tests del gateway**, **36 tests frontend**,
-> `tsc`/`vite build`/`vitest` verdes y **E2E de las 24 pantallas re-ejecutado
-> (10/10)**. Incluye outbox transaccional con leases/DLQ, SSE con
-> `Last-Event-ID`, auditoría HMAC v3 con checkpoints firmados, cursor pagination
-> e `Idempotency-Key`. **No está certificado** para ningún marco regulatorio y no
-> debe operarse en infraestructura crítica real sin evaluación independiente,
-> análisis de riesgos y aprobación del CISO. **138/176** tareas están verificadas;
-> **37** siguen aplazadas/bloqueadas y **1** en progreso, de forma explícita en
+> **Estado honesto:** release candidata `0.1.3`, veredicto **PILOT READY**.
+> El producto es funcional y se entrega con **669 tests backend**, **92 tests del
+> gateway**, **36 tests frontend**, `tsc`/`vite build`/`vitest` verdes,
+> **Playwright 10/10** sobre las 24 pantallas y gates E2E de **responsive**
+> (375/768/1440) y **axe-core** (0 violaciones de contraste/críticas), ejecutados
+> contra una base PostgreSQL sembrada desde cero. Incluye outbox
+> `LISTEN/NOTIFY` con leases/DLQ, soft delete/restore de activos, export STIX
+> 2.1, importadores Nessus/OpenVAS/Trivy, IEC 62443 `required_sl`, auditoría
+> HMAC v3, cursor pagination e `Idempotency-Key`. Backup/restore verificado y CI
+> reparado. **No está certificado** para ningún marco regulatorio y no debe
+> operarse en infraestructura crítica real sin evaluación independiente,
+> análisis de riesgos y aprobación del CISO. **143/176** tareas están
+> verificadas; **33** siguen aplazadas/bloqueadas, de forma explícita en
 > [`.factory/TASKS.md`](.factory/TASKS.md). El estado real por criterio de
 > aceptación está en [`.factory/AC_TRACEABILITY.md`](.factory/AC_TRACEABILITY.md)
-> (70 verificados, 32 parciales, 22 no verificados).
+> (81 verificados, 27 parciales, 16 no verificados).
 
 ---
 
@@ -343,7 +347,7 @@ regulatorios reproducibles.
 ## Estructura del repositorio
 
 ```text
-backend/        FastAPI · dominios · servicios · migraciones · 650 tests
+backend/        FastAPI · dominios · servicios · migraciones · 669 tests
 frontend/       React 19 + TS + Vite · design system propio · 23 vistas
 edge/           Gateway offline-first con cola SQLite durable y HMAC/mTLS
 specs/          Constitución · producto · arquitectura · 15 dominios · ADR

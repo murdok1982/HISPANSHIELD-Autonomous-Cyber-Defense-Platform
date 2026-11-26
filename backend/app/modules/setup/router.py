@@ -18,6 +18,7 @@ from app.core.db import get_db
 from app.core.errors import Conflict, Forbidden, ValidationFailure
 from app.core.rate_limit import enforce
 from app.models.core import Organization
+from app.modules.compliance.service import seed_builtin_frameworks
 from app.modules.setup.schemas import SetupRequest, SetupResponse
 from app.services.bootstrap import BootstrapError, bootstrap_admin
 
@@ -66,6 +67,12 @@ def setup(
     # explicitly by an administrator after reviewing policy and guardrails.
     org.autonomy_level = "A0"
     db.commit()
+
+    # A fresh installation must expose the built-in compliance catalogue
+    # without requiring an out-of-band script. The seed is idempotent and
+    # keyed by (code, version), so retries and upgrades are safe.
+    seed_builtin_frameworks(db)
+
     return SetupResponse(
         organization_id=org.id,
         organization_slug=org.slug,

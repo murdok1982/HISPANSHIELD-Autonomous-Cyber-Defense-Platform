@@ -1,6 +1,6 @@
 [project]
 name = "hispanshield"
-version = "0.1.2"
+version = "0.1.3"
 description = "HISPANSHIELD — Enterprise & Government AI-Driven Cyber Defence Platform"
 requires-python = ">=3.12"
 dependencies = [
@@ -19,6 +19,9 @@ dependencies = [
   "httpx==0.28.1",
   "httpcore==1.0.9",
   "PyYAML==6.0.2",
+  # Hardened XML parser for untrusted Nessus/OpenVAS reports (XXE/entity
+  # expansion). Small, audited dependency; security justification in ADR-014.
+  "defusedxml==0.7.1",
   "python-multipart==0.0.31",
   "numpy==2.2.6",
   "Jinja2==3.1.6",

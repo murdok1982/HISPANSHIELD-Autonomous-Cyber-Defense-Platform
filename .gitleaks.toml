@@ -26,4 +26,12 @@ regexes = [
   '''Demo-Str0ng-Pass!2026''',
   '''test-secret-key-0123456789''',
   '''test_password''',
+  # CI-only fixture values (deploy/k8s/values.ci.env, .github/workflows/ci.yml,
+  # scripts/factory_metrics.py). None of these is used outside throwaway CI.
+  '''(?i)^ci-only-[a-z0-9!_-]+$''',
+  '''(?i)^ci-secret-key-0123456789-[a-z0-9]+$''',
+  '''(?i)^metrics-secret-key-0123456789-[a-z0-9]+$''',
+  '''ci_password''',
+  # Documented PoC placeholder in .factory/SECURITY_AUDIT.md.
+  '''0123456789abcdef''',
 ]

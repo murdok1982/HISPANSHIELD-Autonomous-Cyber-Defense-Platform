@@ -91,7 +91,9 @@ def collect_snapshot(
     assets_by_kind = {
         str(kind): int(count)
         for kind, count in db.execute(
-            select(Asset.kind, func.count()).where(Asset.org_id == org_id).group_by(Asset.kind)
+            select(Asset.kind, func.count())
+            .where(Asset.org_id == org_id, Asset.deleted_at.is_(None))
+            .group_by(Asset.kind)
         ).all()
     }
     assets_total = sum(assets_by_kind.values())
@@ -100,7 +102,7 @@ def collect_snapshot(
     unowned_assets = db.execute(
         select(func.count())
         .select_from(Asset)
-        .where(Asset.org_id == org_id, or_(Asset.owner.is_(None), Asset.owner == ""))
+        .where(Asset.org_id == org_id, Asset.deleted_at.is_(None), or_(Asset.owner.is_(None), Asset.owner == ""))
     ).scalar_one()
     sample_assets = list(
         db.execute(

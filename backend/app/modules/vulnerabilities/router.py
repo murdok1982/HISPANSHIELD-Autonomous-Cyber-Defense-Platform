@@ -13,7 +13,7 @@ from app.core.errors import PolicyDenied
 from app.core.idempotency import execute as execute_idempotent
 from app.core.schemas import Page, paginate
 from app.models.assets import Vulnerability
-from app.modules.vulnerabilities import service
+from app.modules.vulnerabilities import importers, service
 from app.modules.vulnerabilities.schemas import (
     CVEImportRequest,
     CVEImportResult,
@@ -21,6 +21,8 @@ from app.modules.vulnerabilities.schemas import (
     EPSSImportResult,
     KEVImportRequest,
     KEVImportResult,
+    ScannerImportRequest,
+    ScannerImportResult,
     VulnerabilityCreate,
     VulnerabilityDetailOut,
     VulnerabilityOut,
@@ -88,6 +90,53 @@ def list_vulnerabilities(
     return Page[VulnerabilityOut](
         **paginate([VulnerabilityOut.model_validate(row) for row in rows], int(total), page, page_size)
     )
+
+
+@router.post(
+    "/import",
+    response_model=ScannerImportResult,
+    summary="Import a Nessus, OpenVAS or Trivy report (idempotent by fingerprint)",
+)
+def import_scanner_report(
+    payload: ScannerImportRequest,
+    response: Response,
+    ctx: RequestContext = Depends(require_permission("vuln:import")),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> ScannerImportResult:
+    def run() -> ScannerImportResult:
+        data = importers.import_scanner_report(
+            ctx.db,
+            ctx.org.id,
+            format=payload.format,
+            content=payload.content,
+            asset_key=payload.asset_key,
+        )
+        ctx.audit(
+            action="vuln.import.scanner",
+            resource_type="vulnerability",
+            payload={
+                "format": data["format"],
+                "total": data["total"],
+                "created": data["created"],
+                "updated": data["updated"],
+                "skipped": data["skipped"],
+                "errors": len(data["errors"]),
+            },
+        )
+        ctx.db.commit()
+        return ScannerImportResult(**data)
+
+    body, replayed = execute_idempotent(
+        ctx,
+        idempotency_key,
+        method="POST",
+        path="/api/v1/vulnerabilities/import",
+        payload=payload,
+        fn=run,
+    )
+    if replayed:
+        response.headers["Idempotent-Replayed"] = "true"
+    return body  # type: ignore[return-value]
 
 
 @router.post("/import/cve", response_model=CVEImportResult, summary="Upsert CVE catalogue and create asset findings")

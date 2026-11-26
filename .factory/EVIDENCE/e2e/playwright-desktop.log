@@ -1,0 +1,537 @@
+
+Running 10 tests using 1 worker
+
+  ✓   1 [chromium-desktop] › e2e/all-screens.spec.ts:54:1 › all SOC screens render with real data and no client errors (39.2s)
+  ✓   2 [chromium-desktop] › e2e/all-screens.spec.ts:93:1 › key page interactions work (6.5s)
+  ✓   3 [chromium-desktop] › e2e/critical-flows.spec.ts:38:3 › authentication and tenant scoping › rejects invalid credentials with a generic error (1.2s)
+  ✓   4 [chromium-desktop] › e2e/critical-flows.spec.ts:47:3 › authentication and tenant scoping › protects application routes (794ms)
+  ✓   5 [chromium-desktop] › e2e/critical-flows.spec.ts:55:3 › SOC command center › executive overview renders real KPI data and risk (4.6s)
+  ✓   6 [chromium-desktop] › e2e/critical-flows.spec.ts:63:3 › SOC command center › live monitoring and incident management are reachable (5.2s)
+  ✓   7 [chromium-desktop] › e2e/critical-flows.spec.ts:72:3 › SOC command center › mobile navigation has no horizontal overflow (1.7s)
+  ✓   8 [chromium-desktop] › e2e/critical-flows.spec.ts:81:3 › governance › audit center verifies the hash chain (6.1s)
+  ✓   9 [chromium-desktop] › e2e/critical-flows.spec.ts:92:3 › governance › authentication security settings are visible (4.6s)
+  ✓  10 [chromium-desktop] › e2e/screenshots.spec.ts:26:1 › capture product screenshots (13.7s)
+
+  10 passed (1.4m)
+{
+  "config": {
+    "argv": [
+      "/tmp/opencode/node-v22.14.0-linux-x64/bin/node",
+      "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/node_modules/@playwright/test/cli.js",
+      "test",
+      "e2e",
+      "--project=chromium-desktop",
+      "--reporter=list,json"
+    ],
+    "configFile": "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/playwright.config.ts",
+    "rootDir": "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/e2e",
+    "failOnFlakyTests": false,
+    "forbidOnly": false,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium-desktop",
+        "name": "chromium-desktop",
+        "testDir": "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 45000
+      },
+      {
+        "outputDir": "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium-mobile",
+        "name": "chromium-mobile",
+        "testDir": "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": [
+          "**/*.@(spec|test).?(c|m)[jt]s?(x)"
+        ],
+        "timeout": 45000
+      }
+    ],
+    "filteredProjects": [
+      {
+        "grep": {},
+        "grepInvert": null,
+        "outputDir": "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "name": "chromium-desktop",
+        "testDir": "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/e2e",
+        "snapshotDir": "/run/media/fsociety/Extension/Proyectos de github/HISPANSHIELD_Autonomous_Cyber_Defense Platform/frontend/e2e",
+        "testIgnore": [],
+        "testMatch": "**/*.@(spec|test).?(c|m)[jt]s?(x)",
+        "timeout": 45000,
+        "use": {
+          "baseURL": "http://127.0.0.1:8080",
+          "trace": "retain-on-failure",
+          "screenshot": "only-on-failure",
+          "locale": "es-ES",
+          "timezoneId": "Europe/Madrid",
+          "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/159.0.8154.6 Safari/537.36",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "screen": {
+            "width": 1920,
+            "height": 1080
+          },
+          "deviceScaleFactor": 1,
+          "isMobile": false,
+          "hasTouch": false,
+          "defaultBrowserType": "chromium"
+        },
+        "dependencies": [],
+        "ignoreSnapshots": false,
+        "__projectId": "chromium-desktop"
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "list"
+      ],
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "default",
+    "updateSourceMethod": "patch",
+    "version": "1.65.1",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "all-screens.spec.ts",
+      "file": "all-screens.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "all SOC screens render with real data and no client errors",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 180000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-desktop",
+              "projectName": "chromium-desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 39159,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-26T17:51:26.975Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4902bfff53e0d09b1810-445f6ca0d55b2d9c138d",
+          "file": "all-screens.spec.ts",
+          "line": 54,
+          "column": 1
+        },
+        {
+          "title": "key page interactions work",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 90000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-desktop",
+              "projectName": "chromium-desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 6514,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-26T17:52:06.277Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "4902bfff53e0d09b1810-d82af7b2f23f5a077f68",
+          "file": "all-screens.spec.ts",
+          "line": 93,
+          "column": 1
+        }
+      ]
+    },
+    {
+      "title": "critical-flows.spec.ts",
+      "file": "critical-flows.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [],
+      "suites": [
+        {
+          "title": "authentication and tenant scoping",
+          "file": "critical-flows.spec.ts",
+          "line": 37,
+          "column": 6,
+          "specs": [
+            {
+              "title": "rejects invalid credentials with a generic error",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1177,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T17:52:12.843Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "542ce40c4d5a94d1bfd5-17a5f5cf69b88c56b893",
+              "file": "critical-flows.spec.ts",
+              "line": 38,
+              "column": 3
+            },
+            {
+              "title": "protects application routes",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 794,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T17:52:14.041Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "542ce40c4d5a94d1bfd5-abd56ba3bd6ca61f814d",
+              "file": "critical-flows.spec.ts",
+              "line": 47,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "SOC command center",
+          "file": "critical-flows.spec.ts",
+          "line": 54,
+          "column": 6,
+          "specs": [
+            {
+              "title": "executive overview renders real KPI data and risk",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4620,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T17:52:14.862Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "542ce40c4d5a94d1bfd5-e330563c66fe9b2b0e28",
+              "file": "critical-flows.spec.ts",
+              "line": 55,
+              "column": 3
+            },
+            {
+              "title": "live monitoring and incident management are reachable",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 5193,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T17:52:19.513Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "542ce40c4d5a94d1bfd5-023b01d5b723a203e919",
+              "file": "critical-flows.spec.ts",
+              "line": 63,
+              "column": 3
+            },
+            {
+              "title": "mobile navigation has no horizontal overflow",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 1675,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T17:52:24.740Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "542ce40c4d5a94d1bfd5-5db14af80797dd1e0c2c",
+              "file": "critical-flows.spec.ts",
+              "line": 72,
+              "column": 3
+            }
+          ]
+        },
+        {
+          "title": "governance",
+          "file": "critical-flows.spec.ts",
+          "line": 80,
+          "column": 6,
+          "specs": [
+            {
+              "title": "audit center verifies the hash chain",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 6083,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T17:52:26.439Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "542ce40c4d5a94d1bfd5-90bbdfefa3fae08d772b",
+              "file": "critical-flows.spec.ts",
+              "line": 81,
+              "column": 3
+            },
+            {
+              "title": "authentication security settings are visible",
+              "ok": true,
+              "tags": [],
+              "tests": [
+                {
+                  "timeout": 45000,
+                  "annotations": [],
+                  "expectedStatus": "passed",
+                  "projectId": "chromium-desktop",
+                  "projectName": "chromium-desktop",
+                  "results": [
+                    {
+                      "workerIndex": 0,
+                      "parallelIndex": 0,
+                      "status": "passed",
+                      "duration": 4626,
+                      "errors": [],
+                      "stdout": [],
+                      "stderr": [],
+                      "retry": 0,
+                      "startTime": "2026-11-26T17:52:32.556Z",
+                      "annotations": [],
+                      "attachments": []
+                    }
+                  ],
+                  "status": "expected"
+                }
+              ],
+              "id": "542ce40c4d5a94d1bfd5-ac30e41dc7313688af55",
+              "file": "critical-flows.spec.ts",
+              "line": 92,
+              "column": 3
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "screenshots.spec.ts",
+      "file": "screenshots.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "capture product screenshots",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 120000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium-desktop",
+              "projectName": "chromium-desktop",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 13734,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-11-26T17:52:37.232Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "677a4938ef65bfc6a6e5-a656401a0ac63d111b94",
+          "file": "screenshots.spec.ts",
+          "line": 26,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-11-26T17:51:26.146Z",
+    "duration": 85010.688,
+    "expected": 10,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

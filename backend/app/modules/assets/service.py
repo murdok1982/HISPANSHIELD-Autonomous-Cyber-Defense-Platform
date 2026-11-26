@@ -64,9 +64,22 @@ IMPORT_FIELDS = {
 
 
 def get_asset(db: Session, org_id: UUID, asset_id: UUID) -> Asset:
-    """Load a tenant asset or raise 404 (never reveal foreign existence)."""
+    """Load an active tenant asset or raise 404 (never reveal foreign existence)."""
     asset = db.get(Asset, asset_id)
-    if asset is None or asset.org_id != org_id:
+    if asset is None or asset.org_id != org_id or asset.deleted_at is not None:
+        raise NotFound("Asset")
+    return asset
+
+
+def get_asset_including_deleted(db: Session, org_id: UUID, asset_id: UUID) -> Asset:
+    """Load a tenant asset even when soft-deleted (restore/forensics only)."""
+    asset = db.execute(
+        select(Asset)
+        .where(Asset.id == asset_id, Asset.org_id == org_id)
+        .execution_options(include_soft_deleted=True)
+        .with_for_update()
+    ).scalar_one_or_none()
+    if asset is None:
         raise NotFound("Asset")
     return asset
 
@@ -79,7 +92,17 @@ def get_zone(db: Session, org_id: UUID, zone_id: UUID) -> Zone:
 
 
 def asset_or_none_by_key(db: Session, org_id: UUID, asset_key: str) -> Asset | None:
-    return db.execute(select(Asset).where(Asset.org_id == org_id, Asset.asset_key == asset_key)).scalar_one_or_none()
+    """Resolve a key including soft-deleted rows.
+
+    Unique ``(org_id, asset_key)`` still applies to deleted rows, so callers
+    must distinguish "active" from "in trash" instead of attempting an insert
+    that would violate the constraint.
+    """
+    return db.execute(
+        select(Asset)
+        .where(Asset.org_id == org_id, Asset.asset_key == asset_key)
+        .execution_options(include_soft_deleted=True)
+    ).scalar_one_or_none()
 
 
 def ensure_zone_exists(db: Session, org_id: UUID, zone_id: UUID | None) -> Zone | None:
@@ -329,6 +352,15 @@ def import_assets(db: Session, org_id: UUID, payload: AssetImportRequest) -> Imp
         seen_keys.add(item.asset_key)
 
         existing = asset_or_none_by_key(db, org_id, item.asset_key)
+        if existing is not None and existing.deleted_at is not None:
+            errors.append(
+                ImportRowError(
+                    row=index,
+                    asset_key=item.asset_key,
+                    message="asset_key belongs to a soft-deleted asset; restore it before importing",
+                )
+            )
+            continue
         if existing is None:
             asset = Asset(
                 org_id=org_id,

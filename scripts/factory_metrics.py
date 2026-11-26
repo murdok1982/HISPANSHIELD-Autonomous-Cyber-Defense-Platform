@@ -55,6 +55,8 @@ class Metrics:
     task_pending: int
     ac_total: int
     ac_checked: int
+    ac_partial: int
+    ac_not_verified: int
     docs_present: int
     evidence_files: int
 
@@ -192,11 +194,21 @@ def _tasks() -> tuple[int, int, int, int]:
     return pending + in_progress + verified + deferred, verified, deferred, pending + in_progress
 
 
-def _acs() -> tuple[int, int]:
-    text = (ROOT / ".factory" / "SPEC.md").read_text(encoding="utf-8")
-    acs = set(re.findall(r"AC-[0-9]{2,3}", text))
-    checked = len(re.findall(r"- \[x\] \*\*AC-[0-9]{2,3}\*\*", text))
-    return len(acs), checked
+def _acs() -> tuple[int, int, int, int]:
+    """Prefer the generated traceability matrix over unchecked SPEC boxes."""
+    matrix = ROOT / ".factory" / "AC_TRACEABILITY.md"
+    if matrix.exists():
+        text = matrix.read_text(encoding="utf-8")
+        verified = len(re.findall(r"\| \*\*VERIFIED\*\* \|", text))
+        partial = len(re.findall(r"\| \*\*PARTIAL\*\* \|", text))
+        not_verified = len(re.findall(r"\| \*\*NOT_VERIFIED\*\* \|", text))
+        total = verified + partial + not_verified
+        if total:
+            return total, verified, partial, not_verified
+    spec = (ROOT / ".factory" / "SPEC.md").read_text(encoding="utf-8")
+    acs = set(re.findall(r"AC-[0-9]{2,3}", spec))
+    checked = len(re.findall(r"- \[x\] \*\*AC-[0-9]{2,3}\*\*", spec))
+    return len(acs), checked, 0, 0
 
 
 def collect() -> Metrics:
@@ -207,7 +219,7 @@ def collect() -> Metrics:
     pages, content, nav = _count_frontend()
     entries, a4 = _count_actions()
     total, verified, deferred, pending = _tasks()
-    ac_total, ac_checked = _acs()
+    ac_total, ac_checked, ac_partial, ac_not_verified = _acs()
     migrations = len(list((BACKEND / "migrations" / "versions").glob("*.py")))
     modules = len(
         [
@@ -257,6 +269,8 @@ def collect() -> Metrics:
         task_pending=pending,
         ac_total=ac_total,
         ac_checked=ac_checked,
+        ac_partial=ac_partial,
+        ac_not_verified=ac_not_verified,
         docs_present=len(list((ROOT / "docs").glob("*.md"))),
         evidence_files=evidence_files,
     )
@@ -292,7 +306,7 @@ def main() -> int:
             "tests backend={backend_tests_collected} edge={edge_tests}; "
             "screens nav={frontend_nav_screens} content={frontend_content_screens}; "
             "endpoints={http_endpoints}; adapters={connector_adapters}; "
-            "ACs checked {ac_checked}/{ac_total}".format(**asdict(metrics))
+            "ACs VERIFIED {ac_checked}/{ac_total} (partial {ac_partial}, not verified {ac_not_verified})".format(**asdict(metrics))
         )
     return 0
 
