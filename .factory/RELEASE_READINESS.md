@@ -21,7 +21,7 @@
 | G — Backup / restore | **PASS** | `EVIDENCE/backup-restore/REPORT.md` |
 | H — Migrations | **PASS** | upgrade → downgrade base → upgrade, head `0016` |
 | I — Performance (5k/100k) | **NOT RUN** | no benchmark executed in this wave |
-| J — CI/CD | **PASS (local)** | `.factory/reports/CI_CD_REPORT.md`; remote Actions run pending push |
+| J — CI/CD | **PASS (local + remote)** | `.factory/EVIDENCE/ci/github-actions.md`; all jobs success on commit `8780113` |
 
 ## 2. Backlog / AC state
 

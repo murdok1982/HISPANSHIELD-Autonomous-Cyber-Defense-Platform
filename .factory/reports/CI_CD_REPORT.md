@@ -62,10 +62,17 @@ container:
    CVE-2026-124851); the Dockerfile now upgrades `libzstd1` instead of
    suppressing the gate.
 
-## 5. Limitations
+## 5. Remote validation — PASS
 
-- GitHub Actions itself was **NOT RUN** from this host before the commit; the
-  first remote run must be checked after pushing. Every command the workflow
-  invokes was executed locally with the same environment contract.
-- Docker is not installed on this host, so the container job is **BLOCKED**
-  locally; the Dockerfile build is unverified here.
+Commit `8780113` ran on GitHub Actions twice (push + pull_request):
+**all jobs success** — backend, frontend, secret-scan, sbom, deploy-validate,
+container (Docker build + Trivy) and quality-gate.
+See `.factory/EVIDENCE/ci/github-actions.md` and run
+`45881513134` / `45881504398`.
+
+## 6. Limitations
+
+- Docker is not installed on this host, so the container job was validated
+  remotely by GitHub Actions, not locally.
+- Node 20 deprecation warnings are emitted by upstream actions; they do not
+  fail the build.

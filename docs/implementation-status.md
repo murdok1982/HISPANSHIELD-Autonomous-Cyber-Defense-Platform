@@ -26,7 +26,8 @@
 
 | Gate | Comando | Resultado |
 | :--- | :--- | :--- |
-| CI YAML | `yaml.safe_load(.github/workflows/ci.yml)` | **PASS** (7 jobs, `container` con `steps` válido) |
+| CI YAML | `actionlint 1.7.12` + YAML parse | **PASS** (7 jobs; 0 findings) |
+| CI remoto | GitHub Actions runs `45881513134` / `45881504398` | **PASS** (todos los jobs, incluido container/Trivy) |
 | Backend lint | `ruff check app tests` | **PASS** — All checks passed |
 | Backend format | `ruff format --check app tests` | **PASS** — 248 files formatted |
 | Backend types | `mypy app` | **PASS** — 191 source files |

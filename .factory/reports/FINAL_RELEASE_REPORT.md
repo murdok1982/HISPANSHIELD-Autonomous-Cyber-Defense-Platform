@@ -8,7 +8,7 @@
 | Repositorio | `murdok1982/HISPANSHIELD-Autonomous-Cyber-Defense-Platform` |
 | Rama de trabajo | `fix/0.1.3-remediation` |
 | Baseline | `main@251846c` |
-| CI/CD | Reparado y validado localmente; ejecución remota pendiente del push |
+| CI/CD | **PASS** local y remoto (GitHub Actions `45881513134` / `45881504398`) |
 | Funcional | Backend 669 tests, edge 92, frontend 36; E2E Chromium 10/10 |
 | Seguridad | 0 CRITICAL / 0 HIGH abiertos en el alcance auditado; escaneos limpios |
 | Infraestructura | K8s render+validate PASS; runtime Docker/K8s **NOT RUN** |
