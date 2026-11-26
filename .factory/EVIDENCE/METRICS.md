@@ -5,9 +5,9 @@ script and commit the diff.
 
 | Metric | Value |
 | :--- | --- |
-| `generated_at` | 2026-11-26T14:38:19.868979+00:00 |
-| `git_head` | ade3431 |
-| `git_dirty` | True |
+| `generated_at` | 2026-11-26T14:39:01.503851+00:00 |
+| `git_head` | c5849c2 |
+| `git_dirty` | False |
 | `backend_tests_collected` | 650 |
 | `backend_test_files` | 49 |
 | `backend_test_functions` | 605 |
