@@ -33,6 +33,9 @@ container:
 - New `quality-gate` job that depends on **all** gates and fails on
   `failure`, `cancelled` or `skipped`. Branch protection should require only
   this check so no optional job can mask a failed mandatory one.
+- `push` now also runs on `fix/**`, so remediation branches are validated.
+- Shell scripts are marked executable in git (`100755`); the first remote run
+  failed the deploy job because `./deploy/k8s/render.sh` was mode `100644`.
 - SBOM, deploy render/validate, secret scan and container scan remain
   fail-closed; no release publication job exists, so a failed gate cannot
   publish an image.
