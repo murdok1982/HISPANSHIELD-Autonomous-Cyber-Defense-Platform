@@ -39,8 +39,8 @@
 
 > **Estado honesto:** release candidata `0.1.2`. El producto es funcional y se
 > entrega con **650 tests backend**, **92 tests del gateway**, **36 tests frontend**,
-> `tsc`/`vite build`/`vitest` verdes y la suite E2E existente (no re-ejecutada en
-> esta ola). Incluye outbox transaccional con leases/DLQ, SSE con
+> `tsc`/`vite build`/`vitest` verdes y **E2E de las 24 pantallas re-ejecutado
+> (10/10)**. Incluye outbox transaccional con leases/DLQ, SSE con
 > `Last-Event-ID`, auditoría HMAC v3 con checkpoints firmados, cursor pagination
 > e `Idempotency-Key`. **No está certificado** para ningún marco regulatorio y no
 > debe operarse en infraestructura crítica real sin evaluación independiente,

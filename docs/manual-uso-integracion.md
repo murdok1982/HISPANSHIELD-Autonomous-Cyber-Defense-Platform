@@ -1,6 +1,6 @@
 # HISPANSHIELD — Manual de uso e integración
 
-**Versión:** 0.1.1 · release candidata
+**Versión:** 0.1.2 · release candidata
 **Audiencia:** operadores SOC, ingenieros de integración, administradores de plataforma, responsables de seguridad y equipos de cumplimiento.
 **Ámbito:** administraciones públicas, empresas privadas e infraestructuras críticas europeas.
 

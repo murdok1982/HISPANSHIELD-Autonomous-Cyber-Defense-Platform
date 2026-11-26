@@ -33,9 +33,9 @@
 | Frontend types | `node node_modules/typescript/bin/tsc -b --force` | exit 0 |
 | Frontend build | `node node_modules/vite/bin/vite.js build` | OK, route-split chunks |
 | Frontend unit | `node node_modules/vitest/vitest.mjs run` | **36 passed** |
+| E2E Playwright | `HS_E2E=1 scripts/verify_all.sh` | **10 passed** (24 pantallas, flujos críticos, capturas) |
 | K8s render+validate | `./deploy/k8s/render.sh /tmp/values.env \| python3 scripts/validate_deploy.py` | **PASS** (plantilla sin renderizar: **FAIL esperado**) |
-| E2E Playwright | `npx playwright test` | **NOT RUN** en este host (sin navegadores instalados) |
-| pip-audit / bandit / gitleaks | — | **NOT RUN** en esta ola; no se reclaman como verdes |
+| pip-audit / bandit / secret scan | `scripts/verify_all.sh` | **PASS**: 0 vulnerabilidades conocidas, 0 hallazgos HIGH/MEDIUM, sin patrones de secretos |
 | Docker/Kubernetes runtime | — | **NOT RUN**; solo validación estática/render |
 
 ---

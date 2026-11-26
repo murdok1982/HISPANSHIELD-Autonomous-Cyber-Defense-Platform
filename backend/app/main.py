@@ -27,7 +27,7 @@ from app.core.logging import (
     get_logger,
 )
 
-VERSION = "0.1.1"
+VERSION = "0.1.2"
 logger = get_logger("hispanshield")
 
 REQUESTS = Counter("hs_http_requests_total", "HTTP requests", ["method", "path", "status"])
