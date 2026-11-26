@@ -27,17 +27,34 @@ data for research.
 ## Security architecture summary
 
 - Zero Trust between browser, API, workers and connectors.
-- Session cookies: HttpOnly, Secure (production), SameSite=Lax; CSRF double
-  submit; TOTP MFA; Argon2id password hashing; login throttling and lockout.
+- Session cookies: HttpOnly, Secure (production), SameSite=Strict, 60-minute idle timeout;
+  CSRF double submit; TOTP MFA with single-use recovery codes (Argon2id-hashed,
+  shown once); active-session listing and revocation; Argon2id password hashing;
+  login throttling and distributed-only account lockout.
 - RBAC with 10 roles; tenant scoping on every tenant-owned query; cross-tenant
-  access returns 404.
-- Secrets encrypted at rest (Fernet) and never returned by the API.
-- SSRF allow-list/deny-list with DNS resolution; cloud metadata always blocked.
-- Append-only audit chain (per organization) with verification endpoint.
+  access returns 404. Platform administrators need a justified, ticketed,
+  time-boxed break-glass grant to access another organization. When a second
+  platform administrator exists, the grant must be approved by that different
+  administrator (dual control); `switch-org` never creates grants implicitly.
+- Secrets encrypted at rest (Fernet) and never returned by the API. Ingestion
+  tokens are accepted in the `Authorization` header by default; the legacy URL
+  path is deprecated and redacted from application logs.
+- SSRF protection resolves and validates the destination at connection time
+  (pinned DNS, no redirects); cloud metadata is always blocked. Local AI
+  providers are limited to the operator's `HS_AI_PRIVATE_ALLOWED_CIDRS`
+  allow-list; external providers require HTTPS, an EU `data_region` and explicit
+  platform + tenant opt-in.
+- Append-only audit chain (per organization) whose hash covers request id, IP,
+  user agent and actor email for new records, with backward-compatible
+  verification of older chains.
 - Defensive actions: catalogue + policy engine + approval + execution broker +
-  verification + rollback + kill switches. The LLM never holds execution
-  authority.
+  verification + rollback + kill switches, with deterministic budgets, cooldowns,
+  freeze windows and blast-radius limits. The LLM never holds execution
+  authority. Playbook compensation steps require the same permissions as direct
+  steps.
 - OT/IoT passive by default; dangerous action classes are hard-forbidden.
+- Durable worker process (playbooks + connector sync) deployed in Compose/K8s;
+  readiness verifies database, migrations and queue depth.
 - Supply chain: pinned dependencies, `pip-audit`, `bandit`, secret scanning,
   SBOM generation and container image scanning guidance in CI.
 
@@ -45,6 +62,17 @@ data for research.
 
 - Docker and Kubernetes manifests are provided but were not runtime-executed in
   the build environment (no Docker daemon). Validate them in your platform.
+- The audit chain is hash-chained but **not keyed with an external HSM key**; a
+  database owner could recompute a forged chain. Ship the audit stream to an
+  append-only external sink for high-assurance deployments.
+- Break-glass uses dual control whenever a second platform administrator exists.
+  A single-administrator deployment self-approves the grant (justification,
+  ticket, TTL and audit still apply); provision at least two administrators.
+- `allow_legacy_hmac=true` on an ingest source re-enables body-only HMAC and
+  weakens replay protection. It is disabled by default.
+- The legacy `/api/v1/ingest/{token}` path remains for compatibility; the token
+  is redacted from application logs but reverse proxies may still record URLs.
+  Use `POST /api/v1/ingest` with `Authorization: Bearer`.
 - No external IdP (Keycloak/OIDC federation) is wired by default; local
   authentication is implemented. Keycloak connector covers administrative
   actions, not SSO login.

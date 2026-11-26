@@ -15,20 +15,23 @@ from math import ceil
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.crypto import decrypt_secret, sha256_hex
 from app.core.db import utcnow
-from app.core.errors import ServiceUnavailable, ValidationFailure
+from app.core.errors import AppError, ServiceUnavailable, ValidationFailure
 from app.models.ai import AIInvocation, AIModel, AIProvider
+from app.models.core import Organization
 from app.services.llm.base import BaseProviderClient, ChatResult, ProviderError
 from app.services.llm.ollama import OllamaClient
 from app.services.llm.openai_compat import OpenAICompatibleClient
 from app.services.llm.safety import redact_prompt
 
 _SEMAPHORE = threading.BoundedSemaphore(max(1, int(settings.ai_max_concurrency)))
+_ORG_SEMAPHORES: dict[UUID, threading.BoundedSemaphore] = {}
+_ORG_SEMAPHORES_LOCK = threading.Lock()
 
 OPENAI_COMPATIBLE_KINDS = {"vllm", "llamacpp", "openai_compatible"}
 
@@ -79,9 +82,21 @@ def client_for(provider: AIProvider, timeout: float | None = None) -> BaseProvid
     key = decrypt_api_key(provider)
     effective_timeout = timeout if timeout is not None else float(settings.ai_request_timeout_seconds)
     if provider.kind == "ollama":
-        return OllamaClient(provider.base_url, key, effective_timeout)
+        return OllamaClient(
+            provider.base_url,
+            key,
+            effective_timeout,
+            allow_private=provider.is_local,
+            allowed_private_cidrs=settings.ai_private_allowed_cidrs if provider.is_local else None,
+        )
     if provider.kind in OPENAI_COMPATIBLE_KINDS:
-        return OpenAICompatibleClient(provider.base_url, key, effective_timeout)
+        return OpenAICompatibleClient(
+            provider.base_url,
+            key,
+            effective_timeout,
+            allow_private=provider.is_local,
+            allowed_private_cidrs=settings.ai_private_allowed_cidrs if provider.is_local else None,
+        )
     raise ProviderError(f"Unsupported AI provider kind: {provider.kind}")
 
 
@@ -94,6 +109,32 @@ def _release_slot() -> None:
     _SEMAPHORE.release()
 
 
+def _org_semaphore(org_id: UUID) -> threading.BoundedSemaphore:
+    with _ORG_SEMAPHORES_LOCK:
+        semaphore = _ORG_SEMAPHORES.get(org_id)
+        if semaphore is None:
+            semaphore = threading.BoundedSemaphore(max(1, int(settings.ai_max_concurrency_per_org)))
+            _ORG_SEMAPHORES[org_id] = semaphore
+        return semaphore
+
+
+def _acquire_org_slot(org_id: UUID) -> None:
+    """Per-tenant concurrency cap so one organization cannot starve the rest."""
+    semaphore = _org_semaphore(org_id)
+    if not semaphore.acquire(timeout=max(1, int(settings.ai_request_timeout_seconds))):
+        raise ServiceUnavailable("AI concurrency limit reached for this organization", code="ai_unavailable")
+    try:
+        _acquire_slot()
+    except ServiceUnavailable:
+        semaphore.release()
+        raise
+
+
+def _release_org_slot(org_id: UUID) -> None:
+    _SEMAPHORE.release()
+    _org_semaphore(org_id).release()
+
+
 def estimate_tokens(text: str) -> int:
     return max(1, ceil(len(text) / 4))
 
@@ -102,7 +143,89 @@ def estimate_messages_tokens(messages: list[dict[str, str]]) -> int:
     return sum(estimate_tokens(str(message.get("content", ""))) for message in messages)
 
 
-def _candidate_rows(db: Session, org_id: UUID, task: str, model_name: str | None) -> list[tuple[AIProvider, AIModel]]:
+def _budget_value(configured: dict[str, Any], key: str, default: int) -> int:
+    value = configured.get(key, default)
+    if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+        # A malformed budget must fail closed, never become unlimited.
+        return 0
+    return value
+
+
+def _org_settings(org: Organization) -> dict[str, Any]:
+    settings_payload = org.settings if isinstance(org.settings, dict) else {}
+    return settings_payload
+
+
+def assert_ai_budget(db: Session, org: Organization, *, estimated_tokens: int, requests: int = 1) -> None:
+    """Enforce per-organization token/request budgets before outbound inference.
+
+    Limits are read from ``Organization.settings["ai_budget"]`` and fall back to
+    platform defaults. A zero or malformed limit blocks inference (fail closed).
+    Usage is measured from the AIInvocation ledger, so restarts cannot reset it.
+    """
+    configured = _org_settings(org).get("ai_budget")
+    budget = configured if isinstance(configured, dict) else {}
+    daily_tokens = _budget_value(budget, "daily_tokens", settings.ai_daily_token_budget_per_org)
+    monthly_tokens = _budget_value(budget, "monthly_tokens", settings.ai_monthly_token_budget_per_org)
+    daily_requests = _budget_value(budget, "daily_requests", settings.ai_daily_request_budget_per_org)
+
+    now = utcnow()
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = day_start.replace(day=1)
+    token_expr = AIInvocation.prompt_tokens + AIInvocation.completion_tokens
+    day_tokens = int(
+        db.execute(
+            select(func.coalesce(func.sum(token_expr), 0)).where(
+                AIInvocation.org_id == org.id, AIInvocation.created_at >= day_start
+            )
+        ).scalar_one()
+    )
+    month_tokens = int(
+        db.execute(
+            select(func.coalesce(func.sum(token_expr), 0)).where(
+                AIInvocation.org_id == org.id, AIInvocation.created_at >= month_start
+            )
+        ).scalar_one()
+    )
+    day_requests = int(
+        db.execute(
+            select(func.count())
+            .select_from(AIInvocation)
+            .where(AIInvocation.org_id == org.id, AIInvocation.created_at >= day_start)
+        ).scalar_one()
+    )
+
+    def _deny(message: str) -> None:
+        raise AppError("ai_budget_exceeded", message, 429)
+
+    if daily_tokens == 0:
+        _deny("AI token budget is disabled by policy for this organization")
+    if daily_requests == 0:
+        _deny("AI request budget is disabled by policy for this organization")
+    if day_requests + requests > daily_requests:
+        _deny("Daily AI request budget exhausted for this organization")
+    if day_tokens + estimated_tokens > daily_tokens:
+        _deny("Daily AI token budget exhausted for this organization")
+    if month_tokens + estimated_tokens > monthly_tokens:
+        _deny("Monthly AI token budget exhausted for this organization")
+
+
+def provider_allowed_for_org(provider: AIProvider, org: Organization) -> bool:
+    """Local-first sovereignty gate for external inference providers."""
+    if provider.is_local:
+        return True
+    if not settings.ai_allow_external_providers:
+        return False
+    ai_settings = _org_settings(org).get("ai")
+    if not isinstance(ai_settings, dict) or not ai_settings.get("external_opt_in"):
+        return False
+    region = str((provider.config or {}).get("data_region", "")).strip().lower()
+    return region.startswith("eu")
+
+
+def _candidate_rows(
+    db: Session, org: Organization, task: str, model_name: str | None
+) -> list[tuple[AIProvider, AIModel]]:
     stmt = (
         select(AIProvider, AIModel)
         .join(AIModel, AIModel.provider_id == AIProvider.id)
@@ -110,12 +233,16 @@ def _candidate_rows(db: Session, org_id: UUID, task: str, model_name: str | None
             AIProvider.enabled.is_(True),
             AIProvider.health_status == "healthy",
             AIModel.status == "available",
-            or_(AIProvider.org_id == org_id, AIProvider.org_id.is_(None)),
+            or_(AIProvider.org_id == org.id, AIProvider.org_id.is_(None)),
         )
     )
     if model_name:
         stmt = stmt.where(AIModel.name == model_name)
-    rows = [(provider, model) for provider, model in db.execute(stmt.order_by(AIProvider.name, AIModel.name)).all()]
+    rows = [
+        (provider, model)
+        for provider, model in db.execute(stmt.order_by(AIProvider.name, AIModel.name)).all()
+        if provider_allowed_for_org(provider, org)
+    ]
 
     if model_name:
         return rows
@@ -130,10 +257,10 @@ def _candidate_rows(db: Session, org_id: UUID, task: str, model_name: str | None
     return primary + defaults + chat_fallback
 
 
-def _candidates(db: Session, org_id: UUID, task: str, model_name: str | None) -> list[Candidate]:
+def _candidates(db: Session, org: Organization, task: str, model_name: str | None) -> list[Candidate]:
     candidates: list[Candidate] = []
     seen: set[tuple[UUID, UUID]] = set()
-    for provider, model in _candidate_rows(db, org_id, task, model_name):
+    for provider, model in _candidate_rows(db, org, task, model_name):
         key = (provider.id, model.id)
         if key in seen:
             continue
@@ -277,7 +404,13 @@ def complete(
     expect_json: bool = False,
     request_id: str | None = None,
 ) -> CompletionResult:
-    candidates = _candidates(db, org_id, task, model_name)
+    org = db.get(Organization, org_id)
+    if org is None:
+        raise ServiceUnavailable("Organization is not available for inference", code="ai_unavailable")
+    prompt_tokens_estimate = estimate_messages_tokens(messages)
+    requested_output = max_tokens if max_tokens is not None else 2048
+    assert_ai_budget(db, org, estimated_tokens=prompt_tokens_estimate + requested_output)
+    candidates = _candidates(db, org, task, model_name)
     if not candidates:
         raise ServiceUnavailable(
             "No configured, healthy AI provider/model is available for this task", code="ai_unavailable"
@@ -296,7 +429,6 @@ def complete(
             )
 
     prompt = "\n".join(str(message.get("content", "")) for message in messages)
-    prompt_tokens_estimate = estimate_messages_tokens(messages)
     attempted: set[UUID] = set()
     last_error = "No candidate produced a response"
     skipped_for_context = False
@@ -325,7 +457,7 @@ def complete(
 
         attempted.add(candidate.provider.id)
         started = time.perf_counter()
-        _acquire_slot()
+        _acquire_org_slot(org_id)
         try:
             chat = candidate.client.chat(
                 model.name,
@@ -353,7 +485,7 @@ def complete(
             _mark_unhealthy(db, candidate.provider, str(exc))
             continue
         finally:
-            _release_slot()
+            _release_org_slot(org_id)
 
         latency_ms = int((time.perf_counter() - started) * 1000)
         parsed, parse_error = _parse_if_requested(chat, expect_json)
@@ -414,7 +546,12 @@ def embeddings(
 ) -> EmbeddingResult:
     # ``model_name`` short-circuits tag filtering inside ``_candidate_rows`` so an
     # explicitly requested embedding model is honoured even without a task tag.
-    candidates = _candidates(db, org_id, "embedding", model_name)
+    org = db.get(Organization, org_id)
+    if org is None:
+        raise ServiceUnavailable("Organization is not available for inference", code="ai_unavailable")
+    prompt_for_budget = "\n".join(inputs)
+    assert_ai_budget(db, org, estimated_tokens=estimate_tokens(prompt_for_budget))
+    candidates = _candidates(db, org, "embedding", model_name)
     if not candidates:
         raise ServiceUnavailable("No configured, healthy embedding provider is available", code="ai_unavailable")
 
@@ -422,7 +559,7 @@ def embeddings(
     last_error = "No candidate produced embeddings"
     for candidate in candidates:
         started = time.perf_counter()
-        _acquire_slot()
+        _acquire_org_slot(org_id)
         try:
             vectors = candidate.client.embeddings(candidate.model.name, inputs)
         except ProviderError as exc:
@@ -445,7 +582,7 @@ def embeddings(
             _mark_unhealthy(db, candidate.provider, str(exc))
             continue
         finally:
-            _release_slot()
+            _release_org_slot(org_id)
 
         if len(vectors) != len(inputs) or any(not vector for vector in vectors):
             _mark_unhealthy(db, candidate.provider, "Embedding provider returned an incomplete batch")

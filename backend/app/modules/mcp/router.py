@@ -23,7 +23,13 @@ from app.modules.mcp.schemas import (
     MCPToolOut,
     ToolExecutionOut,
 )
-from app.modules.mcp.service import approve_server, approve_tool, discover_server, execute_tool
+from app.modules.mcp.service import (
+    approve_server,
+    approve_tool,
+    discover_server,
+    execute_tool,
+    mcp_approval_fingerprint,
+)
 
 router = APIRouter(prefix="/mcp", tags=["MCP Governance"])
 
@@ -251,7 +257,7 @@ def approve_tool_endpoint(
     payload: MCPToolApprove = MCPToolApprove(),
     ctx: RequestContext = Depends(require_permission("mcp:write")),
 ) -> MCPToolOut:
-    _require_human(ctx)
+    actor = _require_human(ctx)
     tool, server = _get_tool(ctx, tool_id)
     approve_tool(
         ctx.db,
@@ -260,6 +266,8 @@ def approve_tool_endpoint(
         approved=payload.approved,
         timeout_seconds=payload.timeout_seconds,
         max_calls_per_hour=payload.max_calls_per_hour,
+        actor=actor,
+        decided_by=ctx.user.id if ctx.user else None,
     )
     ctx.audit(
         action="mcp.tool.approve" if payload.approved else "mcp.tool.revoke",
@@ -270,6 +278,7 @@ def approve_tool_endpoint(
             "server_id": str(server.id),
             "timeout_seconds": tool.timeout_seconds,
             "max_calls_per_hour": tool.max_calls_per_hour,
+            "approval_fingerprint": mcp_approval_fingerprint(server, tool) if payload.approved else None,
         },
     )
     ctx.db.commit()

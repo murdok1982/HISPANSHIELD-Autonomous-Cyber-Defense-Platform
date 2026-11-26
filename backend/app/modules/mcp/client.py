@@ -11,8 +11,7 @@ from __future__ import annotations
 import itertools
 from typing import Any
 
-import httpx
-
+from app.core import outbound
 from app.core.ssrf import SSRFError, validate_outbound_url
 
 _MAX_SCHEMA_DEPTH = 8
@@ -44,19 +43,18 @@ class JsonRpcClient:
         # Re-validate on every call to defeat DNS rebinding between discovery and execution.
         endpoint = validate_endpoint(self.endpoint)
         try:
-            with httpx.Client(
-                timeout=httpx.Timeout(timeout or self.timeout),
-                follow_redirects=False,
-                verify=True,
-            ) as client:
-                response = client.post(
-                    endpoint,
-                    json=body,
-                    headers={"Accept": "application/json", "Content-Type": "application/json"},
-                )
-        except httpx.TimeoutException as exc:
+            response = outbound.request(
+                "POST",
+                endpoint,
+                json_body=body,
+                headers={"Accept": "application/json"},
+                timeout=timeout or self.timeout,
+                allow_private=True,
+                max_response_bytes=2_000_000,
+            )
+        except outbound.OutboundTimeout as exc:
             raise JsonRpcError("MCP request timed out") from exc
-        except httpx.TransportError as exc:
+        except outbound.OutboundTransportError as exc:
             raise JsonRpcError(f"MCP transport error: {exc}") from exc
 
         content_type = response.headers.get("content-type", "")

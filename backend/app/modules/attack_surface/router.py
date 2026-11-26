@@ -9,12 +9,14 @@ from sqlalchemy import case, func, or_, select
 
 from app.core.db import utcnow
 from app.core.deps import RequestContext, require_permission
-from app.core.errors import AppError, Conflict, NotFound, PolicyDenied
+from app.core.errors import AppError, Conflict, Forbidden, NotFound, PolicyDenied
 from app.core.schemas import Page, paginate
-from app.models.assets import Asset, AttackSurfaceFinding, DiscoveryJob
+from app.models.assets import Asset, AttackSurfaceFinding, DiscoveryAuthorization, DiscoveryJob
 from app.modules.attack_surface import discovery, service
 from app.modules.attack_surface.schemas import (
     AnalyzeResult,
+    DiscoveryAuthorizationCreate,
+    DiscoveryAuthorizationOut,
     DiscoveryJobCreate,
     DiscoveryJobOut,
     DiscoveryJobPatch,
@@ -65,6 +67,11 @@ def _get_job(db, org_id: UUID, job_id: UUID) -> DiscoveryJob:
     if job is None or job.org_id != org_id:
         raise NotFound("Discovery job")
     return job
+
+
+def _actor_uuid(ctx: RequestContext) -> UUID | None:
+    """Actor as a users.id when the caller is a human session, else ``None``."""
+    return ctx.user.id if ctx.user is not None else None
 
 
 @router.get("/findings", response_model=Page[FindingOut], summary="List attack-surface findings")
@@ -196,6 +203,157 @@ def summary(ctx: RequestContext = Depends(require_permission("attack_surface:rea
     return service.finding_summary(ctx.db, ctx.org.id)
 
 
+# ---------------------------------------------------------------------------
+# Dual-control discovery authorizations
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/authorizations",
+    response_model=Page[DiscoveryAuthorizationOut],
+    summary="List discovery authorizations",
+)
+def list_authorizations(
+    ctx: RequestContext = Depends(require_permission("attack_surface:read")),
+    status: str | None = Query(default=None, pattern="^(pending|approved|expired|revoked)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=200),
+) -> Page[DiscoveryAuthorizationOut]:
+    now = utcnow()
+    stmt = select(DiscoveryAuthorization).where(DiscoveryAuthorization.org_id == ctx.org.id)
+    if status == "revoked":
+        stmt = stmt.where(DiscoveryAuthorization.revoked_at.isnot(None))
+    elif status == "pending":
+        stmt = stmt.where(
+            DiscoveryAuthorization.revoked_at.is_(None),
+            DiscoveryAuthorization.approved_at.is_(None),
+        )
+    elif status == "approved":
+        stmt = stmt.where(
+            DiscoveryAuthorization.revoked_at.is_(None),
+            DiscoveryAuthorization.approved_at.isnot(None),
+            DiscoveryAuthorization.expires_at > now,
+        )
+    elif status == "expired":
+        stmt = stmt.where(
+            DiscoveryAuthorization.revoked_at.is_(None),
+            DiscoveryAuthorization.approved_at.isnot(None),
+            DiscoveryAuthorization.expires_at <= now,
+        )
+    stmt = stmt.order_by(DiscoveryAuthorization.created_at.desc(), DiscoveryAuthorization.id.asc())
+    total = ctx.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
+    rows = list(ctx.db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars())
+    items = [DiscoveryAuthorizationOut(**service.serialize_authorization(row)) for row in rows]
+    return Page[DiscoveryAuthorizationOut](**paginate(items, int(total), page, page_size))
+
+
+@router.post(
+    "/authorizations",
+    response_model=DiscoveryAuthorizationOut,
+    status_code=201,
+    summary="Request a discovery authorization (pending approval)",
+)
+def create_authorization(
+    payload: DiscoveryAuthorizationCreate,
+    ctx: RequestContext = Depends(require_permission("attack_surface:write")),
+) -> DiscoveryAuthorizationOut:
+    discovery.validate_scope_cidrs(payload.cidrs, required=True)
+    ports = discovery.normalize_ports(payload.ports)
+    authorization = DiscoveryAuthorization(
+        org_id=ctx.org.id,
+        name=payload.name,
+        cidrs=payload.cidrs,
+        ports=ports,
+        max_hosts=payload.max_hosts,
+        expires_at=payload.expires_at,
+        created_by=_actor_uuid(ctx),
+    )
+    ctx.db.add(authorization)
+    ctx.db.flush()
+    ctx.audit(
+        action="attack_surface.authorization.create",
+        resource_type="discovery_authorization",
+        resource_id=str(authorization.id),
+        payload={
+            "name": authorization.name,
+            "cidrs": authorization.cidrs,
+            "ports": authorization.ports,
+            "expires_at": authorization.expires_at.isoformat(),
+        },
+    )
+    ctx.db.commit()
+    ctx.db.refresh(authorization)
+    return DiscoveryAuthorizationOut(**service.serialize_authorization(authorization))
+
+
+@router.post(
+    "/authorizations/{authorization_id}/approve",
+    response_model=DiscoveryAuthorizationOut,
+    summary="Approve a discovery authorization (creator cannot self-approve)",
+)
+def approve_authorization(
+    authorization_id: UUID,
+    ctx: RequestContext = Depends(require_permission("attack_surface:write")),
+) -> DiscoveryAuthorizationOut:
+    authorization = discovery.load_authorization(ctx.db, ctx.org.id, authorization_id)
+    actor = _actor_uuid(ctx)
+    if actor is None:
+        raise Forbidden("A human user session is required to approve a discovery authorization")
+    if authorization.created_by is not None and authorization.created_by == actor:
+        raise Forbidden("The creator of a discovery authorization cannot approve it")
+    if authorization.revoked_at is not None:
+        raise Conflict("A revoked discovery authorization cannot be approved")
+    if authorization.approved_at is not None:
+        raise Conflict("This discovery authorization is already approved")
+    if discovery.authorization_status(authorization) == discovery.AUTHORIZATION_EXPIRED:
+        raise PolicyDenied(
+            "An expired discovery authorization cannot be approved",
+            details=[{"field": "expires_at", "message": "Authorization expired"}],
+        )
+    authorization.approved_by = actor
+    authorization.approved_at = utcnow()
+    ctx.audit(
+        action="attack_surface.authorization.approve",
+        resource_type="discovery_authorization",
+        resource_id=str(authorization.id),
+        payload={"approved_by": str(actor), "expires_at": authorization.expires_at.isoformat()},
+    )
+    ctx.db.commit()
+    ctx.db.refresh(authorization)
+    return DiscoveryAuthorizationOut(**service.serialize_authorization(authorization))
+
+
+@router.post(
+    "/authorizations/{authorization_id}/revoke",
+    response_model=DiscoveryAuthorizationOut,
+    summary="Revoke a discovery authorization",
+)
+def revoke_authorization(
+    authorization_id: UUID,
+    ctx: RequestContext = Depends(require_permission("attack_surface:write")),
+) -> DiscoveryAuthorizationOut:
+    authorization = discovery.load_authorization(ctx.db, ctx.org.id, authorization_id)
+    if authorization.revoked_at is not None:
+        raise Conflict("This discovery authorization is already revoked")
+    actor = _actor_uuid(ctx)
+    authorization.revoked_at = utcnow()
+    authorization.revoked_by = actor
+    ctx.audit(
+        action="attack_surface.authorization.revoke",
+        resource_type="discovery_authorization",
+        resource_id=str(authorization.id),
+        payload={"revoked_by": str(actor) if actor else None},
+    )
+    ctx.db.commit()
+    ctx.db.refresh(authorization)
+    return DiscoveryAuthorizationOut(**service.serialize_authorization(authorization))
+
+
+# ---------------------------------------------------------------------------
+# Discovery jobs
+# ---------------------------------------------------------------------------
+
+
 @router.get("/discovery-jobs", response_model=Page[DiscoveryJobOut], summary="List discovery jobs")
 def list_jobs(
     ctx: RequestContext = Depends(require_permission("attack_surface:read")),
@@ -225,11 +383,19 @@ def create_job(
     payload: DiscoveryJobCreate, ctx: RequestContext = Depends(require_permission("attack_surface:write"))
 ) -> DiscoveryJob:
     discovery.validate_scope_cidrs(payload.scope_cidrs, required=payload.mode == "active")
+    authorization = service.resolve_job_authorization(
+        ctx.db,
+        ctx.org.id,
+        payload.authorization_id,
+        payload.scope_cidrs,
+        required_scope=payload.mode == "active",
+    )
     job = DiscoveryJob(
         org_id=ctx.org.id,
         name=payload.name,
         mode=payload.mode,
         scope_cidrs=payload.scope_cidrs,
+        authorization_id=authorization.id,
         status="pending",
         authorized_by=payload.authorized_by,
         authorization_reference=payload.authorization_reference,
@@ -243,7 +409,12 @@ def create_job(
         action="attack_surface.discovery.create",
         resource_type="discovery_job",
         resource_id=str(job.id),
-        payload={"name": job.name, "mode": job.mode, "scope_cidrs": job.scope_cidrs},
+        payload={
+            "name": job.name,
+            "mode": job.mode,
+            "scope_cidrs": job.scope_cidrs,
+            "authorization_id": str(authorization.id),
+        },
     )
     ctx.db.commit()
     ctx.db.refresh(job)
@@ -267,10 +438,19 @@ def update_job(
     next_scope = (
         changes["scope_cidrs"] if "scope_cidrs" in changes and changes["scope_cidrs"] is not None else job.scope_cidrs
     )
+    next_authorization = changes.get("authorization_id") or job.authorization_id
     discovery.validate_scope_cidrs(next_scope, required=next_mode == "active")
+    authorization = service.resolve_job_authorization(
+        ctx.db,
+        ctx.org.id,
+        next_authorization,
+        next_scope,
+        required_scope=next_mode == "active",
+    )
     for field in ("name", "mode", "scope_cidrs", "authorized_by", "authorization_reference"):
         if field in changes and changes[field] is not None:
             setattr(job, field, changes[field])
+    job.authorization_id = authorization.id
     if changes.get("authorization_reference") and job.authorized_at is None:
         job.authorized_at = utcnow()
     job.updated_at = utcnow()
@@ -317,11 +497,15 @@ async def run_job(
     request = payload or DiscoveryRunRequest()
     selected_ports = discovery.normalize_ports(request.ports)
     discovery.validate_scope_cidrs(job.scope_cidrs, required=job.mode == "active")
-    if job.mode == "active" and not (job.authorization_reference or "").strip():
-        raise PolicyDenied(
-            "Active discovery requires a non-empty authorization_reference recorded on the job.",
-            details=[{"field": "authorization_reference", "message": "Written authorization is mandatory"}],
-        )
+    authorization = service.resolve_job_authorization(
+        ctx.db,
+        ctx.org.id,
+        job.authorization_id,
+        job.scope_cidrs,
+        required_scope=job.mode == "active",
+    )
+    if job.mode == "active":
+        selected_ports = discovery.ensure_ports_authorized(selected_ports, authorization)
 
     job.status = "running"
     job.started_at = utcnow()
@@ -358,6 +542,7 @@ async def run_job(
             "mode": job.mode,
             "scope_cidrs": job.scope_cidrs,
             "summary": summary,
+            "authorization_id": str(job.authorization_id) if job.authorization_id else None,
             "authorization_reference": job.authorization_reference,
         },
     )

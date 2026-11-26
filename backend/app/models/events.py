@@ -16,6 +16,8 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -45,6 +47,31 @@ class IngestSource(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
+class IngestNonce(Base):
+    """Single-use HMAC v2 nonces, scoped per ingestion source.
+
+    Rows are pruned in bounded batches once they are older than the replay
+    tolerance (a superset of the signature window), so an attacker cannot grow
+    the table without bound.
+    """
+
+    __tablename__ = "ingest_nonces"
+    __table_args__ = (
+        UniqueConstraint("source_id", "nonce", name="uq_ingest_nonces_source_nonce"),
+        Index("ix_ingest_nonces_received", "received_at"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("ingest_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    nonce: Mapped[str] = mapped_column(String(128), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
 class SecurityEvent(Base):
     __tablename__ = "security_events"
     __table_args__ = (
@@ -52,7 +79,13 @@ class SecurityEvent(Base):
         Index("ix_events_org_severity", "org_id", "severity_id"),
         Index("ix_events_org_src_ip", "org_id", "src_ip"),
         Index("ix_events_org_host", "org_id", "host_name"),
-        Index("ix_events_dedupe", "org_id", "dedupe_key"),
+        Index(
+            "uq_events_org_dedupe",
+            "org_id",
+            "dedupe_key",
+            unique=True,
+            postgresql_where=text("dedupe_key IS NOT NULL"),
+        ),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -145,4 +178,4 @@ class Alert(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
 
-__all__ = ["Alert", "DetectionRule", "IngestSource", "SecurityEvent"]
+__all__ = ["Alert", "DetectionRule", "IngestNonce", "IngestSource", "SecurityEvent"]

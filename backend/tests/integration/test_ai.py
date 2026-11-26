@@ -669,3 +669,77 @@ def test_max_tokens_above_model_limit_is_rejected(auth_client, fake_ai):
     )
     assert response.status_code == 422
     assert response.json()["error"]["details"][0]["field"] == "max_tokens"
+
+
+def test_ai_budget_exhaustion_denies_before_calling_provider(auth_client, db, seeded, fake_ai):
+    provider = _create_provider(auth_client, fake_ai.url, name="Ollama")
+    _health(auth_client, provider["id"])
+    _create_model(auth_client, provider["id"])
+    org = db.get(Organization, seeded["org"].id)
+    assert org is not None
+    org.settings = {**(org.settings or {}), "ai_budget": {"daily_tokens": 1, "daily_requests": 10}}
+    db.commit()
+
+    response = auth_client.post("/api/v1/ai/complete", json={"task": "chat", "prompt": "exhaust the budget"})
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "ai_budget_exceeded"
+    assert fake_ai.chat_requests == []
+
+
+def test_malformed_ai_budget_fails_closed(auth_client, db, seeded, fake_ai):
+    provider = _create_provider(auth_client, fake_ai.url, name="Ollama")
+    _health(auth_client, provider["id"])
+    _create_model(auth_client, provider["id"])
+    org = db.get(Organization, seeded["org"].id)
+    assert org is not None
+    org.settings = {**(org.settings or {}), "ai_budget": {"daily_tokens": -5}}
+    db.commit()
+
+    response = auth_client.post("/api/v1/ai/complete", json={"task": "chat", "prompt": "hello"})
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "ai_budget_exceeded"
+
+
+def test_external_provider_requires_platform_opt_in_and_eu_region(auth_client):
+    external = {
+        "name": "US hosted model",
+        "kind": "openai_compatible",
+        "base_url": "https://api.example.com",
+        "is_local": False,
+        "config": {"data_region": "us-east-1"},
+    }
+    response = auth_client.post("/api/v1/ai/providers", json=external)
+    assert response.status_code == 403
+    assert "External AI providers are disabled" in response.json()["error"]["message"]
+
+
+def test_external_provider_rejects_plaintext_http(auth_client, monkeypatch):
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "ai_allow_external_providers", True)
+    response = auth_client.post(
+        "/api/v1/ai/providers",
+        json={
+            "name": "Insecure external",
+            "kind": "openai_compatible",
+            "base_url": "http://api.example.com",
+            "is_local": False,
+            "config": {"data_region": "eu-west-1"},
+        },
+    )
+    assert response.status_code == 422
+    assert "HTTPS is required" in response.json()["error"]["details"][0]["message"]
+
+
+def test_local_provider_outside_operator_allowlist_is_rejected(auth_client):
+    response = auth_client.post(
+        "/api/v1/ai/providers",
+        json={
+            "name": "Self-declared LAN model",
+            "kind": "ollama",
+            "base_url": "http://10.0.0.5:11434",
+            "is_local": True,
+        },
+    )
+    assert response.status_code == 422
+    assert "HS_AI_PRIVATE_ALLOWED_CIDRS" in response.json()["error"]["details"][0]["message"]

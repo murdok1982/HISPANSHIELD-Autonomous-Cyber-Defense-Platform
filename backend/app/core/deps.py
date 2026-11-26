@@ -163,6 +163,7 @@ def _resolve_org(
                 .where(
                     BreakGlassGrant.user_id == user.id,
                     BreakGlassGrant.org_id == org.id,
+                    BreakGlassGrant.status == "approved",
                     BreakGlassGrant.revoked_at.is_(None),
                     BreakGlassGrant.expires_at > utcnow(),
                 )

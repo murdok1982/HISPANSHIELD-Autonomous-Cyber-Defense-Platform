@@ -1,0 +1,311 @@
+code: NIS2
+name: "Directive (EU) 2022/2555 (NIS2)"
+version: "2022/2555"
+jurisdiction: EU
+authority: "European Commission / ENISA and national CSIRTs"
+effective_date: 2024-10-17
+source_url: https://eur-lex.europa.eu/eli/dir/2022/2555/oj
+status: published
+description: >-
+  Minimum cyber risk-management and incident-reporting obligations for operators
+  of essential and important entities across the European Union. Control
+  summaries below are paraphrased for assessment purposes and do not reproduce
+  the Directive text.
+controls:
+  - control_id: NIS2-01
+    title: Management accountability and security governance
+    description: >-
+      Senior management approves, owns and periodically reviews the cyber risk
+      management measures and remains accountable for their implementation.
+    category: governance
+    weight: 3
+    references:
+      - "Art. 20"
+      - "Recital 79"
+    evidence_requirements:
+      - key: board_minutes
+        title: Management approval record
+        description: Dated minutes or decision record showing management approval of the security programme.
+      - key: policy_register
+        title: Policy register
+        description: Index of approved information security policies with owners and review dates.
+    technical_checks:
+      - key: privileged_access_review
+        title: Privileged role inventory is bounded
+        type: rbac_least_privilege
+        params:
+          max_admins: 3
+        description: Confirms that administrative roles are limited and known to the organization.
+
+  - control_id: NIS2-02
+    title: Risk management framework
+    description: >-
+      Cyber risks are identified, analysed and treated through a documented,
+      repeatable risk management process that covers all critical assets.
+    category: risk_management
+    weight: 3
+    references:
+      - "Art. 21(1)"
+      - "Art. 21(2)(a)"
+    evidence_requirements:
+      - key: risk_assessment
+        title: Current risk assessment
+        description: Risk register with likelihood, impact and treatment decisions reviewed in the last 12 months.
+    technical_checks:
+      - key: asset_coverage
+        title: Critical inventory coverage
+        type: asset_inventory_coverage
+        params:
+          min_ratio: 0.9
+        description: Proportion of inventoried assets with an assigned owner, zone or classification tag.
+      - key: overdue_vulnerabilities
+        title: Vulnerability remediation within SLA
+        type: vulnerability_sla
+        params:
+          max_overdue_ratio: 0.0
+        description: Checks that no open vulnerability is past its remediation due date.
+
+  - control_id: NIS2-03
+    title: Incident handling
+    description: >-
+      Security events and incidents are detected, triaged, handled and closed
+      through a documented process with defined roles and communications.
+    category: incident_management
+    weight: 3
+    references:
+      - "Art. 21(2)(b)"
+      - "Art. 23"
+    evidence_requirements:
+      - key: incident_runbook
+        title: Incident response runbook
+        description: Approved runbook covering classification, escalation and notification duties.
+      - key: post_incident_reviews
+        title: Post-incident reviews
+        description: At least one lessons-learned report for the current reporting period.
+    technical_checks:
+      - key: incident_process
+        title: Incident process configured
+        type: incident_process_exists
+        params: {}
+        description: An enabled incident-response policy or published response playbook exists.
+      - key: event_logging
+        title: Logging and event ingestion active
+        type: logging_enabled
+        params:
+          min_sources: 1
+        description: At least one enabled ingest source feeds the detection pipeline.
+
+  - control_id: NIS2-04
+    title: Business continuity and backup management
+    description: >-
+      Backups, redundancy and recovery procedures preserve availability of
+      essential services and are tested at planned intervals.
+    category: continuity
+    weight: 3
+    references:
+      - "Art. 21(2)(c)"
+    evidence_requirements:
+      - key: backup_policy
+        title: Backup and restoration policy
+        description: Policy defining backup scope, frequency, retention and restoration tests.
+      - key: restore_test
+        title: Restoration test record
+        description: Evidence of a successful restoration exercise within the last 12 months.
+    technical_checks:
+      - key: backups
+        title: Backups configured
+        type: backup_configured
+        params: {}
+        description: Organization settings or an enabled continuity policy declare backups operational.
+
+  - control_id: NIS2-05
+    title: Supply chain security
+    description: >-
+      Security requirements are applied to direct suppliers and service
+      providers, and supplier risk is assessed and monitored.
+    category: supply_chain
+    weight: 3
+    references:
+      - "Art. 21(2)(d)"
+      - "Art. 21(3)"
+    evidence_requirements:
+      - key: supplier_register
+        title: Supplier register
+        description: Register of critical suppliers with contact, service and risk rating.
+      - key: supplier_clauses
+        title: Security clauses
+        description: Contractual security and breach-notification clauses for critical suppliers.
+    technical_checks:
+      - key: register
+        title: Supplier register maintained
+        type: supplier_register
+        params: {}
+        description: Organization settings or a supplier-management policy record a maintained register.
+
+  - control_id: NIS2-06
+    title: Secure acquisition, development and maintenance
+    description: >-
+      Security is embedded in the acquisition, development and maintenance
+      lifecycle, including vulnerability and patch management.
+    category: secure_development
+    weight: 3
+    references:
+      - "Art. 21(2)(e)"
+    evidence_requirements:
+      - key: sdlc_policy
+        title: Secure development policy
+        description: Policy covering secure coding, review gates and dependency management.
+      - key: patch_records
+        title: Patch management records
+        description: Evidence of planned patch cycles and emergency patch handling.
+    technical_checks:
+      - key: patching
+        title: Assets recently scanned or patched
+        type: patch_management
+        params:
+          max_days_since_scan: 30
+          min_ratio: 0.8
+        description: Share of assets with a scan or patch record in the configured window.
+
+  - control_id: NIS2-07
+    title: Effectiveness assessment and audit
+    description: >-
+      The effectiveness of cyber risk management measures is assessed and
+      documented through audits, reviews or tests.
+    category: assurance
+    weight: 3
+    references:
+      - "Art. 21(2)(f)"
+    evidence_requirements:
+      - key: audit_report
+        title: Internal or external audit report
+        description: Latest audit or control-effectiveness report with findings and owners.
+    technical_checks:
+      - key: access_reviews
+        title: Access reviews performed on schedule
+        type: access_review
+        params:
+          max_days: 90
+        description: A recent access review is recorded in settings or an access-review policy.
+
+  - control_id: NIS2-08
+    title: Cyber hygiene and security training
+    description: >-
+      Staff receive regular security awareness training and apply baseline
+      cyber hygiene practices in their daily work.
+    category: people
+    weight: 2
+    references:
+      - "Art. 21(2)(g)"
+    evidence_requirements:
+      - key: training_records
+        title: Training completion records
+        description: Completion records for security awareness training covering the current year.
+    technical_checks:
+      - key: mfa_adoption
+        title: Multi-factor authentication enforced
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: All active members authenticate with a second factor.
+
+  - control_id: NIS2-09
+    title: Cryptography and encryption
+    description: >-
+      Appropriate cryptographic controls protect data in transit and at rest,
+      with managed keys and documented crypto policy.
+    category: cryptography
+    weight: 3
+    references:
+      - "Art. 21(2)(h)"
+    evidence_requirements:
+      - key: crypto_policy
+        title: Cryptographic policy
+        description: Approved algorithms, key lengths and key-management responsibilities.
+    technical_checks:
+      - key: encryption_at_rest
+        title: Encryption at rest enabled
+        type: encryption_at_rest
+        params: {}
+        description: Organization settings or a crypto policy declare encryption at rest.
+
+  - control_id: NIS2-10
+    title: Access control, asset management and least privilege
+    description: >-
+      Access to systems and data follows least privilege, is reviewed and is
+      tied to a maintained asset and identity inventory.
+    category: access_control
+    weight: 3
+    references:
+      - "Art. 21(2)(i)"
+    evidence_requirements:
+      - key: access_matrix
+        title: Access control matrix
+        description: Role-to-system access matrix approved by the system owner.
+    technical_checks:
+      - key: least_privilege
+        title: Administrative roles minimised
+        type: rbac_least_privilege
+        params:
+          max_admins: 2
+        description: Number of active organization administrators stays within policy.
+      - key: session_timeout
+        title: Session timeout bounded
+        type: session_timeout
+        params:
+          max_minutes: 30
+        description: Idle session lifetime does not exceed the configured maximum.
+
+  - control_id: NIS2-11
+    title: Secure communications and multi-factor authentication
+    description: >-
+      Remote and privileged access uses multi-factor authentication and
+      encrypted communication channels.
+    category: communications
+    weight: 3
+    references:
+      - "Art. 21(2)(j)"
+    evidence_requirements:
+      - key: remote_access_policy
+        title: Remote access policy
+        description: Policy defining approved remote access methods and MFA requirements.
+    technical_checks:
+      - key: mfa
+        title: MFA adoption
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: Every active member has MFA enabled.
+      - key: connector_security
+        title: Integration channels verify TLS
+        type: connector_tls
+        params:
+          require_all: true
+        description: All enabled connectors keep TLS certificate verification enabled.
+
+  - control_id: NIS2-12
+    title: Logging, monitoring and audit trail
+    description: >-
+      Security-relevant activity is logged centrally, protected against
+      tampering and monitored for anomalies.
+    category: logging
+    weight: 3
+    references:
+      - "Art. 21(2)(b)"
+      - "Art. 21(2)(f)"
+    evidence_requirements:
+      - key: logging_policy
+        title: Logging and monitoring policy
+        description: Log sources, retention and monitoring responsibilities.
+    technical_checks:
+      - key: logging
+        title: Logging enabled
+        type: logging_enabled
+        params:
+          min_sources: 1
+        description: At least one ingest source is enabled for the organization.
+      - key: audit_chain
+        title: Audit trail integrity
+        type: audit_chain_valid
+        params: {}
+        description: The append-only audit hash chain verifies without divergence.

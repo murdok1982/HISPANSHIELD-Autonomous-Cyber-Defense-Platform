@@ -224,6 +224,39 @@ class AttackSurfaceFinding(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSONB, default=dict, nullable=False)
 
 
+class DiscoveryAuthorization(UUIDPrimaryKeyMixin, Base):
+    """Explicit, dual-control authorization to enumerate a network scope.
+
+    A discovery job may only run while linked to an authorization that is
+    approved, unexpired and not revoked. The creator of the authorization can
+    never approve it (separation of duties).
+    """
+
+    __tablename__ = "discovery_authorizations"
+    __table_args__ = (Index("ix_discovery_auth_org_created", "org_id", "created_at"),)
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    cidrs: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    ports: Mapped[list[int]] = mapped_column(JSONB, default=list, nullable=False)
+    max_hosts: Mapped[int] = mapped_column(Integer, default=256, nullable=False)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
 class DiscoveryJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "discovery_jobs"
 
@@ -233,6 +266,12 @@ class DiscoveryJob(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     mode: Mapped[str] = mapped_column(String(20), default="passive", nullable=False)
     scope_cidrs: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    authorization_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("discovery_authorizations.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     authorized_by: Mapped[str | None] = mapped_column(String(120), nullable=True)
     authorization_reference: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -249,6 +288,7 @@ __all__ = [
     "AssetIdentity",
     "AssetRelationship",
     "CVECatalog",
+    "DiscoveryAuthorization",
     "DiscoveryJob",
     "IoTDevice",
     "OTDevice",

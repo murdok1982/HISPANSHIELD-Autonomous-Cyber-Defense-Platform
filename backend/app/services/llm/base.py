@@ -12,8 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
-
+from app.core import outbound
 from app.core.ssrf import SSRFError, validate_outbound_url
 from app.services.llm.safety import redact_prompt
 
@@ -44,9 +43,9 @@ class ChatResult:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
-def _validate(url: str) -> None:
+def _validate(url: str, allow_private: bool) -> None:
     try:
-        validate_outbound_url(url, allow_private=True)
+        validate_outbound_url(url, allow_private=allow_private, require_https=not allow_private)
     except SSRFError as exc:
         raise ProviderError(f"Blocked AI provider destination: {exc}") from exc
 
@@ -54,11 +53,21 @@ def _validate(url: str) -> None:
 class BaseProviderClient(ABC):
     kind: str = ""
 
-    def __init__(self, base_url: str, api_key: str | None, timeout: float) -> None:
+    def __init__(
+        self,
+        base_url: str,
+        api_key: str | None,
+        timeout: float,
+        *,
+        allow_private: bool = True,
+        allowed_private_cidrs: list[str] | None = None,
+    ) -> None:
         self.base_url = (base_url or "").rstrip("/")
         self._api_key = api_key or None
+        self._allow_private = allow_private
+        self._allowed_private_cidrs = allowed_private_cidrs
         self.timeout = max(1.0, float(timeout))
-        _validate(self.base_url)
+        _validate(self.base_url, self._allow_private)
 
     # -- transport ---------------------------------------------------------
     def _headers(self) -> dict[str, str]:
@@ -76,18 +85,26 @@ class BaseProviderClient(ABC):
         timeout: float | None = None,
     ) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
-        _validate(url)
+        _validate(url, self._allow_private)
         try:
-            with httpx.Client(
-                timeout=httpx.Timeout(timeout or self.timeout),
-                follow_redirects=False,
-                verify=True,
-            ) as client:
-                response = client.request(method, url, headers=self._headers(), json=json_body)
-        except httpx.TimeoutException as exc:
+            response = outbound.request(
+                method,
+                url,
+                headers=self._headers(),
+                json_body=json_body,
+                timeout=timeout or self.timeout,
+                allow_private=self._allow_private,
+                require_https=not self._allow_private,
+                allowed_private_cidrs=self._allowed_private_cidrs,
+                max_response_bytes=MAX_RESPONSE_BYTES,
+                user_agent="HISPANSHIELD-AI/1.0",
+            )
+        except outbound.OutboundTimeout as exc:
             raise ProviderError("AI provider request timed out", timeout=True) from exc
-        except httpx.TransportError as exc:
+        except outbound.OutboundTransportError as exc:
             raise ProviderError(f"AI provider transport error: {exc}") from exc
+        except outbound.OutboundResponseTooLarge as exc:
+            raise ProviderError("AI provider response exceeded the size limit") from exc
 
         body = response.content[:MAX_RESPONSE_BYTES]
         if response.status_code >= 400:

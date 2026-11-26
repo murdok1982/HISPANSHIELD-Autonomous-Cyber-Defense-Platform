@@ -111,7 +111,6 @@ def create_app() -> FastAPI:
     )
 
     app.add_middleware(MetricsMiddleware)
-    app.add_middleware(BodySizeLimitMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestContextMiddleware)
     app.add_middleware(OriginCheckMiddleware)
@@ -175,7 +174,20 @@ def create_app() -> FastAPI:
         try:
             with SessionLocal() as db:
                 db.execute(text("SELECT 1"))
-            return JSONResponse({"status": "ready", "version": VERSION})
+                current = db.execute(text("SELECT version_num FROM alembic_version")).scalar()
+                queue_depth = db.execute(
+                    text("SELECT count(*) FROM playbook_executions WHERE status IN ('pending', 'running', 'waiting')")
+                ).scalar_one()
+            head = _migration_head()
+            up_to_date = bool(head) and current == head
+            body = {
+                "status": "ready" if up_to_date else "degraded",
+                "version": VERSION,
+                "database": "ok",
+                "migrations": {"current": current, "head": head, "up_to_date": up_to_date},
+                "queue_depth": int(queue_depth or 0),
+            }
+            return JSONResponse(body, status_code=200 if up_to_date else 503)
         except Exception as exc:  # pragma: no cover - exercised only during outages
             logger.error("readiness_failed", extra={"extra_fields": {"error": str(exc)}})
             return JSONResponse({"status": "unavailable", "reason": "database"}, status_code=503)
@@ -228,4 +240,18 @@ def _error_payload_static(code: str, message: str) -> dict:
     return {"error": {"code": code, "message": message}}
 
 
-app = create_app()
+def _migration_head() -> str | None:
+    """Return the latest Alembic revision without touching the database."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+
+        backend_dir = Path(__file__).resolve().parents[1]
+        config = Config(str(backend_dir / "alembic.ini"))
+        config.set_main_option("script_location", str(backend_dir / "migrations"))
+        return ScriptDirectory.from_config(config).get_current_head()
+    except Exception:  # pragma: no cover - missing config in exotic deployments
+        return None
+
+
+app = BodySizeLimitMiddleware(create_app(), max_bytes=30 * 1024 * 1024)

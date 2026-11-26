@@ -6,15 +6,17 @@ import json
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
+from uuid import UUID
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.core.crypto import hash_password
+from app.core.db import utcnow
 from app.main import app
-from app.models.connectors import MCPTool, ToolExecution
-from app.models.core import Membership, User
+from app.models.connectors import MCPServer, MCPTool, ToolExecution
+from app.models.core import Approval, AuditRecord, Membership, User
 from tests.conftest import break_glass, login
 
 ANALYST_PASSWORD = "An4lyst-MCP-Passw0rd!2026"
@@ -436,3 +438,138 @@ def test_tool_approval_accepts_default_body(auth_client, mcp_server):
     response = auth_client.post(f"/api/v1/mcp/tools/{tool['id']}/approve")
     assert response.status_code == 200, response.text
     assert response.json()["approved"] is True
+
+
+def _execute_read_log(client: TestClient, tool_id: str, host: str = "web01"):
+    return client.post(f"/api/v1/mcp/tools/{tool_id}/execute", json={"arguments": {"host": host}})
+
+
+def test_tool_approval_binds_schema_url_and_version(auth_client, db, mcp_server):
+    server = _create_server(auth_client, mcp_server.url)
+    tools = _discover(auth_client, server["id"])["tools"]
+    tool = _tool_by_name(tools, "read_log")
+    _approve_server(auth_client, server["id"])
+    _approve_tool(auth_client, tool["id"])
+
+    # Unchanged definition is allowed.
+    allowed = _execute_read_log(auth_client, tool["id"])
+    assert allowed.status_code == 200, allowed.text
+
+    db.expire_all()
+    tool_row = db.get(MCPTool, UUID(tool["id"]))
+    server_row = db.get(MCPServer, UUID(server["id"]))
+    original_schema = dict(tool_row.input_schema)
+    original_endpoint = server_row.endpoint
+    original_version = tool_row.version
+
+    # Input schema drift is denied and audited.
+    tool_row.input_schema = {
+        **original_schema,
+        "properties": {**original_schema["properties"], "host": {"type": "string"}},
+        "additionalProperties": True,
+    }
+    db.commit()
+    denied = _execute_read_log(auth_client, tool["id"])
+    assert denied.status_code == 403, denied.text
+    body = denied.json()["error"]
+    assert body["code"] == "policy_denied"
+    assert "approval" in body["message"].lower()
+    assert any(detail["field"] == "input_schema" for detail in body["details"])
+
+    db.expire_all()
+    audit_rows = list(
+        db.execute(select(AuditRecord).where(AuditRecord.action == "mcp.tool.execution.denied")).scalars()
+    )
+    assert audit_rows
+    assert audit_rows[-1].outcome == "failure"
+    assert audit_rows[-1].payload["reason"] == "approval_drift"
+    assert "input_schema" in audit_rows[-1].payload["changed"]
+    denied_execution = db.execute(select(ToolExecution).where(ToolExecution.status == "denied")).scalars().first()
+    assert denied_execution is not None
+
+    # Restoring the approved definition revalidates the fingerprint.
+    db.get(MCPTool, UUID(tool["id"])).input_schema = original_schema
+    db.commit()
+    assert _execute_read_log(auth_client, tool["id"]).status_code == 200
+
+    # Endpoint/URL drift is denied even when the server remains enabled.
+    server_row = db.get(MCPServer, UUID(server["id"]))
+    server_row.endpoint = "http://127.0.0.1:9/mcp"
+    db.commit()
+    url_denied = _execute_read_log(auth_client, tool["id"])
+    assert url_denied.status_code == 403, url_denied.text
+    assert any(detail["field"] == "server_endpoint" for detail in url_denied.json()["error"]["details"])
+
+    db.get(MCPServer, UUID(server["id"])).endpoint = original_endpoint
+    db.commit()
+    assert _execute_read_log(auth_client, tool["id"]).status_code == 200
+
+    # Tool version drift invalidates the approval as well.
+    db.get(MCPTool, UUID(tool["id"])).version = "9.9.9"
+    db.commit()
+    version_denied = _execute_read_log(auth_client, tool["id"])
+    assert version_denied.status_code == 403, version_denied.text
+    assert any(detail["field"] == "tool_version" for detail in version_denied.json()["error"]["details"])
+
+    db.get(MCPTool, UUID(tool["id"])).version = original_version
+    db.commit()
+    assert _execute_read_log(auth_client, tool["id"]).status_code == 200
+
+
+def test_mcp_approval_is_organization_scoped(auth_client, db, org_id, mcp_server):
+    server = _create_server(auth_client, mcp_server.url)
+    tools = _discover(auth_client, server["id"])["tools"]
+    tool = _tool_by_name(tools, "read_log")
+    _approve_server(auth_client, server["id"])
+    _approve_tool(auth_client, tool["id"])
+
+    second = auth_client.post("/api/v1/organizations", json={"name": "MCP Drift Other", "slug": "mcp-drift-other"})
+    assert second.status_code == 201, second.text
+    foreign_org_id = second.json()["id"]
+    with break_glass(auth_client, foreign_org_id):
+        foreign_server = _create_server(auth_client, mcp_server.url, name="Foreign drift MCP")
+        foreign_tools = _discover(auth_client, foreign_server["id"])["tools"]
+        foreign_tool = _tool_by_name(foreign_tools, "read_log")
+        _approve_server(auth_client, foreign_server["id"])
+        _approve_tool(auth_client, foreign_tool["id"])
+        assert _execute_read_log(auth_client, foreign_tool["id"]).status_code == 200
+
+    # The primary organization cannot address the foreign tool at all.
+    assert _execute_read_log(auth_client, foreign_tool["id"]).status_code == 404
+
+    db.expire_all()
+    foreign_tool_row = db.get(MCPTool, UUID(foreign_tool["id"]))
+    foreign_approval = db.execute(
+        select(Approval).where(
+            Approval.org_id == UUID(foreign_org_id),
+            Approval.resource_id == str(foreign_tool["id"]),
+            Approval.status == "approved",
+        )
+    ).scalar_one()
+    forged_payload = dict(foreign_approval.payload)
+
+    # Supersede the foreign organization's real approvals, then plant an
+    # approval in the attacker's organization carrying a valid fingerprint.
+    for record in db.execute(
+        select(Approval).where(Approval.org_id == UUID(foreign_org_id), Approval.resource_id == str(foreign_tool["id"]))
+    ).scalars():
+        record.status = "revoked"
+    db.add(
+        Approval(
+            org_id=UUID(org_id),
+            request_type="mcp_tool_approval",
+            resource_type="mcp_tool",
+            resource_id=str(foreign_tool["id"]),
+            payload=forged_payload,
+            status="approved",
+            requested_by="cross-org-attacker",
+            decided_at=utcnow(),
+        )
+    )
+    db.commit()
+    assert foreign_tool_row.approved is True
+
+    with break_glass(auth_client, foreign_org_id):
+        denied = _execute_read_log(auth_client, foreign_tool["id"])
+    assert denied.status_code == 403, denied.text
+    assert "no active approval binding" in denied.json()["error"]["message"].lower()

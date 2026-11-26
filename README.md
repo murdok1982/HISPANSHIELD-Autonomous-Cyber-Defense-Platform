@@ -38,7 +38,7 @@
 | ![Cumplimiento normativo](docs/assets/ui-compliance.png)<br><sub>Cumplimiento normativo · catálogo de marcos y autoevaluación técnica</sub> | |
 
 > **Estado honesto:** release candidata `0.1.0` (RC1). El producto es funcional y
-> se entrega con **515 tests backend**, **92 tests del gateway**, **36 tests
+> se entrega con **609 tests backend**, **92 tests del gateway**, **36 tests
 > frontend**, E2E de las 24 pantallas, `mypy` limpio, `pip-audit` sin
 > vulnerabilidades conocidas y manifiestos de despliegue. **No está certificado**
 > para ningún marco regulatorio y no debe operarse en infraestructura crítica
@@ -284,11 +284,15 @@ verificación y rollback cuando es técnicamente viable.
 ### Formatos de ingesta
 
 ```bash
-# Webhook con token de fuente (mostrado una sola vez)
-curl -X POST https://shield.example.eu/api/v1/ingest/$SOURCE_TOKEN \
+# Webhook con token de fuente en cabecera (evita el token en logs de proxy)
+curl -X POST https://shield.example.eu/api/v1/ingest \
+  -H "Authorization: Bearer $SOURCE_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"host":"dc01","user":"j.perez","src_ip":"203.0.113.77","message":"Failed password","severity":"high"}'
 ```
+
+La ruta antigua `/api/v1/ingest/{token}` sigue disponible marcada como obsoleta;
+los logs de la aplicación redactan el segmento del token.
 
 Syslog RFC5424/3164, CEF, LEEF, JSON y OpenTelemetry. El evento original se
 conserva junto al normalizado OCSF.
@@ -299,14 +303,15 @@ conserva junto al normalizado OCSF.
 
 | Control | Implementación |
 | :--- | :--- |
-| Identidad | Argon2id, MFA TOTP, sesiones opacas `HttpOnly` + SameSite, CSRF double-submit, rotación/revocación |
-| Autorización | 10 roles RBAC, comprobaciones ABAC, aislamiento multi-tenant verificado (`404` cross-tenant) |
-| Secretos | Cifrado Fernet en reposo; nunca se devuelven al cliente; rotación |
-| Red | SSRF con resolución DNS; metadata cloud siempre bloqueada; TLS verificado; sin redirecciones |
-| HTTP | CSP, HSTS (producción), frame denial, nosniff, referrer/permissions policy, CORS explícito |
-| Resiliencia | Rate limiting en PostgreSQL, lockout, límites de cuerpo, request IDs, manejo de errores sin stack traces |
-| Auditoría | Cadena de hashes por organización + trigger append-only (UPDATE/DELETE/TRUNCATE) |
-| Autonomía | Catálogo cerrado A0–A4, kill switches global/org/conector/autonomía, aprobación humana, fail-closed |
+| Identidad | Argon2id, MFA TOTP con códigos de recuperación de un solo uso (hash Argon2id), sesiones opacas `HttpOnly` + SameSite, listado/revocación de sesiones, CSRF double-submit, rotación/revocación |
+| Autorización | 10 roles RBAC, comprobaciones ABAC, aislamiento multi-tenant verificado (`404` cross-tenant); break-glass con doble aprobador cuando existe un segundo `platform_admin` |
+| Secretos | Cifrado Fernet en reposo; nunca se devuelven al cliente; rotación; tokens de ingesta fuera de la URL por defecto |
+| Red | SSRF con DNS pinning en la conexión (no solo pre-validación); metadata cloud siempre bloqueada; TLS verificado; sin redirecciones; allowlist de CIDR para inferencia local |
+| HTTP | CSP, HSTS (producción), frame denial, nosniff, referrer/permissions policy, CORS explícito; límite de cuerpo real también para `chunked` |
+| Resiliencia | Rate limiting en PostgreSQL, lockout distribuido (un solo origen no bloquea la cuenta), límites de cuerpo, request IDs, manejo de errores sin stack traces |
+| Auditoría | Cadena de hashes por organización + trigger append-only; el hash cubre también IP, user-agent y `request_id` |
+| Autonomía | Catálogo cerrado A0–A4, kill switches global/org/conector/autonomía, aprobación humana ligada a parámetros, presupuestos/cooldown/freeze/blast radius, fail-closed |
+| Operación | Worker durable desplegado en Compose/K8s para playbooks y sincronización de conectores; `/readyz` verifica migraciones y cola |
 | OT/IoT | Monitorización pasiva por defecto; clases de acción peligrosas **prohibidas en código** |
 | Supply chain | Dependencias pinneadas, `pip-audit` limpio, bandit, SBOM, CI con escaneo de imagen |
 
@@ -335,7 +340,7 @@ regulatorios reproducibles.
 ## Estructura del repositorio
 
 ```text
-backend/        FastAPI · dominios · servicios · migraciones · 515 tests
+backend/        FastAPI · dominios · servicios · migraciones · 609 tests
 frontend/       React 19 + TS + Vite · design system propio · 23 vistas
 edge/           Gateway offline-first con cola SQLite durable y HMAC/mTLS
 specs/          Constitución · producto · arquitectura · 15 dominios · ADR

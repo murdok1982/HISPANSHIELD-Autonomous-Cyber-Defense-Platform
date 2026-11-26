@@ -1,0 +1,264 @@
+code: NIST-CSF-2.0
+name: "NIST Cybersecurity Framework 2.0"
+version: "2.0"
+jurisdiction: US/International
+authority: "NIST"
+effective_date: 2024-02-26
+source_url: https://www.nist.gov/cyberframework
+status: published
+description: >-
+  Voluntary framework organizing cybersecurity outcomes into Govern, Identify,
+  Protect, Detect, Respond and Recover functions. Function and category
+  summaries are paraphrased for internal assessment.
+controls:
+  - control_id: CSF-GV.OC
+    title: Organizational context
+    description: >-
+      The organizational mission, stakeholders and dependencies are understood
+      and inform cybersecurity risk management.
+    category: govern
+    weight: 2
+    references:
+      - "GV.OC"
+    evidence_requirements:
+      - key: context_document
+        title: Organizational context statement
+        description: Documented mission, critical services and dependencies.
+    technical_checks:
+      - key: inventory
+        title: Asset inventory coverage
+        type: asset_inventory_coverage
+        params:
+          min_ratio: 0.8
+        description: Critical assets are inventoried with ownership metadata.
+
+  - control_id: CSF-GV.RM
+    title: Risk management strategy
+    description: >-
+      Risk management objectives, appetite and tolerance are established and
+      used to prioritize cybersecurity activities.
+    category: govern
+    weight: 3
+    references:
+      - "GV.RM"
+    evidence_requirements:
+      - key: risk_strategy
+        title: Risk management strategy
+        description: Approved strategy with risk appetite and tolerance statements.
+    technical_checks:
+      - key: sla
+        title: Remediation performance
+        type: vulnerability_sla
+        params:
+          max_overdue_ratio: 0.05
+        description: Remediation dates are largely respected.
+
+  - control_id: CSF-GV.SC
+    title: Supply chain risk management
+    description: >-
+      Supply chain risks are identified, prioritized and managed with
+      suppliers and third-party providers.
+    category: govern
+    weight: 3
+    references:
+      - "GV.SC"
+    evidence_requirements:
+      - key: scr_plan
+        title: Supply chain risk plan
+        description: Supplier risk criteria and monitoring approach.
+    technical_checks:
+      - key: suppliers
+        title: Supplier register
+        type: supplier_register
+        params: {}
+        description: Suppliers are recorded in a maintained register.
+
+  - control_id: CSF-ID.AM
+    title: Asset management
+    description: >-
+      Assets are inventoried, prioritized and their lifecycle is managed to
+      support risk decisions.
+    category: identify
+    weight: 3
+    references:
+      - "ID.AM"
+    evidence_requirements:
+      - key: asset_register
+        title: Asset register
+        description: Inventory with criticality, owner and location.
+    technical_checks:
+      - key: coverage
+        title: Inventory coverage
+        type: asset_inventory_coverage
+        params:
+          min_ratio: 0.9
+        description: Asset records carry owner or classification metadata.
+
+  - control_id: CSF-ID.RA
+    title: Risk assessment
+    description: >-
+      Cybersecurity risks are assessed, prioritized and recorded, with
+      vulnerability information incorporated.
+    category: identify
+    weight: 3
+    references:
+      - "ID.RA"
+    evidence_requirements:
+      - key: risk_register
+        title: Risk register
+        description: Current risks with likelihood, impact and treatment.
+    technical_checks:
+      - key: patch
+        title: Vulnerability and patch coverage
+        type: patch_management
+        params:
+          max_days_since_scan: 30
+          min_ratio: 0.8
+        description: Assets have recent scan or patch evidence.
+
+  - control_id: CSF-PR.AA
+    title: Identity management, authentication and access control
+    description: >-
+      Access to assets and data is limited to authorized users, processes and
+      devices.
+    category: protect
+    weight: 3
+    references:
+      - "PR.AA"
+    evidence_requirements:
+      - key: access_policy
+        title: Access control policy
+        description: Policy covering identity lifecycle, MFA and least privilege.
+    technical_checks:
+      - key: mfa
+        title: MFA enforced
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: All active users use MFA.
+      - key: least_privilege
+        title: Least privilege
+        type: rbac_least_privilege
+        params:
+          max_admins: 2
+        description: Administrative roles are bounded.
+      - key: timeout
+        title: Session timeout
+        type: session_timeout
+        params:
+          max_minutes: 30
+        description: Idle sessions expire within policy.
+
+  - control_id: CSF-PR.AT
+    title: Awareness and training
+    description: >-
+      Personnel are trained to recognize and respond to cybersecurity risks
+      relevant to their roles.
+    category: protect
+    weight: 2
+    references:
+      - "PR.AT"
+    evidence_requirements:
+      - key: training_records
+        title: Training completion records
+        description: Completion evidence for role-relevant training.
+    technical_checks:
+      - key: review
+        title: Security review recorded
+        type: access_review
+        params:
+          max_days: 365
+        description: A recent security review confirms training and access remain current.
+
+  - control_id: CSF-PR.DS
+    title: Data security
+    description: >-
+      Data is protected at rest and in transit, and retention and disposal are
+      managed.
+    category: protect
+    weight: 3
+    references:
+      - "PR.DS"
+    evidence_requirements:
+      - key: data_protection_design
+        title: Data protection design
+        description: Classification, encryption and retention decisions per data set.
+    technical_checks:
+      - key: encryption
+        title: Encryption at rest
+        type: encryption_at_rest
+        params: {}
+        description: Encryption at rest is declared.
+      - key: retention
+        title: Retention configured
+        type: retention_policy_days
+        params:
+          min_days: 365
+        description: Retention is defined for security records.
+
+  - control_id: CSF-DE.CM
+    title: Continuous monitoring
+    description: >-
+      Networks, systems and assets are monitored to identify anomalies and
+      security events.
+    category: detect
+    weight: 3
+    references:
+      - "DE.CM"
+    evidence_requirements:
+      - key: monitoring_architecture
+        title: Monitoring architecture
+        description: Diagram and description of detection sources and coverage.
+    technical_checks:
+      - key: logging
+        title: Logging enabled
+        type: logging_enabled
+        params:
+          min_sources: 1
+        description: At least one ingest source is enabled.
+      - key: audit
+        title: Audit integrity
+        type: audit_chain_valid
+        params: {}
+        description: The audit chain verifies.
+
+  - control_id: CSF-RS.MA
+    title: Incident management
+    description: >-
+      Incidents are managed through a defined process covering analysis,
+      response, reporting and recovery.
+    category: respond
+    weight: 3
+    references:
+      - "RS.MA"
+      - "RS.AN"
+    evidence_requirements:
+      - key: incident_plan
+        title: Incident management plan
+        description: Plan with roles, escalation and reporting obligations.
+    technical_checks:
+      - key: incident
+        title: Incident process
+        type: incident_process_exists
+        params: {}
+        description: An incident policy or playbook is available.
+
+  - control_id: CSF-RC.RP
+    title: Incident recovery and continuity
+    description: >-
+      Recovery plans are executed to restore assets and services and to
+      communicate status during and after an incident.
+    category: recover
+    weight: 3
+    references:
+      - "RC.RP"
+    evidence_requirements:
+      - key: recovery_plan
+        title: Recovery plan
+        description: Recovery priorities, RTO/RPO and restoration steps.
+    technical_checks:
+      - key: backups
+        title: Backups configured
+        type: backup_configured
+        params: {}
+        description: Backups are declared operational.

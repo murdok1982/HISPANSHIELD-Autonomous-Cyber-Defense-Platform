@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
+from app.core.db import utcnow
 from app.core.schemas import ORMModel, StrictModel
 
 FINDING_SEVERITIES = ("critical", "high", "medium", "low", "info")
@@ -91,6 +92,7 @@ class DiscoveryJobOut(ORMModel):
     name: str
     mode: str
     scope_cidrs: list[str]
+    authorization_id: UUID | None = None
     status: str
     authorized_by: str | None
     authorization_reference: str | None
@@ -101,6 +103,64 @@ class DiscoveryJobOut(ORMModel):
     created_by: str | None
     created_at: datetime
     updated_at: datetime
+
+
+AUTHORIZATION_STATUSES = ("pending", "approved", "expired", "revoked")
+
+
+class DiscoveryAuthorizationCreate(StrictModel):
+    name: str = Field(min_length=2, max_length=160)
+    cidrs: list[str] = Field(min_length=1, max_length=MAX_SCOPE_CIDRS)
+    ports: list[int] = Field(min_length=1, max_length=32)
+    max_hosts: int = Field(default=256, ge=1, le=256)
+    expires_at: datetime
+
+    @field_validator("cidrs")
+    @classmethod
+    def _cidrs(cls, value: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for raw in value:
+            token = raw.strip()
+            if not token or len(token) > 64:
+                raise ValueError("cidrs entries must be 1-64 characters")
+            if token not in cleaned:
+                cleaned.append(token)
+        return cleaned
+
+    @field_validator("ports")
+    @classmethod
+    def _ports(cls, value: list[int]) -> list[int]:
+        for port in value:
+            if port < 1 or port > 65535:
+                raise ValueError("Ports must be within 1-65535")
+        return sorted(set(value))
+
+    @field_validator("expires_at")
+    @classmethod
+    def _expiry(cls, value: datetime) -> datetime:
+        aware = value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+        if aware <= utcnow():
+            raise ValueError("expires_at must be in the future")
+        if aware - utcnow() > timedelta(days=90):
+            raise ValueError("expires_at cannot be more than 90 days in the future")
+        return aware
+
+
+class DiscoveryAuthorizationOut(StrictModel):
+    id: UUID
+    org_id: UUID
+    name: str
+    cidrs: list[str]
+    ports: list[int]
+    max_hosts: int
+    status: str
+    approved_by: UUID | None = None
+    approved_at: datetime | None = None
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    revoked_by: UUID | None = None
+    created_by: UUID | None = None
+    created_at: datetime
 
 
 class _ScopeMixin(StrictModel):
@@ -122,6 +182,7 @@ class _ScopeMixin(StrictModel):
 class DiscoveryJobCreate(_ScopeMixin):
     name: str = Field(min_length=1, max_length=200)
     mode: str = Field(default="passive", pattern="^(passive|active)$")
+    authorization_id: UUID
     authorized_by: str | None = Field(default=None, max_length=120)
     authorization_reference: str | None = Field(default=None, max_length=200)
 
@@ -138,6 +199,7 @@ class DiscoveryJobPatch(_ScopeMixin):
     # PATCH semantics make the inherited scope optional; pydantic re-declares the
     # field at runtime while mypy treats the narrowed override as a type error.
     scope_cidrs: list[str] | None = Field(default=None, max_length=MAX_SCOPE_CIDRS)  # type: ignore[assignment]
+    authorization_id: UUID | None = None
     authorized_by: str | None = Field(default=None, max_length=120)
     authorization_reference: str | None = Field(default=None, max_length=200)
 
@@ -160,9 +222,12 @@ class DiscoveryRunResult(StrictModel):
 
 
 __all__ = [
+    "AUTHORIZATION_STATUSES",
     "AnalyzeResult",
     "DISCOVERY_MODES",
     "DISCOVERY_STATUSES",
+    "DiscoveryAuthorizationCreate",
+    "DiscoveryAuthorizationOut",
     "DiscoveryJobCreate",
     "DiscoveryJobOut",
     "DiscoveryJobPatch",

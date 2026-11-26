@@ -1,13 +1,13 @@
-"""HTTP client for connectors: SSRF validation, bounded retries, no redirects."""
+"""HTTP client for connectors: pinned SSRF validation, bounded retries, no redirects."""
 
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlencode
 
-import httpx
-
+from app.core import outbound
 from app.core.config import settings
-from app.core.ssrf import SSRFError, validate_outbound_url
+from app.core.ssrf import SSRFError
 from app.services.connectors.base import AdapterResult, ConnectorError
 
 DEFAULT_TIMEOUT = 20.0
@@ -21,34 +21,48 @@ def request_json(
     headers: dict[str, str] | None = None,
     params: dict[str, Any] | None = None,
     json_body: dict[str, Any] | list[Any] | None = None,
-    data: dict[str, Any] | None = None,
+    data: dict[str, Any] | bytes | None = None,
     verify_tls: bool = True,
     timeout: float = DEFAULT_TIMEOUT,
     attempts: int = 1,
     expect_json: bool = True,
+    allow_private: bool | None = None,
 ) -> AdapterResult:
-    """Execute an outbound connector request with SSRF validation.
+    """Execute an outbound connector request with pinned-DNS SSRF validation.
 
     Retries are only attempted for idempotent methods (GET/HEAD/OPTIONS) because
-    repeating a write can duplicate a defensive action.
+    repeating a write can duplicate a defensive action. TLS verification cannot
+    be disabled: the pinned backend always uses a verifying default context.
     """
-    try:
-        validate_outbound_url(url)
-    except SSRFError as exc:
-        raise ConnectorError(f"Blocked outbound destination: {exc}") from exc
+    if not verify_tls:
+        raise ConnectorError("TLS verification cannot be disabled for connector egress")
 
+    permit_private = settings.connector_allow_private_networks if allow_private is None else allow_private
     retryable = method.upper() in {"GET", "HEAD", "OPTIONS"}
     max_attempts = attempts if retryable else 1
     last_error: str | None = None
+    content = None
+    request_headers = dict(headers or {})
+    if isinstance(data, bytes):
+        content = data
+    elif data is not None:
+        content = urlencode(data, doseq=True).encode("utf-8")
+        request_headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
+
     for attempt in range(1, max_attempts + 1):
         try:
-            with httpx.Client(
+            response = outbound.request(
+                method,
+                url,
+                headers=request_headers,
+                params=params,
+                json_body=json_body,
+                content=content,
                 timeout=timeout,
-                verify=verify_tls,
-                follow_redirects=False,
-                headers={"User-Agent": "HISPANSHIELD-Connector/1.0", **(headers or {})},
-            ) as client:
-                response = client.request(method, url, params=params, json=json_body, data=data)
+                allow_private=permit_private,
+                max_response_bytes=200_000,
+                user_agent="HISPANSHIELD-Connector/1.0",
+            )
             if response.status_code >= 400:
                 last_error = f"HTTP {response.status_code}: {response.text[:500]}"
                 if response.status_code in {429, 500, 502, 503, 504} and attempt < max_attempts:
@@ -69,11 +83,20 @@ def request_json(
                 data=payload if isinstance(payload, dict) else {"items": payload},
                 status_code=response.status_code,
             )
-        except (httpx.TimeoutException, httpx.TransportError) as exc:
+        except outbound.OutboundTimeout as exc:
             last_error = f"Transport error: {exc}"
             if attempt < max_attempts:
                 continue
             raise ConnectorError(last_error, retryable=True) from exc
+        except outbound.OutboundTransportError as exc:
+            last_error = f"Transport error: {exc}"
+            if attempt < max_attempts:
+                continue
+            raise ConnectorError(last_error, retryable=True) from exc
+        except outbound.OutboundResponseTooLarge as exc:
+            raise ConnectorError("Target response exceeded the 200 KB connector limit") from exc
+        except SSRFError as exc:
+            raise ConnectorError(f"Blocked outbound destination: {exc}") from exc
     raise ConnectorError(last_error or "Connector request failed", retryable=True)
 
 

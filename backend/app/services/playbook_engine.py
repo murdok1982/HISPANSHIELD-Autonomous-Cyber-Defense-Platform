@@ -17,13 +17,14 @@ Failure semantics:
 from __future__ import annotations
 
 import json
+import os
 import random
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.orm import Session
 
 from app.core.audit import append_audit
@@ -49,7 +50,7 @@ from app.modules.incidents.service import (
 )
 from app.modules.soar.validation import evaluate_condition, render_params, validate_context
 from app.services.actions import get_action, level_index
-from app.services.broker import BrokerActor, execute_action
+from app.services.broker import BrokerActor, canonical_parameters_hash, execute_action
 from app.services.connectors.base import (
     READ,
     AdapterResult,
@@ -57,11 +58,31 @@ from app.services.connectors.base import (
     record_connector_run,
 )
 from app.services.connectors.runtime import circuit_breaker, instantiate_adapter, select_connector
-from app.services.policy_engine import evaluate
+from app.services.policy_engine import active_policy_snapshot, evaluate
 
 FINAL_STATUSES = {"succeeded", "completed_with_errors", "failed", "compensated", "denied", "simulated", "cancelled"}
 _WRITE_ACTIONS = {"defence.execute"}
 _DEFAULT_APPROVAL_TTL = 86_400
+
+# A claimed execution owns a lease timestamp in ``started_at``. While a worker
+# is executing it renews that timestamp after every persisted step, so a lease
+# older than this threshold means the worker crashed and the execution may be
+# reclaimed safely. Override with ``HS_PLAYBOOK_STALE_SECONDS`` for very long
+# running connectors; the value is read once at import time.
+DEFAULT_STALE_EXECUTION_SECONDS = 300
+STALE_EXECUTION_SECONDS = max(
+    30, int(os.environ.get("HS_PLAYBOOK_STALE_SECONDS", str(DEFAULT_STALE_EXECUTION_SECONDS)))
+)
+
+
+def _stale_cutoff() -> datetime:
+    """Return the oldest lease timestamp that is still considered active."""
+    return utcnow() - timedelta(seconds=STALE_EXECUTION_SECONDS)
+
+
+def _renew_lease(execution: PlaybookExecution) -> None:
+    """Refresh the worker lease timestamp; persisted with the next commit."""
+    execution.started_at = utcnow()
 
 
 def _bounded(value: Any, limit: int = 50_000) -> dict[str, Any]:
@@ -606,22 +627,31 @@ def _dispatch(
     if action == "internal.notify":
         return _notify(db, org, execution, actor, params), False
     if action == "internal.request_approval":
+        requested_parameters = params.get("parameters")
+        approval_payload: dict[str, Any] = {
+            "playbook_id": str(execution.playbook_id),
+            "execution_id": str(execution.id),
+            "step_key": step.step_key,
+            "action_type": params.get("action_type"),
+            "target_type": params.get("target_type"),
+            "target_id": params.get("target_id"),
+            "parameters": requested_parameters if isinstance(requested_parameters, dict) else {},
+            "policy_version": active_policy_snapshot(db, org.id).get("version"),
+            "incident_id": str(execution.incident_id) if execution.incident_id else None,
+            "justification": params.get("justification"),
+        }
+        # Bind parameters only when the request step actually declares them. A
+        # request step may approve the *next* step, whose parameters live in a
+        # different immutable step; in that case action/target/policy bindings
+        # still apply and the published definition cannot change.
+        if isinstance(requested_parameters, dict) and requested_parameters:
+            approval_payload["parameters_hash"] = canonical_parameters_hash(requested_parameters)
         approval = Approval(
             org_id=org.id,
             request_type="playbook_step",
             resource_type="playbook_execution",
             resource_id=str(execution.id),
-            payload={
-                "playbook_id": str(execution.playbook_id),
-                "execution_id": str(execution.id),
-                "step_key": step.step_key,
-                "action_type": params.get("action_type"),
-                "target_type": params.get("target_type"),
-                "target_id": params.get("target_id"),
-                "parameters": params.get("parameters") or {},
-                "incident_id": str(execution.incident_id) if execution.incident_id else None,
-                "justification": params.get("justification"),
-            },
+            payload=approval_payload,
             status="pending",
             requested_by=(actor.email or actor.id or "system")[:64],
             requested_by_user_id=actor.user_id,
@@ -804,11 +834,13 @@ def _run_dry(
             step.status = "skipped"
             step.output = {"reason": "condition_false"}
             step.finished_at = utcnow()
+            _renew_lease(execution)
             db.flush()
             continue
         step.status = "would_execute"
         step.output = _plan_step(db, org, step, env)
         step.finished_at = utcnow()
+        _renew_lease(execution)
         db.flush()
         _audit(
             db,
@@ -843,6 +875,7 @@ def _execute_steps(
     if execution.status == "waiting_approval":
         execution.status = "running"
         db.flush()
+    _renew_lease(execution)
     last_approval_id: UUID | None = None
     for step in steps:
         if step.input.get("action") == "internal.request_approval" and step.status == "succeeded":
@@ -874,6 +907,8 @@ def _execute_steps(
                 db.flush()
             if approval.status == "pending":
                 execution.status = "waiting_approval"
+                _renew_lease(execution)
+                db.flush()
                 db.commit()
                 return execution
             if approval.status == "approved":
@@ -881,6 +916,7 @@ def _execute_steps(
                 step.error = None
                 step.finished_at = utcnow()
                 last_approval_id = approval.id
+                _renew_lease(execution)
                 db.flush()
                 _audit(
                     db,
@@ -915,6 +951,7 @@ def _execute_steps(
             step.status = "skipped"
             step.output = {"reason": "condition_false"}
             step.finished_at = utcnow()
+            _renew_lease(execution)
             db.flush()
             _audit(
                 db,
@@ -937,6 +974,7 @@ def _execute_steps(
 
         step.status = "running"
         step.started_at = step.started_at or utcnow()
+        _renew_lease(execution)
         db.flush()
         db.commit()
 
@@ -963,6 +1001,7 @@ def _execute_steps(
                     step.status = "waiting_approval"
                     step.output = _bounded(output)
                     execution.status = "waiting_approval"
+                    _renew_lease(execution)
                     db.flush()
                     db.commit()
                     return execution
@@ -974,6 +1013,7 @@ def _execute_steps(
                 step.output = output
                 step.error = None
                 step.finished_at = utcnow()
+                _renew_lease(execution)
                 db.flush()
                 _audit(
                     db,
@@ -1010,6 +1050,7 @@ def _execute_steps(
         step.status = "failed"
         step.error = str(failure)[:2000]
         step.finished_at = utcnow()
+        _renew_lease(execution)
         db.flush()
         _audit(
             db,
@@ -1065,32 +1106,44 @@ def _execute_steps(
     )
 
 
-def run_execution(db: Session, execution: PlaybookExecution, actor: BrokerActor) -> PlaybookExecution:
-    """Start or continue a pending/running execution."""
+def run_execution(
+    db: Session,
+    execution: PlaybookExecution,
+    actor: BrokerActor,
+    *,
+    already_claimed: bool = False,
+) -> PlaybookExecution:
+    """Start or continue a pending/running execution.
+
+    The caller normally reached this point from ``create_execution`` (status
+    ``pending``) or from the durable worker (``already_claimed=True``). In the
+    former case ownership is acquired with ``SELECT ... FOR UPDATE SKIP
+    LOCKED`` and the ``running`` transition is committed before any step runs;
+    if another worker/request owns a fresh lease the execution is returned
+    untouched instead of being executed twice.
+    """
     if execution.status in FINAL_STATUSES:
         return execution
     org = db.get(Organization, execution.org_id)
     if org is None:
         raise NotFound("Organization")
+
+    if not already_claimed:
+        claimed = _claim_by_id(
+            db,
+            execution.id,
+            allow_pending=True,
+            allow_stale_running=execution.status == "running",
+            allow_waiting=execution.status == "waiting_approval",
+        )
+        if claimed is None:
+            db.refresh(execution)
+            return execution
+        execution = claimed
+
     if execution.dry_run:
         steps = ordered_steps(db, execution.id)
         return _run_dry(db, org=org, execution=execution, steps=steps, actor=actor)
-    if execution.status == "waiting_approval":
-        return _resume(db, org=org, execution=execution, actor=actor, raise_on_pending=False)
-    if execution.status == "pending":
-        execution.status = "running"
-        execution.started_at = utcnow()
-        db.flush()
-        _audit(
-            db,
-            org_id=org.id,
-            actor=actor,
-            action="playbook.execution.started",
-            resource_type="playbook_execution",
-            resource_id=str(execution.id),
-            payload={"playbook_id": str(execution.playbook_id), "trigger": execution.trigger},
-        )
-        db.commit()
     return _execute_steps(db, org=org, execution=execution, actor=actor)
 
 
@@ -1139,7 +1192,25 @@ def resume_execution(db: Session, execution: PlaybookExecution, actor: BrokerAct
     org = db.get(Organization, execution.org_id)
     if org is None:
         raise NotFound("Organization")
-    return _resume(db, org=org, execution=execution, actor=actor, raise_on_pending=True)
+
+    approval = db.get(Approval, execution.approval_id) if execution.approval_id else None
+    if approval is not None and approval.status == "pending" and approval.expires_at and approval.expires_at < utcnow():
+        approval.status = "expired"
+        db.flush()
+    if approval is not None and approval.status == "pending":
+        db.commit()
+        raise Conflict("The approval request is still pending")
+
+    claimed = _claim_by_id(
+        db,
+        execution.id,
+        allow_pending=False,
+        allow_stale_running=False,
+        allow_waiting=True,
+    )
+    if claimed is None:
+        raise Conflict("The execution is already being resumed by another worker")
+    return _resume(db, org=org, execution=claimed, actor=actor, raise_on_pending=False)
 
 
 def simulate_playbook(
@@ -1229,52 +1300,150 @@ def simulate_playbook(
     }
 
 
-def _claim(db: Session, limit: int) -> list[PlaybookExecution]:
-    claimed: list[PlaybookExecution] = []
-    stale_before = utcnow() - timedelta(minutes=5)
-    runnable = list(
+def _apply_claim(db: Session, execution: PlaybookExecution) -> None:
+    """Transition a locked row into the running state within the current tx.
+
+    ``started_at`` doubles as the worker lease timestamp. A reclaimed running
+    execution releases step rows left mid-flight so the new owner can retry
+    them; every action is idempotent or guarded at the broker/connector layer.
+    """
+    previous = execution.status
+    execution.status = "running"
+    execution.started_at = utcnow()
+    execution.finished_at = None
+    execution.error = None
+    if previous == "running":
         db.execute(
-            select(PlaybookExecution)
-            .where(
-                (PlaybookExecution.status == "pending")
-                | ((PlaybookExecution.status == "running") & (PlaybookExecution.started_at < stale_before))
-            )
-            .order_by(PlaybookExecution.started_at.asc())
-            .limit(limit)
-            .with_for_update(skip_locked=True)
-        ).scalars()
+            update(PlaybookStep)
+            .where(PlaybookStep.execution_id == execution.id, PlaybookStep.status == "running")
+            .values(status="pending", error="Previous worker lease expired; retrying")
+        )
+        action = "playbook.execution.reclaimed"
+    elif previous == "waiting_approval":
+        action = "playbook.execution.claimed"
+    else:
+        action = "playbook.execution.started"
+    _audit(
+        db,
+        org_id=execution.org_id,
+        actor=BrokerActor(id="system:playbook-worker", email=None),
+        action=action,
+        resource_type="playbook_execution",
+        resource_id=str(execution.id),
+        payload={"previous_status": previous, "lease_seconds": STALE_EXECUTION_SECONDS},
     )
-    claimed.extend(runnable)
-    remaining = limit - len(claimed)
-    if remaining > 0:
-        waiting = list(
+
+
+def _claim(db: Session, limit: int) -> list[PlaybookExecution]:
+    """Claim up to ``limit`` runnable executions atomically.
+
+    Rows are selected with ``FOR UPDATE SKIP LOCKED`` and transitioned to
+    ``running`` (with ``started_at`` renewed) inside the *same* transaction,
+    which is committed before returning. A second worker therefore sees either
+    an active lease or skips the row; it can never claim the same execution.
+    """
+    limit = max(1, min(limit, 100))
+    claimed: list[PlaybookExecution] = []
+    try:
+        runnable = list(
             db.execute(
                 select(PlaybookExecution)
-                .join(Approval, Approval.id == PlaybookExecution.approval_id)
                 .where(
-                    PlaybookExecution.status == "waiting_approval",
-                    Approval.status.in_(["approved", "rejected", "expired"]),
+                    or_(
+                        PlaybookExecution.status == "pending",
+                        and_(
+                            PlaybookExecution.status == "running",
+                            PlaybookExecution.started_at < _stale_cutoff(),
+                        ),
+                    )
                 )
-                .order_by(PlaybookExecution.started_at.asc())
-                .limit(remaining)
+                .order_by(PlaybookExecution.started_at.asc(), PlaybookExecution.id.asc())
+                .limit(limit)
                 .with_for_update(skip_locked=True)
+                .execution_options(populate_existing=True)
             ).scalars()
         )
-        claimed.extend(waiting)
+        for execution in runnable:
+            _apply_claim(db, execution)
+            claimed.append(execution)
+        remaining = limit - len(claimed)
+        if remaining > 0:
+            waiting = list(
+                db.execute(
+                    select(PlaybookExecution)
+                    .join(Approval, Approval.id == PlaybookExecution.approval_id)
+                    .where(
+                        PlaybookExecution.status == "waiting_approval",
+                        Approval.status.in_(["approved", "rejected", "expired"]),
+                    )
+                    .order_by(PlaybookExecution.started_at.asc(), PlaybookExecution.id.asc())
+                    .limit(remaining)
+                    .with_for_update(skip_locked=True, of=PlaybookExecution)
+                    .execution_options(populate_existing=True)
+                ).scalars()
+            )
+            for execution in waiting:
+                _apply_claim(db, execution)
+                claimed.append(execution)
+        # Critical boundary: ownership is durable before any step executes.
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     return claimed
 
 
+def _claim_by_id(
+    db: Session,
+    execution_id: UUID,
+    *,
+    allow_pending: bool,
+    allow_stale_running: bool,
+    allow_waiting: bool,
+) -> PlaybookExecution | None:
+    """Atomically claim one execution by id, or return None if not owned."""
+    clauses: list[Any] = []
+    if allow_pending:
+        clauses.append(PlaybookExecution.status == "pending")
+    if allow_stale_running:
+        clauses.append(
+            and_(
+                PlaybookExecution.status == "running",
+                PlaybookExecution.started_at < _stale_cutoff(),
+            )
+        )
+    if allow_waiting:
+        clauses.append(PlaybookExecution.status == "waiting_approval")
+    if not clauses:
+        return None
+    row = db.execute(
+        select(PlaybookExecution)
+        .where(PlaybookExecution.id == execution_id, or_(*clauses))
+        .with_for_update(skip_locked=True)
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if row is None:
+        return None
+    try:
+        _apply_claim(db, row)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return row
+
+
 def worker_run_once(db: Session, limit: int = 10) -> dict[str, Any]:
-    """Claim and advance durable executions. Safe to run repeatedly."""
+    """Claim and advance durable executions. Safe to run repeatedly/concurrently."""
     actor = BrokerActor(id="system:playbook-worker", email=None)
     executions = _claim(db, max(1, min(limit, 100)))
-    db.commit()
+    claimed_ids = [str(execution.id) for execution in executions]
     processed = 0
     failed = 0
     for execution in executions:
         processed += 1
         try:
-            advance_execution(db, execution, actor)
+            advance_execution(db, execution, actor, already_claimed=True)
         except Exception as exc:  # noqa: BLE001 - worker must survive a poisoned execution
             db.rollback()
             failed += 1
@@ -1293,12 +1462,24 @@ def worker_run_once(db: Session, limit: int = 10) -> dict[str, Any]:
                     outcome="failure",
                     payload={"error": str(exc)[:500]},
                 )
-                db.commit()
-    return {"claimed": len(executions), "processed": processed, "failed": failed}
+            # Persist the recoverable failure (or just close a clean tx).
+            db.commit()
+    return {
+        "claimed": len(executions),
+        "processed": processed,
+        "failed": failed,
+        "claimed_ids": claimed_ids,
+    }
 
 
-def advance_execution(db: Session, execution: PlaybookExecution, actor: BrokerActor) -> PlaybookExecution:
-    return run_execution(db, execution, actor)
+def advance_execution(
+    db: Session,
+    execution: PlaybookExecution,
+    actor: BrokerActor,
+    *,
+    already_claimed: bool = False,
+) -> PlaybookExecution:
+    return run_execution(db, execution, actor, already_claimed=already_claimed)
 
 
 __all__ = [

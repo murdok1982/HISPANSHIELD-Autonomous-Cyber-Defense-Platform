@@ -41,7 +41,7 @@ from app.modules.defence.service import (
     rollback_action_for,
 )
 from app.services.actions import ACTIONS, get_action, level_index
-from app.services.broker import BrokerActor, execute_action, rollback_action
+from app.services.broker import BrokerActor, canonical_parameters_hash, execute_action, rollback_action
 from app.services.connectors.base import AdapterResult, ConnectorError
 from app.services.connectors.runtime import instantiate_adapter, select_connector
 from app.services.policy_engine import active_policy_snapshot, evaluate
@@ -312,6 +312,8 @@ def execute_defensive_action(
                     "target_type": payload.target_type,
                     "target_id": payload.target_id,
                     "parameters": payload.parameters,
+                    "parameters_hash": canonical_parameters_hash(payload.parameters),
+                    "policy_version": active_policy_snapshot(ctx.db, ctx.org.id).get("version"),
                     "incident_id": str(payload.incident_id) if payload.incident_id else None,
                     "requested_level": payload.requested_level,
                     "connector_id": str(payload.connector_id) if payload.connector_id else None,

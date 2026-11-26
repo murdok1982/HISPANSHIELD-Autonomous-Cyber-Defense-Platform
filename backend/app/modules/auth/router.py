@@ -11,10 +11,10 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import append_audit
 from app.core.config import settings
-from app.core.crypto import constant_time_equals, token_hash
+from app.core.crypto import constant_time_equals, token_hash, verify_password
 from app.core.db import get_db, utcnow
 from app.core.deps import RequestContext, get_context, require_permission
-from app.core.errors import Forbidden, NotFound, ValidationFailure
+from app.core.errors import Forbidden, NotFound, Unauthorized, ValidationFailure
 from app.core.rate_limit import enforce
 from app.core.rbac import ALL_PERMISSIONS, ROLE_PERMISSIONS, effective_permissions
 from app.core.schemas import PasswordPolicyError, validate_password_strength
@@ -32,10 +32,14 @@ from app.modules.auth.schemas import (
     MfaActivateRequest,
     MfaDisableRequest,
     MfaEnrollment,
+    MfaEnrollRequest,
     MfaRequiredResponse,
     MfaVerifyRequest,
     PermissionsCatalogue,
+    RecoveryCodesRequest,
+    RecoveryLoginRequest,
     SessionInfo,
+    SessionSummary,
     SwitchOrgRequest,
 )
 
@@ -129,10 +133,36 @@ def mfa_verify(
 ) -> dict:
     ip = request.client.host if request.client else "unknown"
     enforce(f"mfa:ip:{ip}", settings.login_rate_limit_per_minute, 60)
+    # A challenge is single-attempt-bounded too: a leaked token cannot be used
+    # to brute-force six-digit codes from a rotating IP pool.
+    enforce(f"mfa:challenge:{token_hash(payload.challenge_token)[:32]}", 5, 300)
     user, org, role, raw_token, session = service.complete_mfa_login(
         db,
         challenge_token=payload.challenge_token,
         code=payload.code,
+        ip=ip,
+        user_agent=request.headers.get("user-agent"),
+    )
+    info = service.serialize_session(db, user, org, session, role)
+    db.commit()
+    _set_session_cookies(response, raw_token, session)
+    return info
+
+
+@router.post("/mfa/recovery", response_model=SessionInfo, summary="Complete login with a recovery code")
+def mfa_recovery(
+    payload: RecoveryLoginRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> dict:
+    ip = request.client.host if request.client else "unknown"
+    enforce(f"mfa:recovery:ip:{ip}", settings.login_rate_limit_per_minute, 60)
+    enforce(f"mfa:recovery:{token_hash(payload.challenge_token)[:32]}", 5, 300)
+    user, org, role, raw_token, session = service.complete_recovery_login(
+        db,
+        challenge_token=payload.challenge_token,
+        recovery_code=payload.recovery_code,
         ip=ip,
         user_agent=request.headers.get("user-agent"),
     )
@@ -222,18 +252,11 @@ def switch_org(payload: SwitchOrgRequest, ctx: RequestContext = Depends(get_cont
     if membership is None:
         if not ctx.user.is_platform_admin:
             raise NotFound("Organization")
-        if not payload.reason or len(payload.reason.strip()) < 10:
-            raise Forbidden("break_glass_required: a justification of at least 10 characters is required")
-        if not payload.ticket or len(payload.ticket.strip()) < 3:
-            raise Forbidden("break_glass_required: a change/incident ticket is required")
-        service.create_break_glass(
-            ctx.db,
-            user=ctx.user,
-            org=org,
-            reason=payload.reason,
-            ticket=payload.ticket,
-            request_id=ctx.request_id,
-        )
+        grant = service.active_break_glass(ctx.db, ctx.user.id, org.id)
+        if grant is None:
+            raise Forbidden(
+                "break_glass_required: request an approved break-glass grant before selecting this organization"
+            )
     role = "platform_admin" if ctx.user.is_platform_admin else membership.role  # type: ignore[union-attr]
     ctx.session.org_id = org.id
     ctx.audit(
@@ -274,6 +297,33 @@ def break_glass(payload: BreakGlassRequest, ctx: RequestContext = Depends(get_co
         expires_at=grant.expires_at,
         reason=grant.reason,
         ticket=grant.ticket,
+        status=grant.status,
+        approved_by=grant.approved_by,
+        approved_at=grant.approved_at,
+    )
+
+
+@router.post(
+    "/break-glass/{grant_id}/approve",
+    response_model=BreakGlassResponse,
+    summary="Approve a break-glass grant requested by another platform administrator",
+)
+def approve_break_glass(grant_id: UUID, ctx: RequestContext = Depends(get_context)) -> BreakGlassResponse:
+    assert ctx.user is not None
+    grant = ctx.db.get(BreakGlassGrant, grant_id)
+    if grant is None:
+        raise NotFound("Break-glass grant")
+    service.approve_break_glass(ctx.db, grant, approver=ctx.user)
+    ctx.db.commit()
+    return BreakGlassResponse(
+        grant_id=grant.id,
+        org_id=grant.org_id,
+        expires_at=grant.expires_at,
+        reason=grant.reason,
+        ticket=grant.ticket,
+        status=grant.status,
+        approved_by=grant.approved_by,
+        approved_at=grant.approved_at,
     )
 
 
@@ -314,11 +364,11 @@ def change_password(payload: ChangePasswordRequest, ctx: RequestContext = Depend
 
 
 @router.post("/mfa/enroll", response_model=MfaEnrollment, summary="Start TOTP enrollment")
-def mfa_enroll(ctx: RequestContext = Depends(get_context)) -> MfaEnrollment:
+def mfa_enroll(payload: MfaEnrollRequest, ctx: RequestContext = Depends(get_context)) -> MfaEnrollment:
     assert ctx.user is not None
     if ctx.user.mfa_enabled:
         raise Forbidden("MFA is already enabled; disable it before re-enrolling")
-    secret, uri = service.start_mfa_enrollment(ctx.db, ctx.user)
+    secret, uri = service.start_mfa_enrollment(ctx.db, ctx.user, password=payload.password)
     ctx.audit(action="auth.mfa.enroll", resource_type="user", resource_id=str(ctx.user.id))
     ctx.db.commit()
     return MfaEnrollment(secret=secret, otpauth_uri=uri, issuer="HISPANSHIELD")
@@ -327,7 +377,8 @@ def mfa_enroll(ctx: RequestContext = Depends(get_context)) -> MfaEnrollment:
 @router.post("/mfa/activate", summary="Confirm and activate TOTP")
 def mfa_activate(payload: MfaActivateRequest, ctx: RequestContext = Depends(get_context)) -> dict:
     assert ctx.user is not None
-    service.activate_mfa(ctx.db, ctx.user, payload.code)
+    service.activate_mfa(ctx.db, ctx.user, payload.code, password=payload.password)
+    recovery_codes = service.generate_recovery_codes(ctx.db, ctx.user)
     revoked = service.revoke_user_sessions(
         ctx.db, ctx.user.id, except_session_id=ctx.session.id if ctx.session else None, reason="mfa_activated"
     )
@@ -335,10 +386,36 @@ def mfa_activate(payload: MfaActivateRequest, ctx: RequestContext = Depends(get_
         action="auth.mfa.enable",
         resource_type="user",
         resource_id=str(ctx.user.id),
-        payload={"revoked_other_sessions": revoked},
+        payload={"revoked_other_sessions": revoked, "recovery_codes": len(recovery_codes)},
     )
     ctx.db.commit()
-    return {"message": "MFA enabled", "revoked_other_sessions": revoked}
+    return {
+        "message": "MFA enabled",
+        "revoked_other_sessions": revoked,
+        "recovery_codes": recovery_codes,
+        "recovery_codes_notice": "Store these codes offline. They are shown only once and each can be used once.",
+    }
+
+
+@router.post("/mfa/recovery-codes", summary="Regenerate one-time MFA recovery codes")
+def mfa_regenerate_recovery_codes(payload: RecoveryCodesRequest, ctx: RequestContext = Depends(get_context)) -> dict:
+    assert ctx.user is not None
+    if not ctx.user.mfa_enabled:
+        raise Forbidden("MFA is not enabled for this account")
+    if not verify_password(payload.password, ctx.user.password_hash):
+        raise Unauthorized("Password is incorrect")
+    codes = service.generate_recovery_codes(ctx.db, ctx.user)
+    ctx.audit(
+        action="auth.mfa.recovery_codes.regenerate",
+        resource_type="user",
+        resource_id=str(ctx.user.id),
+        payload={"count": len(codes)},
+    )
+    ctx.db.commit()
+    return {
+        "recovery_codes": codes,
+        "recovery_codes_notice": "Existing codes are now invalid. Store the new set offline.",
+    }
 
 
 @router.post("/mfa/disable", summary="Disable TOTP with password and code confirmation")
@@ -406,6 +483,44 @@ def revoke_token(token_id: UUID, ctx: RequestContext = Depends(require_permissio
     ctx.audit(action="auth.token.revoke", resource_type="api_token", resource_id=str(token.id))
     ctx.db.commit()
     return {"message": "Token revoked"}
+
+
+@router.get("/sessions", response_model=list[SessionSummary], summary="List my active sessions")
+def list_sessions(ctx: RequestContext = Depends(get_context)) -> list[SessionSummary]:
+    assert ctx.user is not None
+    current_id = ctx.session.id if ctx.session else None
+    return [
+        SessionSummary(
+            id=session.id,
+            created_at=session.created_at,
+            last_seen_at=session.last_seen_at,
+            expires_at=session.expires_at,
+            ip_address=session.ip_address,
+            user_agent=session.user_agent,
+            mfa_verified=session.mfa_verified,
+            is_current=session.id == current_id,
+        )
+        for session in service.list_active_sessions(ctx.db, ctx.user.id)
+    ]
+
+
+@router.delete("/sessions/{session_id}", status_code=204, summary="Revoke one of my other sessions")
+def revoke_other_session(session_id: UUID, ctx: RequestContext = Depends(get_context)) -> Response:
+    assert ctx.user is not None
+    if ctx.session is not None and ctx.session.id == session_id:
+        raise Forbidden("Use /auth/logout to revoke the current session")
+    session = ctx.db.get(AuthSession, session_id)
+    if session is None or session.user_id != ctx.user.id or session.revoked_at is not None:
+        raise NotFound("Session")
+    service.revoke_session(ctx.db, session, "revoked_by_user")
+    ctx.audit(
+        action="auth.session.revoke",
+        resource_type="auth_session",
+        resource_id=str(session.id),
+        payload={"reason": "revoked_by_user"},
+    )
+    ctx.db.commit()
+    return Response(status_code=204)
 
 
 @router.get("/permissions", response_model=PermissionsCatalogue, summary="Permission and role catalogue")

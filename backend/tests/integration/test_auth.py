@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.crypto import hash_password
 from app.core.db import utcnow
+from app.core.errors import Unauthorized
 from app.models.core import Membership, Organization, User
 from app.models.core import Session as AuthSession
 from tests.conftest import ADMIN_EMAIL, ADMIN_PASSWORD, login
@@ -95,6 +97,67 @@ def test_tenant_isolation_hides_foreign_organization(seeded, client: TestClient,
     login(client, email="member@hispanshield.eu", password="Member-Str0ng-Pass!1")
     response = client.get("/api/v1/auth/me", headers={"X-Organization-Id": str(other_org.id)})
     assert response.status_code == 404
+
+
+def test_break_glass_requires_a_second_approver_when_one_exists(seeded, auth_client: TestClient, db) -> None:
+    from app.main import app
+
+    other_org = Organization(slug="dual-control-org", name="Dual Control Org", kind="public")
+    db.add(other_org)
+    approver = User(
+        email="second.admin@example.eu",
+        full_name="Second Platform Admin",
+        password_hash=hash_password("S3cond-Admin-Pass!2026"),
+        is_platform_admin=True,
+        status="active",
+    )
+    db.add(approver)
+    db.flush()
+    db.add(Membership(org_id=seeded["org"].id, user_id=approver.id, role="org_admin", status="active"))
+    db.commit()
+
+    requested = auth_client.post(
+        "/api/v1/auth/break-glass",
+        json={
+            "org_id": str(other_org.id),
+            "reason": "Incident response requires access to the public body tenant",
+            "ticket": "INC-2026-0042",
+        },
+    )
+    assert requested.status_code == 200, requested.text
+    grant = requested.json()
+    assert grant["status"] == "pending"
+
+    self_approval = auth_client.post(f"/api/v1/auth/break-glass/{grant['grant_id']}/approve")
+    assert self_approval.status_code == 403
+
+    with TestClient(app) as approver_client:
+        login(approver_client, "second.admin@example.eu", "S3cond-Admin-Pass!2026")
+        approved = approver_client.post(f"/api/v1/auth/break-glass/{grant['grant_id']}/approve")
+        assert approved.status_code == 200, approved.text
+        assert approved.json()["status"] == "approved"
+        assert approved.json()["approved_by"] == str(approver.id)
+
+    access = auth_client.get("/api/v1/auth/me", headers={"X-Organization-Id": str(other_org.id)})
+    assert access.status_code == 200
+    assert access.json()["organization"]["id"] == str(other_org.id)
+
+
+def test_break_glass_is_not_created_implicitly_by_switch_org(seeded, auth_client: TestClient, db) -> None:
+    other_org = Organization(slug="implicit-org", name="Implicit Org", kind="public")
+    db.add(other_org)
+    db.commit()
+
+    switched = auth_client.post(
+        "/api/v1/auth/switch-org",
+        json={
+            "org_id": str(other_org.id),
+            "reason": "Trying to bypass an explicit grant",
+            "ticket": "CHG-2026-9999",
+        },
+    )
+    assert switched.status_code == 403
+    assert switched.json()["error"]["message"].startswith("break_glass_required")
 
 
 def test_platform_admin_can_select_organization(seeded, client: TestClient, db) -> None:
@@ -234,3 +297,59 @@ def test_idle_session_is_rejected(seeded, client: TestClient, db) -> None:
     session.last_seen_at = utcnow() - timedelta(minutes=90)
     db.commit()
     assert client.get("/api/v1/auth/me").status_code == 401
+
+
+def test_single_source_cannot_lock_account_for_its_owner(seeded, client: TestClient, db) -> None:
+    from app.modules.auth.service import authenticate_password
+
+    for _ in range(6):
+        with pytest.raises(Unauthorized):
+            authenticate_password(db, email=ADMIN_EMAIL, password="wrong-password", ip="203.0.113.7")
+        db.rollback()
+
+    user = db.execute(select(User).where(User.email == ADMIN_EMAIL)).scalar_one()
+    assert user.locked_until is None
+    response = client.post("/api/v1/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    assert response.status_code == 200, response.text
+
+
+def test_distributed_failures_still_trigger_a_global_lock(seeded, db) -> None:
+    from app.modules.auth.service import authenticate_password
+
+    for index in range(5):
+        with pytest.raises(Unauthorized):
+            authenticate_password(db, email=ADMIN_EMAIL, password="wrong-password", ip=f"198.51.100.{index}")
+        db.rollback()
+
+    user = db.execute(select(User).where(User.email == ADMIN_EMAIL)).scalar_one()
+    assert user.locked_until is not None
+    with pytest.raises(Unauthorized):
+        authenticate_password(db, email=ADMIN_EMAIL, password=ADMIN_PASSWORD, ip="192.0.2.50")
+    db.rollback()
+
+
+def test_user_can_list_and_revoke_other_sessions(seeded, auth_client: TestClient) -> None:
+    from app.main import app
+
+    with TestClient(app) as second_client:
+        login(second_client)
+
+        listing = auth_client.get("/api/v1/auth/sessions")
+        assert listing.status_code == 200, listing.text
+        sessions = listing.json()
+        assert len(sessions) == 2
+        current = [row for row in sessions if row["is_current"]]
+        other = [row for row in sessions if not row["is_current"]]
+        assert len(current) == 1 and len(other) == 1
+
+        revoked = auth_client.delete(f"/api/v1/auth/sessions/{other[0]['id']}")
+        assert revoked.status_code == 204
+
+        # The revoked browser session must be rejected on its next request.
+        assert second_client.get("/api/v1/auth/me").status_code == 401
+
+        remaining = auth_client.get("/api/v1/auth/sessions").json()
+        assert len(remaining) == 1 and remaining[0]["is_current"] is True
+
+        # A user cannot revoke the session currently in use through this endpoint.
+        assert auth_client.delete(f"/api/v1/auth/sessions/{current[0]['id']}").status_code == 403

@@ -310,7 +310,29 @@ el techo: un administrador debe modificar la política explícitamente.
 - Se activan con un motivo obligatorio, se auditan y se liberan explícitamente.
 - Si el motor de políticas falla, **no se ejecuta nada**.
 
-### 6.4 Reglas de oro
+### 6.4 Break-glass de plataforma
+
+El rol `platform_admin` no puede leer ni operar otra organización por el simple
+hecho de enviar `X-Organization-Id`. Para acceder a una organización donde no
+existe membresía debe solicitar un **grant de break-glass**:
+
+```bash
+curl -X POST https://shield.example.eu/api/v1/auth/break-glass \
+  -H "Authorization: Bearer $HS_API_TOKEN" \
+  -H "X-CSRF-Token: $CSRF" \
+  -H "Content-Type: application/json" \
+  -d '{"org_id":"<uuid>","reason":"Respuesta a incidente crítico","ticket":"INC-2026-0042"}'
+```
+
+- Justificación ≥10 caracteres y ticket de cambio/incidente obligatorios.
+- TTL de 30 minutos (configurable), auditoría `auth.break_glass.grant`, y
+  revocación inmediata en `POST /auth/break-glass/{grant_id}/revoke`.
+- Sin grant, el acceso devuelve `404` para no revelar la existencia de la
+  organización. El selector de organización muestra solo membresías reales.
+- No es un bypass silencioso: cada grant queda registrado con actor, ticket,
+  motivo y expiración.
+
+### 6.5 Reglas de oro
 
 - Nunca eleves el nivel de autonomía para "desbloquear" una demo.
 - Usa simulación antes de ejecutar cualquier playbook en producción.
@@ -811,6 +833,60 @@ recalcula la cadena de auditoría. No continúes si la verificación falla.
 - Uso permitido: defensa autorizada, laboratorio, formación y evaluación. Prohibido
   el uso ofensivo, la explotación, el acceso no autorizado y cualquier operación
   sobre sistemas fuera del ámbito autorizado.
+
+---
+
+## 15. Novedades de seguridad 0.1.1 (endurecimiento)
+
+### 15.1 Ingesta sin token en la URL
+
+```bash
+curl -X POST https://shield.example.eu/api/v1/ingest \
+  -H "Authorization: Bearer $SOURCE_TOKEN" \
+  -H "X-HS-Timestamp: $(date +%s)" \
+  -H "X-HS-Nonce: $(openssl rand -hex 16)" \
+  -H "X-HS-Signature: <HMAC-SHA256(secret, ts + "." + nonce + "." + body)>" \
+  -H "Content-Type: application/json" \
+  -d '{"message":"failed password","src_ip":"203.0.113.10"}'
+```
+
+La ruta `/api/v1/ingest/{token}` sigue existiendo por compatibilidad, está marcada
+como obsoleta y el token se redacta en los logs de la aplicación. Los proxies
+deben configurarse para no registrar URLs completas.
+
+### 15.2 MFA: recovery codes y sesiones
+
+- `POST /auth/mfa/activate` exige contraseña y devuelve **10 códigos de
+  recuperación** mostrados una sola vez (hash Argon2id en BD).
+- `POST /auth/mfa/recovery` permite completar el login con un código de un solo
+  uso; revoca todas las sesiones previas.
+- `POST /auth/mfa/recovery-codes` regenera el conjunto e invalida los anteriores.
+- `GET /auth/sessions` lista sesiones activas; `DELETE /auth/sessions/{id}`
+  revoca otra sesión propia.
+- `POST /auth/mfa/enroll` y `/activate` requieren contraseña (evita que una
+  sesión robada vincule un autenticador ajeno).
+
+### 15.3 Break-glass con doble control
+
+Si existe un segundo `platform_admin`, el grant queda `pending` y debe aprobarlo
+otro administrador:
+
+```bash
+curl -X POST .../auth/break-glass -d '{"org_id":"...","reason":"...","ticket":"INC-..."}'
+curl -X POST .../auth/break-glass/<grant_id>/approve   # otro platform_admin
+```
+
+`switch-org` ya no crea grants implícitos. En despliegues con un único
+administrador el grant se auto-aprueba (riesgo residual documentado); se
+recomienda provisionar al menos dos.
+
+### 15.4 Operación
+
+- Worker durable: `python -m app.workers.runtime --role all` (playbooks +
+  sincronización de conectores); desplegado en Compose/K8s.
+- `/readyz` devuelve estado de BD, migración actual/head y profundidad de cola.
+- Presupuestos de IA por organización (`Organization.settings.ai_budget`) y
+  allowlist `HS_AI_PRIVATE_ALLOWED_CIDRS` para proveedores locales.
 
 ---
 

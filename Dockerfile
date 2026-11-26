@@ -40,4 +40,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
 WORKDIR /app/backend
 # Migrations are idempotent; with multiple replicas use a pre-deploy Job instead
 # and set HS_RUN_MIGRATIONS=false to avoid concurrent DDL.
-CMD ["sh", "-c", "if [ \"${HS_RUN_MIGRATIONS:-true}\" = \"true\" ]; then python -m alembic upgrade head; fi; exec uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers ${HS_WORKERS:-2} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "-c", "if [ \"${HS_RUN_MIGRATIONS:-true}\" = \"true\" ]; then python -m alembic upgrade head; fi; exec uvicorn app.main:app --host 0.0.0.0 --port 8080 --workers ${HS_WORKERS:-2} --proxy-headers --forwarded-allow-ips=${HS_FORWARDED_ALLOW_IPS:-127.0.0.1}"]

@@ -1,0 +1,325 @@
+code: ENS
+name: "Esquema Nacional de Seguridad (ENS)"
+version: "RD 311/2022"
+jurisdiction: ES
+authority: "CCN-CERT / Ministerio para la Transformación Digital y de la Función Pública"
+effective_date: 2022-05-04
+source_url: https://www.boe.es/eli/es/rd/2022/05/03/311
+status: published
+description: >-
+  Spanish national security framework for public-sector information systems.
+  Control summaries are paraphrased from the ENS control dimensions and are
+  intended for technical self-assessment, not certification.
+controls:
+  - control_id: ENS-ORG.1
+    title: Security policy
+    description: >-
+      A documented security policy defines objectives, scope, roles and the
+      commitment of senior management.
+    category: governance
+    weight: 3
+    references:
+      - "org.1"
+      - "Anexo II"
+    evidence_requirements:
+      - key: policy_document
+        title: Approved security policy
+        description: Policy signed by management with scope and review date.
+    technical_checks:
+      - key: admins
+        title: Administrative roles bounded
+        type: rbac_least_privilege
+        params:
+          max_admins: 3
+        description: Administrative access is limited to named, accountable staff.
+
+  - control_id: ENS-ORG.2
+    title: Regulatory compliance
+    description: >-
+      The organization identifies applicable legal, regulatory and contractual
+      security requirements and verifies compliance.
+    category: compliance
+    weight: 3
+    references:
+      - "org.2"
+    evidence_requirements:
+      - key: legal_register
+        title: Legal requirements register
+        description: Register of applicable obligations with responsible owners.
+    technical_checks:
+      - key: retention
+        title: Retention obligations configured
+        type: retention_policy_days
+        params:
+          min_days: 365
+        description: Records retention is defined for the required period.
+
+  - control_id: ENS-ORG.3
+    title: Roles, duties and segregation
+    description: >-
+      Security duties are assigned to defined roles and conflicting duties are
+      segregated.
+    category: governance
+    weight: 2
+    references:
+      - "org.3"
+    evidence_requirements:
+      - key: role_matrix
+        title: Role responsibility matrix
+        description: Matrix assigning security responsibilities to named roles.
+    technical_checks:
+      - key: access_review
+        title: Access review recorded
+        type: access_review
+        params:
+          max_days: 365
+        description: A review confirms role assignments and segregation remain valid.
+
+  - control_id: ENS-OP.ACC
+    title: Access control
+    description: >-
+      Access to systems is authorised, limited to required functions, reviewed
+      periodically and protected by strong authentication.
+    category: access_control
+    weight: 3
+    references:
+      - "op.acc.1"
+      - "op.acc.2"
+      - "op.acc.5"
+    evidence_requirements:
+      - key: authorisation_record
+        title: Access authorisation records
+        description: Requests and approvals for access to systems and data.
+    technical_checks:
+      - key: least_privilege
+        title: Least privilege
+        type: rbac_least_privilege
+        params:
+          max_admins: 2
+        description: Administrative roles stay within the approved limit.
+      - key: mfa
+        title: Multi-factor authentication
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: All active users authenticate with MFA.
+      - key: timeout
+        title: Session timeout
+        type: session_timeout
+        params:
+          max_minutes: 30
+        description: Idle sessions expire within the configured maximum.
+
+  - control_id: ENS-OP.EXP
+    title: Exploitation and operations management
+    description: >-
+      Systems are operated with documented procedures, capacity controls,
+      change management and vulnerability management.
+    category: operations
+    weight: 3
+    references:
+      - "op.exp.1"
+      - "op.exp.2"
+      - "op.exp.5"
+    evidence_requirements:
+      - key: operations_procedures
+        title: Operations procedures
+        description: Documented operating, change and incident procedures.
+    technical_checks:
+      - key: patch
+        title: Patch and scan coverage
+        type: patch_management
+        params:
+          max_days_since_scan: 30
+          min_ratio: 0.8
+        description: Most assets have a recent scan or patch record.
+      - key: sla
+        title: Vulnerability SLA
+        type: vulnerability_sla
+        params:
+          max_overdue_ratio: 0.05
+        description: Open vulnerabilities are largely within their due dates.
+
+  - control_id: ENS-OP.EXT
+    title: External and third-party services
+    description: >-
+      External services and suppliers meet the organization's security
+      requirements and are monitored.
+    category: supply_chain
+    weight: 3
+    references:
+      - "op.ext.1"
+      - "op.ext.2"
+    evidence_requirements:
+      - key: supplier_contract
+        title: Supplier security requirements
+        description: Contractual security requirements for external service providers.
+    technical_checks:
+      - key: suppliers
+        title: Supplier register
+        type: supplier_register
+        params: {}
+        description: External providers are tracked in a maintained register.
+      - key: tls
+        title: TLS verified for integrations
+        type: connector_tls
+        params:
+          require_all: true
+        description: All enabled connectors verify TLS certificates.
+
+  - control_id: ENS-OP.CONT
+    title: Continuity of operations
+    description: >-
+      Continuity plans, backups and recovery tests ensure essential services can
+      be restored within agreed objectives.
+    category: continuity
+    weight: 3
+    references:
+      - "op.cont.1"
+      - "op.cont.2"
+    evidence_requirements:
+      - key: continuity_plan
+        title: Continuity plan
+        description: Approved continuity plan with RTO/RPO and restoration procedures.
+    technical_checks:
+      - key: backups
+        title: Backups configured
+        type: backup_configured
+        params: {}
+        description: Backups are declared operational in settings or continuity policy.
+
+  - control_id: ENS-MP.IF
+    title: Information classification
+    description: >-
+      Information is classified according to its value and handling rules are
+      applied consistently.
+    category: information_classification
+    weight: 2
+    references:
+      - "mp.if.1"
+      - "mp.if.2"
+    evidence_requirements:
+      - key: classification_scheme
+        title: Classification scheme
+        description: Classification levels with handling and labelling rules.
+    technical_checks:
+      - key: inventory
+        title: Asset classification coverage
+        type: asset_inventory_coverage
+        params:
+          min_ratio: 0.8
+        description: Assets carry owner or classification metadata.
+
+  - control_id: ENS-MP.PER
+    title: Personnel security
+    description: >-
+      Personnel are screened, trained and bound by security responsibilities
+      appropriate to their role.
+    category: people
+    weight: 2
+    references:
+      - "mp.per.1"
+      - "mp.per.4"
+    evidence_requirements:
+      - key: training_plan
+        title: Security training plan
+        description: Annual training plan with completion tracking.
+    technical_checks:
+      - key: mfa_adoption
+        title: Strong authentication adoption
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: All active users have MFA enabled.
+
+  - control_id: ENS-MP.SI
+    title: System hardening and inventory
+    description: >-
+      Systems are inventoried, hardened to a baseline and kept within supported
+      versions.
+    category: configuration_management
+    weight: 3
+    references:
+      - "mp.si.1"
+      - "mp.si.2"
+      - "mp.si.5"
+    evidence_requirements:
+      - key: hardening_standard
+        title: Hardening standard
+        description: Configuration baseline per system family with review history.
+    technical_checks:
+      - key: inventory
+        title: Inventory coverage
+        type: asset_inventory_coverage
+        params:
+          min_ratio: 0.9
+        description: Asset inventory carries ownership and classification metadata.
+      - key: patch
+        title: Patch management
+        type: patch_management
+        params:
+          max_days_since_scan: 30
+          min_ratio: 0.8
+        description: Systems are scanned or patched on schedule.
+
+  - control_id: ENS-MP.COM
+    title: Communications security
+    description: >-
+      Communications are protected with encryption, authenticated endpoints and
+      controlled network perimeters.
+    category: communications
+    weight: 3
+    references:
+      - "mp.com.1"
+      - "mp.com.2"
+      - "mp.com.3"
+    evidence_requirements:
+      - key: network_diagram
+        title: Network architecture diagram
+        description: Diagram of trust zones, conduits and perimeter controls.
+    technical_checks:
+      - key: tls
+        title: TLS verification
+        type: connector_tls
+        params:
+          require_all: true
+        description: Enabled integrations verify TLS certificates.
+      - key: segmentation
+        title: Network segmentation
+        type: network_segmentation
+        params:
+          min_ratio: 0.8
+        description: Zones and conduits isolate critical segments.
+
+  - control_id: ENS-MP.SEG
+    title: Security incident management and logging
+    description: >-
+      Security events are logged, monitored and handled through an incident
+      management process with evidence preservation.
+    category: incident_management
+    weight: 3
+    references:
+      - "mp.seg.1"
+      - "mp.seg.2"
+      - "op.exp.7"
+    evidence_requirements:
+      - key: incident_records
+        title: Incident records
+        description: Register of incidents with classification, actions and closure evidence.
+    technical_checks:
+      - key: incident_process
+        title: Incident process
+        type: incident_process_exists
+        params: {}
+        description: An incident policy or published playbook is available.
+      - key: logging
+        title: Logging enabled
+        type: logging_enabled
+        params:
+          min_sources: 1
+        description: At least one event source is enabled.
+      - key: audit
+        title: Audit chain integrity
+        type: audit_chain_valid
+        params: {}
+        description: The audit hash chain verifies without divergence.

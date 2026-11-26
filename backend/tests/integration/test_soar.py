@@ -818,3 +818,23 @@ def test_playbook_steps_require_direct_permissions() -> None:
     else:
         raise AssertionError("defence.execute must require defence:execute")
     _enforce_step_permissions(Ctx({"defence:execute", "connector:read"}), definition, dry_run=False)
+
+    # VULN-006 residual: a compensation action is effectful too. It must not be
+    # a side door around the permission required for the direct action.
+    with_compensation = {
+        "steps": [
+            {
+                "key": "notify",
+                "action": "internal.add_timeline",
+                "params": {},
+                "compensation": {"action": "defence.execute", "params": {}},
+            }
+        ]
+    }
+    try:
+        _enforce_step_permissions(Ctx({"playbook:execute", "incident:write"}), with_compensation, dry_run=False)
+    except Forbidden:
+        pass
+    else:
+        raise AssertionError("compensation defence.execute must require defence:execute")
+    _enforce_step_permissions(Ctx({"defence:execute", "incident:write"}), with_compensation, dry_run=False)

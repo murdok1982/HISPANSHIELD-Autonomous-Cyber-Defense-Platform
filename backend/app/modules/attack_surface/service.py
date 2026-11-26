@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import utcnow
 from app.core.errors import PolicyDenied, ValidationFailure
-from app.models.assets import Asset, AttackSurfaceFinding, DiscoveryJob
+from app.models.assets import Asset, AttackSurfaceFinding, DiscoveryAuthorization, DiscoveryJob
 from app.models.events import SecurityEvent
 from app.modules.assets.service import asset_public_ip
 from app.modules.attack_surface import discovery
@@ -412,10 +412,10 @@ def _asset_ip_map(db: Session, org_id: UUID) -> dict[str, UUID]:
 
 async def run_active(db: Session, org_id: UUID, job: DiscoveryJob, ports: list[int]) -> dict[str, Any]:
     """Perform an authorized, bounded TCP-connect probe of private ranges only."""
-    if not job.authorization_reference or not job.authorization_reference.strip():
+    if job.authorization_id is None:
         raise PolicyDenied(
-            "Active discovery requires a non-empty authorization_reference recorded on the job.",
-            details=[{"field": "authorization_reference", "message": "Written authorization is mandatory"}],
+            "Discovery requires a linked, approved authorization",
+            details=[{"field": "authorization_id", "message": "Discovery authorization is mandatory"}],
         )
     networks = discovery.validate_scope_cidrs(job.scope_cidrs, required=True)
     selected_ports = discovery.normalize_ports(ports)
@@ -462,6 +462,7 @@ async def run_active(db: Session, org_id: UUID, job: DiscoveryJob, ports: list[i
     return {
         "mode": "active",
         "scope_cidrs": job.scope_cidrs,
+        "authorization_id": str(job.authorization_id) if job.authorization_id else None,
         "ports": selected_ports,
         "hosts_in_scope": len(hosts),
         "hosts_scanned": len(targets),
@@ -531,6 +532,44 @@ def run_passive(db: Session, org_id: UUID, job: DiscoveryJob) -> dict[str, Any]:
     }
 
 
+def serialize_authorization(auth: DiscoveryAuthorization) -> dict[str, Any]:
+    return {
+        "id": auth.id,
+        "org_id": auth.org_id,
+        "name": auth.name,
+        "cidrs": list(auth.cidrs or []),
+        "ports": [int(port) for port in (auth.ports or [])],
+        "max_hosts": int(auth.max_hosts),
+        "status": discovery.authorization_status(auth),
+        "approved_by": auth.approved_by,
+        "approved_at": auth.approved_at,
+        "expires_at": auth.expires_at,
+        "revoked_at": auth.revoked_at,
+        "revoked_by": auth.revoked_by,
+        "created_by": auth.created_by,
+        "created_at": auth.created_at,
+    }
+
+
+def resolve_job_authorization(
+    db: Session,
+    org_id: UUID,
+    authorization_id: UUID | None,
+    scope_cidrs: list[str],
+    *,
+    required_scope: bool,
+) -> DiscoveryAuthorization:
+    """Load and enforce the authorization that permits a discovery scope."""
+    if authorization_id is None:
+        raise ValidationFailure(
+            [{"field": "authorization_id", "message": "An approved discovery authorization is mandatory"}]
+        )
+    auth = discovery.load_authorization(db, org_id, authorization_id)
+    discovery.ensure_authorization_usable(auth)
+    discovery.ensure_scope_authorized(scope_cidrs, auth, required=required_scope)
+    return auth
+
+
 async def execute_job(db: Session, org_id: UUID, job: DiscoveryJob, ports: list[int]) -> dict[str, Any]:
     if job.mode == "active":
         return await run_active(db, org_id, job, ports)
@@ -544,6 +583,8 @@ __all__ = [
     "analyze",
     "execute_job",
     "finding_summary",
+    "resolve_job_authorization",
     "run_active",
     "run_passive",
+    "serialize_authorization",
 ]

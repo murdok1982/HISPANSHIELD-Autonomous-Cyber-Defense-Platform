@@ -1,0 +1,302 @@
+code: "ISO27001:2022"
+name: "ISO/IEC 27001:2022 — Information security management systems"
+version: "2022"
+jurisdiction: International
+authority: "ISO/IEC"
+effective_date: 2022-10-25
+source_url: https://www.iso.org/standard/27001
+status: published
+description: >-
+  Requirements for establishing, operating and continually improving an
+  information security management system. The Annex A themes below are grouped
+  and paraphrased for internal self-assessment; ISO text is not reproduced.
+controls:
+  - control_id: A.5.1
+    title: Policies for information security
+    description: >-
+      Information security policy and topic-specific policies are defined,
+      approved, published, communicated and reviewed at planned intervals.
+    category: organizational_controls
+    weight: 3
+    references:
+      - "Annex A 5.1"
+      - "Clause 5.2"
+    evidence_requirements:
+      - key: policy_set
+        title: Approved policy set
+        description: Signed policies with owner, version and review date.
+    technical_checks:
+      - key: review
+        title: Policy review recorded
+        type: access_review
+        params:
+          max_days: 365
+        description: A recent management review is recorded for the policy set.
+
+  - control_id: A.5.2
+    title: Roles and responsibilities
+    description: >-
+      Information security responsibilities are assigned and communicated
+      according to organizational needs.
+    category: organizational_controls
+    weight: 2
+    references:
+      - "Annex A 5.2"
+    evidence_requirements:
+      - key: responsibility_matrix
+        title: Responsibility matrix
+        description: Documented security roles and their responsibilities.
+    technical_checks:
+      - key: admins
+        title: Administrative roles bounded
+        type: rbac_least_privilege
+        params:
+          max_admins: 3
+        description: Administrative roles are limited and named.
+
+  - control_id: A.5.19
+    title: Information security in supplier relationships
+    description: >-
+      Supplier relationships are managed to protect information accessible to
+      suppliers throughout the relationship lifecycle.
+    category: supplier_relationships
+    weight: 3
+    references:
+      - "Annex A 5.19"
+      - "Annex A 5.20"
+    evidence_requirements:
+      - key: supplier_register
+        title: Supplier register
+        description: Critical suppliers with risk rating and review dates.
+    technical_checks:
+      - key: suppliers
+        title: Supplier register maintained
+        type: supplier_register
+        params: {}
+        description: A supplier register is declared in settings or policy.
+
+  - control_id: A.5.24
+    title: Incident management planning and preparation
+    description: >-
+      The organization plans and prepares for incident management, including
+      roles, responsibilities, communication and response procedures.
+    category: incident_management
+    weight: 3
+    references:
+      - "Annex A 5.24"
+      - "Annex A 5.26"
+    evidence_requirements:
+      - key: incident_plan
+        title: Incident response plan
+        description: Approved plan with escalation and communication paths.
+    technical_checks:
+      - key: incident_process
+        title: Incident process available
+        type: incident_process_exists
+        params: {}
+        description: An incident policy or published response playbook exists.
+
+  - control_id: A.5.29
+    title: Information security during disruption
+    description: >-
+      Security is maintained during disruption and continuity arrangements are
+      planned, implemented and tested.
+    category: continuity
+    weight: 3
+    references:
+      - "Annex A 5.29"
+      - "Annex A 5.30"
+    evidence_requirements:
+      - key: bcp_test
+        title: Continuity test evidence
+        description: Test report for continuity and recovery arrangements.
+    technical_checks:
+      - key: backups
+        title: Backups configured
+        type: backup_configured
+        params: {}
+        description: Backups are declared operational.
+
+  - control_id: A.6.3
+    title: Awareness, education and training
+    description: >-
+      Personnel receive security awareness education and regular updates
+      relevant to their roles.
+    category: people_controls
+    weight: 2
+    references:
+      - "Annex A 6.3"
+    evidence_requirements:
+      - key: training_records
+        title: Training records
+        description: Completion records with dates and content summary.
+    technical_checks:
+      - key: mfa
+        title: MFA adoption
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: All active users use a second factor.
+
+  - control_id: A.7.4
+    title: Physical security monitoring
+    description: >-
+      Premises are continuously monitored for unauthorised physical access and
+      environmental threats.
+    category: physical_controls
+    weight: 2
+    references:
+      - "Annex A 7.4"
+    evidence_requirements:
+      - key: monitoring_records
+        title: Physical access monitoring records
+        description: Access logs and alarm responses for restricted areas.
+    technical_checks:
+      - key: audit_chain
+        title: Tamper-evident records
+        type: audit_chain_valid
+        params: {}
+        description: Security records remain tamper-evident via the audit hash chain.
+
+  - control_id: A.8.2
+    title: Privileged access rights
+    description: >-
+      Access to privileged functions is restricted, allocated, logged and
+      reviewed.
+    category: technological_controls
+    weight: 3
+    references:
+      - "Annex A 8.2"
+      - "Annex A 8.18"
+    evidence_requirements:
+      - key: privileged_register
+        title: Privileged access register
+        description: Inventory of privileged accounts with owner and review date.
+    technical_checks:
+      - key: least_privilege
+        title: Privileged roles minimised
+        type: rbac_least_privilege
+        params:
+          max_admins: 2
+        description: Administrative roles stay within policy.
+      - key: access_review
+        title: Access review
+        type: access_review
+        params:
+          max_days: 90
+        description: A recent access review is recorded.
+
+  - control_id: A.8.5
+    title: Secure authentication
+    description: >-
+      Authentication technologies and procedures are secure and based on
+      risk-appropriate factors.
+    category: technological_controls
+    weight: 3
+    references:
+      - "Annex A 8.5"
+    evidence_requirements:
+      - key: auth_standard
+        title: Authentication standard
+        description: Password, MFA and session requirements.
+    technical_checks:
+      - key: mfa
+        title: MFA enforced
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: Every active member uses MFA.
+
+  - control_id: A.8.8
+    title: Management of technical vulnerabilities
+    description: >-
+      Technical vulnerabilities are identified, assessed, prioritised and
+      remediated in a timely manner.
+    category: technological_controls
+    weight: 3
+    references:
+      - "Annex A 8.8"
+    evidence_requirements:
+      - key: vuln_reports
+        title: Vulnerability scan reports
+        description: Latest scan output with remediation tracking.
+    technical_checks:
+      - key: sla
+        title: Remediation within SLA
+        type: vulnerability_sla
+        params:
+          max_overdue_ratio: 0.05
+        description: Open vulnerabilities are largely within due dates.
+
+  - control_id: A.8.13
+    title: Backup and recovery
+    description: >-
+      Backup copies of information and systems are maintained and tested
+      according to an agreed policy.
+    category: technological_controls
+    weight: 3
+    references:
+      - "Annex A 8.13"
+    evidence_requirements:
+      - key: backup_records
+        title: Backup and restore records
+        description: Backup schedule, retention and restore test evidence.
+    technical_checks:
+      - key: backups
+        title: Backups configured
+        type: backup_configured
+        params: {}
+        description: Backups are declared operational.
+
+  - control_id: A.8.15
+    title: Logging
+    description: >-
+      Logs of activities, exceptions and security events are produced, stored
+      and protected against tampering.
+    category: technological_controls
+    weight: 3
+    references:
+      - "Annex A 8.15"
+      - "Annex A 8.16"
+    evidence_requirements:
+      - key: logging_spec
+        title: Logging specification
+        description: Sources, fields, retention and protection requirements.
+    technical_checks:
+      - key: logging
+        title: Logging enabled
+        type: logging_enabled
+        params:
+          min_sources: 1
+        description: At least one ingest source is enabled.
+      - key: audit
+        title: Audit integrity
+        type: audit_chain_valid
+        params: {}
+        description: The audit chain verifies.
+
+  - control_id: A.8.24
+    title: Use of cryptography
+    description: >-
+      Cryptographic controls are defined and applied consistently with an
+      approved cryptography policy.
+    category: technological_controls
+    weight: 3
+    references:
+      - "Annex A 8.24"
+    evidence_requirements:
+      - key: crypto_policy
+        title: Cryptography policy
+        description: Approved algorithms, key management and usage rules.
+    technical_checks:
+      - key: encryption
+        title: Encryption at rest
+        type: encryption_at_rest
+        params: {}
+        description: Encryption at rest is declared.
+      - key: tls
+        title: TLS verification
+        type: connector_tls
+        params:
+          require_all: true
+        description: Enabled connectors verify TLS certificates.

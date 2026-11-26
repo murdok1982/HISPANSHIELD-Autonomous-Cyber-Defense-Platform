@@ -1,0 +1,236 @@
+code: CRA
+name: "Cyber Resilience Act — Regulation (EU) 2024/2847"
+version: "2024/2847"
+jurisdiction: EU
+authority: "European Commission"
+effective_date: 2027-12-11
+source_url: https://eur-lex.europa.eu/eli/reg/2024/2847/oj
+status: published
+description: >-
+  Horizontal requirements for products with digital elements placed on the EU
+  market, covering secure-by-design engineering, vulnerability handling,
+  security updates and incident reporting. Summaries are paraphrased for
+  internal assessment only.
+controls:
+  - control_id: CRA-01
+    title: Secure by design and secure by default
+    description: >-
+      Products are designed, developed and shipped with state-of-the-art
+      security, secure default configurations and minimal exposed attack
+      surface.
+    category: secure_design
+    weight: 3
+    references:
+      - "Annex I, Part I(1)"
+      - "Art. 13(1)"
+    evidence_requirements:
+      - key: threat_model
+        title: Product threat model
+        description: Documented threat model covering assets, trust boundaries and mitigations.
+      - key: hardening_baseline
+        title: Hardening baseline
+        description: Secure configuration baseline applied to shipped product images.
+    technical_checks:
+      - key: segmentation
+        title: Network segmentation in place
+        type: network_segmentation
+        params:
+          min_ratio: 0.8
+        description: Zones and conduits restrict lateral movement across product environments.
+
+  - control_id: CRA-02
+    title: Vulnerability handling and coordinated disclosure
+    description: >-
+      A documented vulnerability-handling process receives, triages and
+      remediates reported vulnerabilities and publishes a coordinated
+      disclosure policy.
+    category: vulnerability_management
+    weight: 3
+    references:
+      - "Annex I, Part II(5)"
+      - "Annex I, Part II(6)"
+    evidence_requirements:
+      - key: disclosure_policy
+        title: Coordinated disclosure policy
+        description: Public policy with security contact, response targets and disclosure timeline.
+      - key: vuln_register
+        title: Vulnerability register
+        description: Register of reported product vulnerabilities with severity and status.
+    technical_checks:
+      - key: remediation_sla
+        title: Remediation within SLA
+        type: vulnerability_sla
+        params:
+          max_overdue_ratio: 0.05
+        description: Almost all open vulnerabilities are inside their remediation due date.
+
+  - control_id: CRA-03
+    title: Security updates and support period
+    description: >-
+      Security updates are provided free of charge for the declared support
+      period, and update mechanisms are themselves secured.
+    category: maintenance
+    weight: 3
+    references:
+      - "Annex I, Part II(2)"
+      - "Art. 13(8)"
+    evidence_requirements:
+      - key: support_period
+        title: Declared support period
+        description: Documented support period and update cadence communicated to users.
+    technical_checks:
+      - key: patch_cycle
+        title: Assets under patch management
+        type: patch_management
+        params:
+          max_days_since_scan: 30
+          min_ratio: 0.9
+        description: Assets carry a recent scan or patch record.
+
+  - control_id: CRA-04
+    title: Software bill of materials and component transparency
+    description: >-
+      Products identify and document their components and dependencies so that
+      vulnerability exposure can be traced quickly.
+    category: supply_chain
+    weight: 3
+    references:
+      - "Annex I, Part II(1)"
+      - "Annex I, Part II(4)"
+    evidence_requirements:
+      - key: sbom
+        title: Software bill of materials
+        description: Machine-readable SBOM for each released product version.
+    technical_checks:
+      - key: inventory_coverage
+        title: Component and asset inventory coverage
+        type: asset_inventory_coverage
+        params:
+          min_ratio: 0.9
+        description: Inventory entries carry owner or classification metadata.
+
+  - control_id: CRA-05
+    title: Product documentation and user information
+    description: >-
+      Users receive clear security information covering installation, secure
+      configuration, update handling and end-of-support.
+    category: documentation
+    weight: 2
+    references:
+      - "Annex II"
+    evidence_requirements:
+      - key: security_guide
+        title: Security guide
+        description: Published installation and secure-operation guide per product line.
+    technical_checks:
+      - key: logging
+        title: Security logging available to operators
+        type: logging_enabled
+        params:
+          min_sources: 1
+        description: Operators can collect security events from the product.
+
+  - control_id: CRA-06
+    title: Risk assessment and conformity assessment
+    description: >-
+      Risks are assessed per product, the applicable conformity assessment route
+      is followed and technical documentation is retained.
+    category: conformity
+    weight: 3
+    references:
+      - "Art. 13(2)"
+      - "Art. 32"
+    evidence_requirements:
+      - key: conformity_file
+        title: Technical documentation file
+        description: Conformity documentation retained for the required period.
+    technical_checks:
+      - key: risk_register
+        title: Risk register maintained
+        type: access_review
+        params:
+          max_days: 365
+        description: A risk or access review has been recorded in the last year.
+
+  - control_id: CRA-07
+    title: Incident and exploited-vulnerability reporting
+    description: >-
+      Actively exploited vulnerabilities and severe incidents are reported to
+      the CSIRT and ENISA within the regulatory deadlines.
+    category: incident_reporting
+    weight: 3
+    references:
+      - "Art. 14"
+    evidence_requirements:
+      - key: reporting_runbook
+        title: Reporting runbook
+        description: Runbook mapping early warning, notification and final report deadlines.
+    technical_checks:
+      - key: incident_process
+        title: Incident process available
+        type: incident_process_exists
+        params: {}
+        description: An incident-response policy or playbook exists to trigger reporting.
+
+  - control_id: CRA-08
+    title: Security of update and delivery infrastructure
+    description: >-
+      Distribution channels and update servers authenticate updates and protect
+      them against tampering.
+    category: integrity
+    weight: 3
+    references:
+      - "Annex I, Part I(2)(e)"
+    evidence_requirements:
+      - key: signing_process
+        title: Update signing process
+        description: Description of keys, signing and verification steps for updates.
+    technical_checks:
+      - key: tls
+        title: Delivery endpoints verify TLS
+        type: connector_tls
+        params:
+          require_all: true
+        description: Enabled integrations that deliver or fetch updates verify TLS certificates.
+
+  - control_id: CRA-09
+    title: Confidentiality and integrity of product data
+    description: >-
+      Product data is protected in transit and at rest, with access limited to
+      authorised functions.
+    category: data_protection
+    weight: 3
+    references:
+      - "Annex I, Part I(2)(e)"
+      - "Annex I, Part I(2)(f)"
+    evidence_requirements:
+      - key: data_flow
+        title: Data-flow description
+        description: Data-flow diagram with storage locations and protection measures.
+    technical_checks:
+      - key: encryption
+        title: Encryption at rest
+        type: encryption_at_rest
+        params: {}
+        description: Organization declares encryption at rest for product data.
+
+  - control_id: CRA-10
+    title: Third-party component due diligence
+    description: >-
+      Third-party and open-source components are selected with security criteria
+      and monitored for vulnerabilities.
+    category: supply_chain
+    weight: 3
+    references:
+      - "Art. 13(5)"
+      - "Annex I, Part II(1)"
+    evidence_requirements:
+      - key: component_policy
+        title: Component acceptance policy
+        description: Criteria and approval workflow for third-party components.
+    technical_checks:
+      - key: suppliers
+        title: Supplier register
+        type: supplier_register
+        params: {}
+        description: A maintained supplier register records third-party dependencies.

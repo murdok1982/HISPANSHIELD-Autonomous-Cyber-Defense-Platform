@@ -1,0 +1,244 @@
+code: GDPR
+name: "General Data Protection Regulation (EU) 2016/679"
+version: "2016/679"
+jurisdiction: EU
+authority: "European Data Protection Board and national supervisory authorities"
+effective_date: 2018-05-25
+source_url: https://eur-lex.europa.eu/eli/reg/2016/679/oj
+status: published
+description: >-
+  Technical and organizational data-protection obligations relevant to the
+  platform as a processor and to the controller it supports. Control summaries
+  are paraphrased and are not legal advice.
+controls:
+  - control_id: GDPR-01
+    title: Lawfulness, fairness and transparency
+    description: >-
+      Processing activities have a documented legal basis and are described to
+      data subjects in clear, accessible terms.
+    category: lawful_processing
+    weight: 3
+    references:
+      - "Art. 5(1)(a)"
+      - "Art. 6"
+      - "Art. 12"
+    evidence_requirements:
+      - key: ropa_entry
+        title: Record of processing entry
+        description: RoPA entry with purpose, legal basis, categories and recipients.
+      - key: privacy_notice
+        title: Privacy notice
+        description: Current privacy notice published to data subjects.
+    technical_checks:
+      - key: data_minimisation
+        title: Data-minimisation controls documented
+        type: data_minimisation
+        params: {}
+        description: Organization settings or a privacy policy record minimisation controls.
+
+  - control_id: GDPR-02
+    title: Purpose limitation and data minimisation
+    description: >-
+      Only data necessary for the stated purpose is collected and further
+      processing remains compatible with that purpose.
+    category: data_minimisation
+    weight: 3
+    references:
+      - "Art. 5(1)(b)"
+      - "Art. 5(1)(c)"
+    evidence_requirements:
+      - key: field_inventory
+        title: Personal-data field inventory
+        description: Inventory of personal-data fields with purpose and necessity justification.
+    technical_checks:
+      - key: minimisation
+        title: Minimisation policy active
+        type: data_minimisation
+        params: {}
+        description: A data-protection policy or explicit setting confirms minimisation measures.
+
+  - control_id: GDPR-03
+    title: Storage limitation and retention
+    description: >-
+      Personal data is kept no longer than necessary and deletion or
+      anonymisation runs on a defined schedule.
+    category: retention
+    weight: 3
+    references:
+      - "Art. 5(1)(e)"
+      - "Art. 17"
+    evidence_requirements:
+      - key: retention_schedule
+        title: Retention schedule
+        description: Per-category retention periods with disposal method and owner.
+    technical_checks:
+      - key: retention_days
+        title: Retention policy configured
+        type: retention_policy_days
+        params:
+          min_days: 365
+        description: A retention policy defines a minimum one-year period for security records.
+
+  - control_id: GDPR-04
+    title: Integrity and confidentiality of processing
+    description: >-
+      Processing systems protect personal data against unauthorised access,
+      alteration and loss through appropriate technical measures.
+    category: security_of_processing
+    weight: 3
+    references:
+      - "Art. 5(1)(f)"
+      - "Art. 32"
+    evidence_requirements:
+      - key: security_measures
+        title: Security measures description
+        description: Documented technical and organizational measures applied to personal data.
+    technical_checks:
+      - key: encryption
+        title: Encryption at rest
+        type: encryption_at_rest
+        params: {}
+        description: Encryption at rest is declared for stores containing personal data.
+      - key: audit_integrity
+        title: Audit trail integrity
+        type: audit_chain_valid
+        params: {}
+        description: The audit hash chain is intact, supporting accountability.
+
+  - control_id: GDPR-05
+    title: Access control and confidentiality
+    description: >-
+      Access to personal data is role-based, least-privilege and protected by
+      strong authentication.
+    category: access_control
+    weight: 3
+    references:
+      - "Art. 32(4)"
+      - "Art. 5(1)(f)"
+    evidence_requirements:
+      - key: access_matrix
+        title: Role and access matrix
+        description: Approved mapping of roles to personal-data access.
+    technical_checks:
+      - key: least_privilege
+        title: Administrative access minimised
+        type: rbac_least_privilege
+        params:
+          max_admins: 2
+        description: Administrative roles are restricted to a small, known group.
+      - key: mfa
+        title: MFA enforced
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: All active members use a second factor.
+
+  - control_id: GDPR-06
+    title: Personal data breach handling and notification
+    description: >-
+      Breaches are detected, contained, assessed and, where required, notified
+      to the supervisory authority within 72 hours and to data subjects without
+      undue delay.
+    category: breach_management
+    weight: 3
+    references:
+      - "Art. 33"
+      - "Art. 34"
+    evidence_requirements:
+      - key: breach_runbook
+        title: Breach notification runbook
+        description: Runbook with triage criteria, 72-hour notification and subject communication.
+    technical_checks:
+      - key: incident_process
+        title: Incident process available
+        type: incident_process_exists
+        params: {}
+        description: An incident-response policy or playbook exists for breach handling.
+
+  - control_id: GDPR-07
+    title: Records of processing activities
+    description: >-
+      A record of processing activities is maintained, kept up to date and made
+      available to the supervisory authority on request.
+    category: accountability
+    weight: 3
+    references:
+      - "Art. 30"
+    evidence_requirements:
+      - key: ropa
+        title: RoPA register
+        description: Current register with all mandatory Art. 30 fields.
+    technical_checks:
+      - key: supplier_register
+        title: Processor and supplier register
+        type: supplier_register
+        params: {}
+        description: Processors and recipients are tracked in a maintained register.
+
+  - control_id: GDPR-08
+    title: Data protection impact assessment
+    description: >-
+      High-risk processing is assessed before launch, with mitigations recorded
+      and reviewed when processing changes.
+    category: risk_assessment
+    weight: 2
+    references:
+      - "Art. 35"
+      - "Art. 36"
+    evidence_requirements:
+      - key: dpia
+        title: DPIA report
+        description: Completed DPIA for each high-risk processing activity.
+    technical_checks:
+      - key: review
+        title: Risk review performed recently
+        type: access_review
+        params:
+          max_days: 365
+        description: A recorded review confirms the DPIA remains current.
+
+  - control_id: GDPR-09
+    title: Processor agreements and transfers
+    description: >-
+      Processors are bound by Article 28 agreements and international transfers
+      rely on a valid transfer mechanism.
+    category: third_parties
+    weight: 3
+    references:
+      - "Art. 28"
+      - "Art. 44"
+      - "Art. 46"
+    evidence_requirements:
+      - key: dpa_register
+        title: DPA register
+        description: Register of processor agreements with signature and review dates.
+    technical_checks:
+      - key: suppliers
+        title: Supplier register maintained
+        type: supplier_register
+        params: {}
+        description: Processors are recorded with ownership and review status.
+
+  - control_id: GDPR-10
+    title: Data subject rights
+    description: >-
+      Requests for access, rectification, erasure, restriction, portability and
+      objection are handled within statutory deadlines.
+    category: data_subject_rights
+    weight: 3
+    references:
+      - "Art. 15"
+      - "Art. 16"
+      - "Art. 17"
+      - "Art. 20"
+    evidence_requirements:
+      - key: dsr_procedure
+        title: Data subject request procedure
+        description: Procedure with channels, identity verification and deadline tracking.
+    technical_checks:
+      - key: access_review
+        title: Access and rights review recorded
+        type: access_review
+        params:
+          max_days: 90
+        description: A recent review confirms access and request handling remain effective.

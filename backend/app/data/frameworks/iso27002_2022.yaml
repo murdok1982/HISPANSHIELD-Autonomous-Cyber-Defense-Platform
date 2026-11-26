@@ -1,0 +1,339 @@
+code: "ISO27002:2022"
+name: "ISO/IEC 27002:2022 — Information security controls guidance"
+version: "2022"
+jurisdiction: International
+authority: "ISO/IEC"
+effective_date: 2022-02-15
+source_url: https://www.iso.org/standard/75652.html
+status: published
+description: >-
+  Implementation guidance for the information security controls of ISO/IEC
+  27001:2022 Annex A. This catalogue provides mapping links from each guidance
+  area to its Annex A control; the ISO text is paraphrased, not reproduced.
+controls:
+  - control_id: ISO27002-5.1
+    title: Policies for information security (guidance)
+    description: >-
+      Guidance on defining, approving, publishing and reviewing a security
+      policy and supporting topic-specific policies.
+    category: organizational
+    weight: 3
+    mapping:
+      iso27001: "A.5.1"
+    references:
+      - "ISO/IEC 27002:2022 §5.1"
+    evidence_requirements:
+      - key: policy_review
+        title: Policy review record
+        description: Evidence that the policy set was reviewed in the last year.
+    technical_checks:
+      - key: review
+        title: Policy review recorded
+        type: access_review
+        params:
+          max_days: 365
+        description: A management review is recorded.
+
+  - control_id: ISO27002-5.2
+    title: Roles and responsibilities (guidance)
+    description: >-
+      Guidance on assigning and communicating information security roles and
+      responsibilities.
+    category: organizational
+    weight: 2
+    mapping:
+      iso27001: "A.5.2"
+    references:
+      - "ISO/IEC 27002:2022 §5.2"
+    evidence_requirements:
+      - key: role_descriptions
+        title: Security role descriptions
+        description: Role descriptions including security duties.
+    technical_checks:
+      - key: admins
+        title: Privileged roles bounded
+        type: rbac_least_privilege
+        params:
+          max_admins: 3
+        description: Administrative roles are limited and known.
+
+  - control_id: ISO27002-5.19
+    title: Supplier relationship security (guidance)
+    description: >-
+      Guidance on agreeing and managing security requirements with suppliers,
+      including service delivery monitoring and change management.
+    category: organizational
+    weight: 3
+    mapping:
+      iso27001: "A.5.19"
+    references:
+      - "ISO/IEC 27002:2022 §5.19"
+      - "ISO/IEC 27002:2022 §5.22"
+    evidence_requirements:
+      - key: supplier_agreements
+        title: Supplier security agreements
+        description: Agreements and review records for critical suppliers.
+    technical_checks:
+      - key: suppliers
+        title: Supplier register
+        type: supplier_register
+        params: {}
+        description: Suppliers are recorded in a maintained register.
+
+  - control_id: ISO27002-5.24
+    title: Incident management planning (guidance)
+    description: >-
+      Guidance on planning incident management responsibilities, procedures and
+      communications before incidents occur.
+    category: organizational
+    weight: 3
+    mapping:
+      iso27001: "A.5.24"
+    references:
+      - "ISO/IEC 27002:2022 §5.24"
+      - "ISO/IEC 27002:2022 §5.26"
+    evidence_requirements:
+      - key: incident_procedures
+        title: Incident procedures
+        description: Documented procedures covering detection through closure.
+    technical_checks:
+      - key: incident_process
+        title: Incident process
+        type: incident_process_exists
+        params: {}
+        description: An incident policy or playbook exists.
+
+  - control_id: ISO27002-5.29
+    title: Security during disruption (guidance)
+    description: >-
+      Guidance on maintaining information security during business disruption
+      and on continuity planning and testing.
+    category: organizational
+    weight: 3
+    mapping:
+      iso27001: "A.5.29"
+    references:
+      - "ISO/IEC 27002:2022 §5.29"
+      - "ISO/IEC 27002:2022 §5.30"
+    evidence_requirements:
+      - key: continuity_tests
+        title: Continuity test reports
+        description: Results of continuity and recovery exercises.
+    technical_checks:
+      - key: backups
+        title: Backups configured
+        type: backup_configured
+        params: {}
+        description: Backups are declared operational.
+
+  - control_id: ISO27002-6.3
+    title: Awareness and training (guidance)
+    description: >-
+      Guidance on delivering security awareness education and role-specific
+      training at planned intervals.
+    category: people
+    weight: 2
+    mapping:
+      iso27001: "A.6.3"
+    references:
+      - "ISO/IEC 27002:2022 §6.3"
+    evidence_requirements:
+      - key: training_plan
+        title: Training plan and completion
+        description: Annual plan with completion evidence.
+    technical_checks:
+      - key: mfa
+        title: MFA adoption
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: All active users use MFA.
+
+  - control_id: ISO27002-7.4
+    title: Physical security monitoring (guidance)
+    description: >-
+      Guidance on monitoring premises for unauthorised access and recording
+      security-relevant physical events.
+    category: physical
+    weight: 2
+    mapping:
+      iso27001: "A.7.4"
+    references:
+      - "ISO/IEC 27002:2022 §7.4"
+    evidence_requirements:
+      - key: access_logs
+        title: Physical access logs
+        description: Retained access control records for restricted areas.
+    technical_checks:
+      - key: audit
+        title: Tamper-evident records
+        type: audit_chain_valid
+        params: {}
+        description: Records remain tamper-evident.
+
+  - control_id: ISO27002-8.2
+    title: Privileged access rights (guidance)
+    description: >-
+      Guidance on restricting and managing privileged access, including
+      allocation, logging and periodic review.
+    category: technological
+    weight: 3
+    mapping:
+      iso27001: "A.8.2"
+    references:
+      - "ISO/IEC 27002:2022 §8.2"
+    evidence_requirements:
+      - key: privileged_inventory
+        title: Privileged account inventory
+        description: Inventory with owners and review records.
+    technical_checks:
+      - key: least_privilege
+        title: Privileged roles minimised
+        type: rbac_least_privilege
+        params:
+          max_admins: 2
+        description: Administrative roles are bounded.
+      - key: review
+        title: Access review
+        type: access_review
+        params:
+          max_days: 90
+        description: A quarterly access review is recorded.
+
+  - control_id: ISO27002-8.5
+    title: Secure authentication (guidance)
+    description: >-
+      Guidance on implementing secure authentication, including multi-factor
+      authentication and protected credential storage.
+    category: technological
+    weight: 3
+    mapping:
+      iso27001: "A.8.5"
+    references:
+      - "ISO/IEC 27002:2022 §8.5"
+    evidence_requirements:
+      - key: auth_standard
+        title: Authentication standard
+        description: Documented authentication and session requirements.
+    technical_checks:
+      - key: mfa
+        title: MFA enforced
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: Every active member uses MFA.
+      - key: timeout
+        title: Session timeout
+        type: session_timeout
+        params:
+          max_minutes: 30
+        description: Idle sessions expire within policy.
+
+  - control_id: ISO27002-8.8
+    title: Technical vulnerability management (guidance)
+    description: >-
+      Guidance on obtaining vulnerability information, assessing exposure,
+      prioritising remediation and retaining records.
+    category: technological
+    weight: 3
+    mapping:
+      iso27001: "A.8.8"
+    references:
+      - "ISO/IEC 27002:2022 §8.8"
+    evidence_requirements:
+      - key: scan_reports
+        title: Vulnerability assessment reports
+        description: Scan results with prioritisation and remediation status.
+    technical_checks:
+      - key: sla
+        title: Remediation SLA
+        type: vulnerability_sla
+        params:
+          max_overdue_ratio: 0.05
+        description: Open vulnerabilities are largely within due dates.
+      - key: patch
+        title: Patch coverage
+        type: patch_management
+        params:
+          max_days_since_scan: 30
+          min_ratio: 0.8
+        description: Assets have recent patch or scan records.
+
+  - control_id: ISO27002-8.13
+    title: Backup (guidance)
+    description: >-
+      Guidance on maintaining and testing backup copies of information,
+      software and systems.
+    category: technological
+    weight: 3
+    mapping:
+      iso27001: "A.8.13"
+    references:
+      - "ISO/IEC 27002:2022 §8.13"
+    evidence_requirements:
+      - key: backup_test
+        title: Restore test evidence
+        description: Successful restore test within the last year.
+    technical_checks:
+      - key: backups
+        title: Backups configured
+        type: backup_configured
+        params: {}
+        description: Backups are declared operational.
+
+  - control_id: ISO27002-8.15
+    title: Logging (guidance)
+    description: >-
+      Guidance on producing, storing, protecting and analysing logs of
+      activities and security events.
+    category: technological
+    weight: 3
+    mapping:
+      iso27001: "A.8.15"
+    references:
+      - "ISO/IEC 27002:2022 §8.15"
+      - "ISO/IEC 27002:2022 §8.16"
+    evidence_requirements:
+      - key: log_sources
+        title: Log source inventory
+        description: Inventory of log sources, formats and retention.
+    technical_checks:
+      - key: logging
+        title: Logging enabled
+        type: logging_enabled
+        params:
+          min_sources: 1
+        description: At least one ingest source is enabled.
+      - key: audit
+        title: Audit integrity
+        type: audit_chain_valid
+        params: {}
+        description: The audit chain verifies.
+
+  - control_id: ISO27002-8.24
+    title: Use of cryptography (guidance)
+    description: >-
+      Guidance on defining a cryptography policy, selecting algorithms and
+      managing keys throughout their lifecycle.
+    category: technological
+    weight: 3
+    mapping:
+      iso27001: "A.8.24"
+    references:
+      - "ISO/IEC 27002:2022 §8.24"
+    evidence_requirements:
+      - key: key_management
+        title: Key management procedure
+        description: Procedure for key generation, storage, rotation and destruction.
+    technical_checks:
+      - key: encryption
+        title: Encryption at rest
+        type: encryption_at_rest
+        params: {}
+        description: Encryption at rest is declared.
+      - key: tls
+        title: TLS verification
+        type: connector_tls
+        params:
+          require_all: true
+        description: Enabled connectors verify TLS certificates.

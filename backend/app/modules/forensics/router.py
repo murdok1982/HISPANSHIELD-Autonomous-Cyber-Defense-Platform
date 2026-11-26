@@ -281,11 +281,11 @@ def export_timeline(
     for row in rows:
         writer.writerow(
             [
-                row["at"].isoformat() if hasattr(row["at"], "isoformat") else row["at"],
-                row["kind"],
-                row["actor"] or "",
-                row["summary"],
-                json.dumps(row["detail"], default=str, ensure_ascii=False),
+                service.csv_safe(row["at"].isoformat() if hasattr(row["at"], "isoformat") else row["at"]),
+                service.csv_safe(row["kind"]),
+                service.csv_safe(row["actor"] or ""),
+                service.csv_safe(row["summary"]),
+                service.csv_safe(json.dumps(row["detail"], default=str, ensure_ascii=False)),
             ]
         )
     filename = f"case-{service.safe_filename(incident.ref, 'case', 40)}-timeline.csv"

@@ -57,6 +57,17 @@ def enforce(key: str, limit: int, window_seconds: int = 60) -> int:
     return max(0, limit - count)
 
 
+def record_attempt(key: str, window_seconds: int = 900) -> int:
+    """Increment a counter without enforcing a limit and return the new count.
+
+    Used for authentication telemetry (distinct source addresses behind failed
+    logins) where the decision is made by the auth service, not by the limiter.
+    """
+    with SessionLocal() as db:
+        count, _ = _consume(db, key, window_seconds)
+    return count
+
+
 def purge_expired(before: datetime | None = None) -> int:
     cutoff = before or utcnow() - timedelta(hours=2)
     with SessionLocal() as db:

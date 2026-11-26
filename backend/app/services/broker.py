@@ -8,27 +8,44 @@ result. It never trusts the requester's assessment of authorization.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from time import perf_counter
 from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.core.audit import append_audit
+from app.core.crypto import sha256_hex
 from app.core.db import utcnow
 from app.core.errors import Forbidden, PolicyDenied, ServiceUnavailable
 from app.models.core import Approval, KillSwitch, Organization
 from app.models.incidents import Remediation
-from app.services.actions import get_action
+from app.services.actions import ActionDefinition, get_action
 from app.services.connectors.base import AdapterResult, ConnectorError, record_connector_run
 from app.services.connectors.runtime import (
     circuit_breaker,
     instantiate_adapter,
     select_connector,
 )
-from app.services.policy_engine import PolicyDecision, evaluate
+from app.services.policy_engine import (
+    GuardrailEvaluation,
+    PolicyDecision,
+    PolicyDefinitionError,
+    active_policy_snapshot,
+    evaluate,
+    evaluate_runtime_guardrails,
+    load_guardrail_limits,
+)
+
+
+def canonical_parameters_hash(parameters: dict[str, Any] | None) -> str:
+    """Stable hash of an action's parameters, used to bind approvals."""
+    encoded = json.dumps(parameters or {}, sort_keys=True, separators=(",", ":"), default=str)
+    return sha256_hex(encoded)
 
 
 @dataclass
@@ -77,13 +94,17 @@ class BrokerResult:
 
 
 def _validate_approval(
-    db: Session, org: Organization, approval_id: UUID | None, action_type: str, target_type: str, target_id: str
+    db: Session,
+    org: Organization,
+    approval_id: UUID | None,
+    action_type: str,
+    target_type: str,
+    target_id: str,
+    parameters: dict[str, Any] | None,
 ) -> Approval | None:
     if approval_id is None:
         return None
-    approval = db.execute(
-        select(Approval).where(Approval.id == approval_id).with_for_update()
-    ).scalar_one_or_none()
+    approval = db.execute(select(Approval).where(Approval.id == approval_id).with_for_update()).scalar_one_or_none()
     if approval is None or approval.org_id != org.id:
         raise PolicyDenied("Approval does not exist in this organization")
     if approval.status != "approved":
@@ -97,6 +118,14 @@ def _validate_approval(
         raise PolicyDenied("Approval was granted for a different target type")
     if payload.get("target_id") and str(payload.get("target_id")) != str(target_id):
         raise PolicyDenied("Approval was granted for a different target")
+    bound_parameters = payload.get("parameters_hash")
+    if bound_parameters and str(bound_parameters) != canonical_parameters_hash(parameters):
+        raise PolicyDenied("Approval was granted for different action parameters")
+    bound_policy = payload.get("policy_version")
+    if bound_policy is not None:
+        current_policy = active_policy_snapshot(db, org.id).get("version")
+        if current_policy != bound_policy:
+            raise PolicyDenied("The autonomy policy changed after this approval was granted")
     if approval.consumed_at is not None:
         raise PolicyDenied("Approval has already been consumed")
     # Single-use approval: consume it under the row lock before any side effect.
@@ -116,6 +145,159 @@ def _check_connector_kill_switch(db: Session, org_id, connector_id) -> None:  # 
     ).scalar_one_or_none()
     if switch is not None:
         raise PolicyDenied("A kill switch is engaged for this connector")
+
+
+def _audit_guardrail_denial(
+    db: Session,
+    *,
+    org: Organization,
+    actor: BrokerActor,
+    action_type: str,
+    target_type: str,
+    target_id: str,
+    guardrail: GuardrailEvaluation,
+) -> None:
+    try:
+        append_audit(
+            db,
+            org_id=org.id,
+            action="defence.guardrail.denied",
+            resource_type="remediation",
+            resource_id=target_id[:80],
+            actor_type="user" if actor.user_id else "system",
+            actor_id=actor.id,
+            actor_email=actor.email,
+            outcome="failure",
+            payload={
+                "action_type": action_type,
+                "target_type": target_type,
+                "target_id": target_id,
+                "guardrail_code": guardrail.code,
+                "reason": guardrail.reason[:500],
+                "details": guardrail.details,
+            },
+            request_id=actor.request_id,
+            ip_address=actor.ip,
+        )
+        db.flush()
+    except SQLAlchemyError:
+        # A denied action must never be upgraded because auditing failed.
+        db.rollback()
+
+
+def _audit_policy_error(
+    db: Session,
+    *,
+    org: Organization,
+    actor: BrokerActor,
+    action_type: str,
+    error: str,
+) -> None:
+    try:
+        append_audit(
+            db,
+            org_id=org.id,
+            action="defence.policy.error",
+            resource_type="policy",
+            resource_id=None,
+            actor_type="user" if actor.user_id else "system",
+            actor_id=actor.id,
+            actor_email=actor.email,
+            outcome="failure",
+            payload={"action_type": action_type, "error": error[:500]},
+            request_id=actor.request_id,
+            ip_address=actor.ip,
+        )
+        db.flush()
+    except SQLAlchemyError:
+        # Fail-closed: the caller still denies even when the audit write fails.
+        db.rollback()
+
+
+def _enforce_guardrails(
+    db: Session,
+    *,
+    org: Organization,
+    actor: BrokerActor,
+    action_type: str,
+    action: ActionDefinition,
+    target_type: str,
+    target_id: str,
+    requested_level: str | None,
+    dry_run: bool,
+) -> None:
+    """Deny before any side effect when a deterministic guardrail blocks the action.
+
+    Runs ahead of approval validation and connector selection so a denied action
+    cannot consume an approval, mark a remediation or reach a target system.
+    """
+    try:
+        limits = load_guardrail_limits(db, org.id)
+        guardrail = evaluate_runtime_guardrails(
+            db,
+            org.id,
+            action,
+            limits,
+            target_type=target_type,
+            target_id=target_id,
+            acquire_lock=True,
+        )
+    except PolicyDefinitionError as exc:
+        _audit_policy_error(db, org=org, actor=actor, action_type=action_type, error=str(exc))
+        decision = evaluate(
+            db,
+            org,
+            action_type,
+            target_type=target_type,
+            target_id=target_id,
+            requested_level=requested_level,
+            approved=True,
+            dry_run=dry_run,
+        )
+        raise PolicyDenied(decision.reason, details=[decision.as_dict()]) from exc
+    except SQLAlchemyError as exc:
+        _audit_policy_error(
+            db,
+            org=org,
+            actor=actor,
+            action_type=action_type,
+            error="policy storage failure while loading guardrails",
+        )
+        decision = evaluate(
+            db,
+            org,
+            action_type,
+            target_type=target_type,
+            target_id=target_id,
+            requested_level=requested_level,
+            approved=True,
+            dry_run=dry_run,
+        )
+        raise PolicyDenied(decision.reason, details=[decision.as_dict()]) from exc
+
+    if guardrail.allowed:
+        return
+
+    _audit_guardrail_denial(
+        db,
+        org=org,
+        actor=actor,
+        action_type=action_type,
+        target_type=target_type,
+        target_id=target_id,
+        guardrail=guardrail,
+    )
+    decision = evaluate(
+        db,
+        org,
+        action_type,
+        target_type=target_type,
+        target_id=target_id,
+        requested_level=requested_level,
+        approved=True,
+        dry_run=dry_run,
+    )
+    raise PolicyDenied(decision.reason, details=[decision.as_dict()])
 
 
 def execute_action(
@@ -140,7 +322,19 @@ def execute_action(
     if action.internal:
         raise PolicyDenied("Internal actions are executed by their owning domain, not the connector broker")
 
-    approval = _validate_approval(db, org, approval_id, action_type, target_type, target_id)
+    _enforce_guardrails(
+        db,
+        org=org,
+        actor=actor,
+        action_type=action_type,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        requested_level=requested_level,
+        dry_run=dry_run,
+    )
+
+    approval = _validate_approval(db, org, approval_id, action_type, target_type, target_id, parameters)
     decision = evaluate(
         db,
         org,

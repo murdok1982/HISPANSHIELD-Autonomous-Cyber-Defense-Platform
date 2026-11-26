@@ -411,17 +411,23 @@ def _enforce_step_permissions(ctx: RequestContext, definition: dict[str, Any], *
 
     `playbook:execute` alone must never grant the ability to run a defensive
     action or a connector read that the caller could not invoke directly.
+    Compensation actions run after a failure and are just as effectful, so they
+    are checked with the same matrix (VULN-006 residual).
     """
     for step in definition.get("steps", []) or []:
         if not isinstance(step, dict):
             continue
-        action = str(step.get("action") or "")
-        required = _STEP_PERMISSIONS.get(action)
-        if not required:
-            continue
-        if action == "defence.execute" and dry_run:
-            continue
-        ctx.require(required)
+        actions = [str(step.get("action") or "")]
+        compensation = step.get("compensation")
+        if isinstance(compensation, dict) and compensation.get("action"):
+            actions.append(str(compensation.get("action")))
+        for action in actions:
+            required = _STEP_PERMISSIONS.get(action)
+            if not required:
+                continue
+            if action == "defence.execute" and dry_run:
+                continue
+            ctx.require(required)
 
 
 def _start(

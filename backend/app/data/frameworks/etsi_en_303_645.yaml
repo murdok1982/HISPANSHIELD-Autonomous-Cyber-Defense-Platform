@@ -1,0 +1,191 @@
+code: "ETSI EN 303 645"
+name: "ETSI EN 303 645 — Cyber security for consumer IoT"
+version: "V13.1.1"
+jurisdiction: EU
+authority: "ETSI"
+effective_date: 2020-06-30
+source_url: https://www.etsi.org/deliver/etsi_en/303600_303699/303645/
+status: published
+description: >-
+  Baseline security provisions for consumer internet-connected devices. The
+  provisions below are paraphrased for platform and fleet self-assessment; the
+  standard text is not reproduced.
+controls:
+  - control_id: ETSI-1
+    title: No universal default passwords
+    description: >-
+      Devices and management interfaces do not ship with universal default
+      credentials; passwords are unique or generated per device.
+    category: authentication
+    weight: 3
+    references:
+      - "Provision 5.1"
+    evidence_requirements:
+      - key: credential_policy
+        title: Credential provisioning policy
+        description: Procedure for unique credentials or forced password change at first use.
+    technical_checks:
+      - key: mfa
+        title: Strong authentication for management
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: All administrative users authenticate with MFA.
+      - key: least_privilege
+        title: Administrative roles bounded
+        type: rbac_least_privilege
+        params:
+          max_admins: 3
+        description: Administrative roles are limited to named staff.
+
+  - control_id: ETSI-2
+    title: Implement a vulnerability disclosure policy
+    description: >-
+      A public vulnerability disclosure policy gives security researchers a
+      contact point and response commitments.
+    category: vulnerability_management
+    weight: 3
+    references:
+      - "Provision 5.2"
+    evidence_requirements:
+      - key: disclosure_policy
+        title: Disclosure policy
+        description: Published policy with contact details and response targets.
+    technical_checks:
+      - key: sla
+        title: Vulnerability remediation SLA
+        type: vulnerability_sla
+        params:
+          max_overdue_ratio: 0.1
+        description: Open vulnerabilities are mostly within their due dates.
+
+  - control_id: ETSI-3
+    title: Keep software updated
+    description: >-
+      Software is updated automatically or with clear user guidance, and
+      updates are applied securely.
+    category: maintenance
+    weight: 3
+    references:
+      - "Provision 5.3"
+    evidence_requirements:
+      - key: update_process
+        title: Update process description
+        description: Update mechanism, cadence and rollback approach.
+    technical_checks:
+      - key: patch
+        title: Patch coverage
+        type: patch_management
+        params:
+          max_days_since_scan: 60
+          min_ratio: 0.8
+        description: Assets have a recent patch or scan record.
+
+  - control_id: ETSI-4
+    title: Securely store sensitive security parameters
+    description: >-
+      Credentials, keys and sensitive parameters are stored and transmitted
+      using protected mechanisms.
+    category: cryptography
+    weight: 3
+    references:
+      - "Provision 5.4"
+    evidence_requirements:
+      - key: key_storage
+        title: Key storage design
+        description: Description of secure storage for credentials and keys.
+    technical_checks:
+      - key: encryption
+        title: Encryption at rest
+        type: encryption_at_rest
+        params: {}
+        description: Encryption at rest is declared for credential stores.
+
+  - control_id: ETSI-5
+    title: Communicate securely
+    description: >-
+      Security-relevant communication uses encrypted channels with authenticated
+      peers.
+    category: communications
+    weight: 3
+    references:
+      - "Provision 5.5"
+    evidence_requirements:
+      - key: protocol_spec
+        title: Communication protocol specification
+        description: Protocols, cipher suites and peer authentication approach.
+    technical_checks:
+      - key: tls
+        title: TLS verification
+        type: connector_tls
+        params:
+          require_all: true
+        description: Every enabled connector verifies TLS certificates.
+
+  - control_id: ETSI-6
+    title: Minimise exposed attack surface
+    description: >-
+      Unused services and ports are disabled and exposed interfaces are reduced
+      to the minimum required.
+    category: hardening
+    weight: 3
+    references:
+      - "Provision 5.6"
+    evidence_requirements:
+      - key: port_inventory
+        title: Exposed interface inventory
+        description: Inventory of listening services with justification.
+    technical_checks:
+      - key: segmentation
+        title: Network segmentation
+        type: network_segmentation
+        params:
+          min_ratio: 0.8
+        description: Zones and conduits restrict reachability.
+
+  - control_id: ETSI-7
+    title: Ensure software integrity
+    description: >-
+      Software is verified as genuine before installation or execution, using
+      signatures or equivalent integrity mechanisms.
+    category: integrity
+    weight: 3
+    references:
+      - "Provision 5.7"
+    evidence_requirements:
+      - key: signing_process
+        title: Signing and verification process
+        description: Keys, signature format and verification steps.
+    technical_checks:
+      - key: audit
+        title: Tamper-evident records
+        type: audit_chain_valid
+        params: {}
+        description: Integrity-relevant records remain tamper-evident.
+
+  - control_id: ETSI-8
+    title: Ensure personal data protection and resilience
+    description: >-
+      Personal data is protected in line with applicable law and devices remain
+      available after network or power disruption.
+    category: data_protection
+    weight: 3
+    references:
+      - "Provision 5.8"
+      - "Provision 5.9"
+      - "Provision 5.10"
+    evidence_requirements:
+      - key: privacy_design
+        title: Privacy design notes
+        description: Data minimisation and retention decisions for device telemetry.
+    technical_checks:
+      - key: minimisation
+        title: Data minimisation
+        type: data_minimisation
+        params: {}
+        description: Minimisation controls are documented.
+      - key: backups
+        title: Resilience and backup
+        type: backup_configured
+        params: {}
+        description: Backups are declared operational.

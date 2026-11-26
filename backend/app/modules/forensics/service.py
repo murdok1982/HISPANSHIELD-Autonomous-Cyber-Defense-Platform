@@ -39,6 +39,20 @@ HASH_CHUNK_SIZE = 1024 * 1024
 MAX_EXPORT_TIMELINE = 500
 MAX_EXPORT_ALERTS = 200
 _UNSAFE_FILENAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
+_CSV_FORMULA_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
+
+
+def csv_safe(value: Any) -> str:
+    """Neutralise spreadsheet formulas in exported CSV cells (CWE-1236).
+
+    Excel/LibreOffice evaluate cells beginning with ``=``, ``+``, ``-`` or
+    ``@``. Prefixing a single quote keeps the value textual while preserving
+    the original content for machine readers.
+    """
+    text = "" if value is None else str(value)
+    if text.startswith(_CSV_FORMULA_PREFIXES):
+        return "'" + text
+    return text
 
 
 def safe_filename(value: str | None, fallback: str, max_length: int = 80) -> str:
@@ -422,6 +436,7 @@ __all__ = [
     "get_incident",
     "hash_file",
     "resolve_evidence_path",
+    "csv_safe",
     "safe_filename",
     "timeline_rows",
     "verify_evidence_hash",

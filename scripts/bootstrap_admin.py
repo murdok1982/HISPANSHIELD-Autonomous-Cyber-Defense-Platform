@@ -19,6 +19,11 @@ def main() -> int:
     parser.add_argument("--org", default=settings.bootstrap_org_name)
     parser.add_argument("--org-slug", default=None)
     parser.add_argument("--org-kind", default="private", choices=["private", "public", "critical_infrastructure"])
+    parser.add_argument(
+        "--promote-existing",
+        action="store_true",
+        help="Explicitly elevate an existing non-admin account (requires prior review)",
+    )
     args = parser.parse_args()
 
     if not args.email or not args.password:
@@ -35,6 +40,7 @@ def main() -> int:
                 org_name=args.org,
                 org_slug=args.org_slug,
                 org_kind=args.org_kind,
+                promote_existing=args.promote_existing,
             )
         except BootstrapError as exc:
             print(str(exc), file=sys.stderr)

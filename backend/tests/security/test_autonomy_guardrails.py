@@ -9,9 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
+from app.core.errors import PolicyDenied
 from app.models.assets import Asset
-from app.models.core import Approval, AuditRecord, Organization, Policy
+from app.models.core import Approval, AuditRecord, KillSwitch, Organization, Policy
 from app.models.incidents import Remediation
+from app.services.broker import BrokerActor, execute_action
 from app.services.connectors.base import (
     WRITE,
     AdapterResult,
@@ -572,3 +574,306 @@ def test_foreign_organization_cannot_be_used_as_target(auth_client: TestClient, 
         },
     )
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Deterministic autonomy guardrails (VULN-013 / VULN-027)
+# ---------------------------------------------------------------------------
+
+_GUARD_ACTOR = BrokerActor(id="guardrail-test-actor", email=None)
+
+
+def _add_policy(db, org, definition: dict, version: int = 5) -> None:
+    db.add(
+        Policy(
+            org_id=org.id,
+            name=f"guardrail-{uuid4().hex[:8]}",
+            kind="autonomy",
+            version=version,
+            enabled=True,
+            definition=definition,
+        )
+    )
+    db.commit()
+
+
+def _execute_direct(db, org, action_type: str = "session.revoke", target: str = "guard-target"):
+    return execute_action(
+        db,
+        org=org,
+        action_type=action_type,
+        target_type="identity" if action_type == "session.revoke" else "endpoint",
+        target_id=target,
+        actor=_GUARD_ACTOR,
+    )
+
+
+def _guard_code(exc: PolicyDenied) -> str:
+    details = exc.details[0]
+    return str(details["constraints"]["guardrails"]["code"])
+
+
+def _new_tenant(db, slug: str):
+    org = Organization(slug=slug, name=f"Guard {slug}", autonomy_level="A3")
+    db.add(org)
+    db.commit()
+    _connector(db, org.id)
+    return org
+
+
+def test_guardrails_allow_when_policy_is_within_limits(seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    _add_policy(
+        db,
+        seeded["org"],
+        {
+            "max_actions_per_hour": 5,
+            "max_actions_per_day": 20,
+            "cooldown_seconds": 0,
+            "max_blast_radius": 5,
+            "denied_target_kinds": [],
+        },
+    )
+
+    result = _execute_direct(db, seeded["org"], target="allow-1")
+
+    assert result.status == "executed"
+    assert [call[0] for call in GuardTestAdapter.CALLS] == ["revoke_sessions"]
+
+
+def test_denied_actions_policy_still_denies(seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    _add_policy(db, seeded["org"], {"denied_actions": ["session.revoke"]})
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="deny-1")
+
+    assert "explicitly denied" in str(exc.value)
+    assert GuardTestAdapter.CALLS == []
+
+
+def test_hourly_budget_exhaustion_and_tenant_isolation(seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    limits = {"max_actions_per_hour": 2, "max_actions_per_day": 100}
+    _add_policy(db, seeded["org"], limits)
+
+    assert _execute_direct(db, seeded["org"], target="hour-1").status == "executed"
+    assert _execute_direct(db, seeded["org"], target="hour-2").status == "executed"
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="hour-3")
+    assert _guard_code(exc.value) == "budget_hour_exhausted"
+    assert len(GuardTestAdapter.CALLS) == 2
+
+    other = _new_tenant(db, "guard-budget-b")
+    _add_policy(db, other, limits)
+
+    # Org A's two executions must not consume org B's budget.
+    assert _execute_direct(db, other, target="hour-b-1").status == "executed"
+
+    # And org B's execution must not free org A's exhausted budget.
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="hour-4")
+    assert _guard_code(exc.value) == "budget_hour_exhausted"
+
+
+def test_daily_budget_exhaustion(seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    _add_policy(db, seeded["org"], {"max_actions_per_hour": 100, "max_actions_per_day": 2})
+
+    assert _execute_direct(db, seeded["org"], target="day-1").status == "executed"
+    assert _execute_direct(db, seeded["org"], target="day-2").status == "executed"
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="day-3")
+    assert _guard_code(exc.value) == "budget_day_exhausted"
+    assert len(GuardTestAdapter.CALLS) == 2
+
+
+def test_cooldown_blocks_same_action_and_target_only(seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    _add_policy(db, seeded["org"], {"cooldown_seconds": 3600, "max_actions_per_hour": 20})
+
+    assert _execute_direct(db, seeded["org"], target="cool-1").status == "executed"
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="cool-1")
+    assert _guard_code(exc.value) == "cooldown_active"
+    assert exc.value.details[0]["constraints"]["guardrails"]["retry_after_seconds"] > 0
+
+    assert _execute_direct(db, seeded["org"], target="cool-2").status == "executed"
+    assert [call[0] for call in GuardTestAdapter.CALLS] == ["revoke_sessions", "revoke_sessions"]
+
+
+def test_change_freeze_window_suspends_state_changes(seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    _add_policy(
+        db,
+        seeded["org"],
+        {"change_freeze_windows": [{"start": "00:00", "end": "00:00"}]},
+    )
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="freeze-1")
+
+    assert _guard_code(exc.value) == "change_freeze"
+    assert "change freeze" in str(exc.value).lower()
+    assert GuardTestAdapter.CALLS == []
+
+
+def test_blast_radius_ceiling_is_enforced_before_approval(seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    _add_policy(db, seeded["org"], {"max_blast_radius": 2})
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], action_type="patch.apply", target="host-1")
+
+    assert _guard_code(exc.value) == "blast_radius_exceeded"
+    assert exc.value.details[0]["constraints"]["guardrails"]["action_blast_radius"] == 4
+    assert GuardTestAdapter.CALLS == []
+
+
+def test_target_kind_deny_and_allow_lists(seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    _add_policy(db, seeded["org"], {"denied_target_kinds": ["identity"]})
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="kind-1")
+    assert _guard_code(exc.value) == "target_kind_denied"
+
+    _add_policy(db, seeded["org"], {"allowed_target_kinds": ["endpoint"]}, version=6)
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="kind-2")
+    assert _guard_code(exc.value) == "target_kind_not_allowed"
+    assert GuardTestAdapter.CALLS == []
+
+
+@pytest.mark.parametrize(
+    "definition",
+    [
+        {"max_actions_per_hour": -5},
+        {"max_actions_per_day": "many"},
+        {"cooldown_seconds": True},
+        {"max_blast_radius": 9},
+        {"change_freeze_windows": [{"start": "25:00", "end": "26:00"}]},
+        {"denied_target_kinds": "identity"},
+    ],
+)
+def test_corrupt_policy_definition_denies(seeded, db, definition: dict) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    _add_policy(db, seeded["org"], definition)
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="corrupt-1")
+
+    assert "Invalid autonomy policy guardrails" in str(exc.value)
+    assert GuardTestAdapter.CALLS == []
+    db.commit()
+    errors = list(db.execute(select(AuditRecord).where(AuditRecord.action == "defence.policy.error")).scalars())
+    assert len(errors) == 1
+
+
+def test_policy_storage_failure_denies_and_is_audited(seeded, db, monkeypatch) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+
+    def _broken_policy(*_args, **_kwargs):
+        from sqlalchemy.exc import SQLAlchemyError
+
+        raise SQLAlchemyError("simulated policy storage outage")
+
+    monkeypatch.setattr("app.services.policy_engine._active_policy", _broken_policy)
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="outage-1")
+
+    assert "fail-closed" in str(exc.value)
+    assert GuardTestAdapter.CALLS == []
+    db.commit()
+    errors = list(db.execute(select(AuditRecord).where(AuditRecord.action == "defence.policy.error")).scalars())
+    assert len(errors) == 1
+    assert errors[0].outcome == "failure"
+
+
+def test_broker_honours_kill_switch(seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    db.add(
+        KillSwitch(
+            org_id=seeded["org"].id,
+            scope="organization",
+            engaged=True,
+            reason="Guardrail drill",
+        )
+    )
+    db.commit()
+
+    with pytest.raises(PolicyDenied) as exc:
+        _execute_direct(db, seeded["org"], target="switch-1")
+
+    assert "kill switch" in str(exc.value).lower()
+    assert exc.value.details[0]["kill_switch_engaged"] is True
+    assert GuardTestAdapter.CALLS == []
+
+
+def test_kill_switch_is_checked_for_intermediate_playbook_steps(auth_client: TestClient, seeded, db) -> None:
+    _reset()
+    _set_autonomy(db, seeded["org"], "A3")
+    _connector(db, seeded["org"].id)
+    engaged = auth_client.post(
+        "/api/v1/organizations/current/kill-switches",
+        json={
+            "scope": "autonomy",
+            "target_id": str(seeded["org"].id),
+            "reason": "Mid-playbook containment",
+        },
+    )
+    assert engaged.status_code == 201
+    definition = {
+        "steps": [
+            {
+                "key": "revoke",
+                "name": "Revoke sessions",
+                "action": "defence.execute",
+                "params": {
+                    "action_type": "session.revoke",
+                    "target_type": "identity",
+                    "target_id": "user-playbook-1",
+                },
+            }
+        ]
+    }
+    created = auth_client.post(f"{SOAR}/playbooks", json={"name": "Mid-playbook switch", "definition": definition})
+    assert created.status_code == 201, created.text
+    published = auth_client.post(f"{SOAR}/playbooks/{created.json()['id']}/publish")
+    assert published.status_code == 200, published.text
+
+    started = auth_client.post(f"{SOAR}/executions", json={"playbook_id": created.json()["id"]})
+    assert started.status_code == 201, started.text
+    # A denied defence step aborts the durable execution (status "failed" when
+    # the step aborts, "denied" when the engine terminates on an approval).
+    assert started.json()["status"] in {"failed", "denied"}
+    assert GuardTestAdapter.CALLS == []
+    denials = list(db.execute(select(AuditRecord).where(AuditRecord.action == "defence.action.denied")).scalars())
+    assert any("kill switch" in str((row.payload or {}).get("reason", "")).lower() for row in denials)

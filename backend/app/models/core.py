@@ -50,6 +50,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     mfa_secret_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
     mfa_last_counter: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # One-time MFA recovery codes: [{"hash": "<argon2id>", "used_at": iso|null}]
+    recovery_codes: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     locale: Mapped[str] = mapped_column(String(8), default="es", nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), default="UTC", nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -211,6 +213,9 @@ class BreakGlassGrant(UUIDPrimaryKeyMixin, Base):
     )
     reason: Mapped[str] = mapped_column(String(1000), nullable=False)
     ticket: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), default="approved", nullable=False)
+    approved_by: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

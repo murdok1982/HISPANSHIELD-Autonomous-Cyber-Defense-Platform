@@ -230,6 +230,7 @@ class IngestResponse(StrictModel):
     rejected: int
     event_ids: list[int] = Field(default_factory=list)
     alerts_created: int = 0
+    duplicates: int = 0
 
 
 class BulkIngestResponse(IngestResponse):

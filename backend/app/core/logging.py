@@ -56,6 +56,22 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
+_SECRET_PATH_SEGMENTS = ("ingest",)
+
+
+def _safe_log_path(path: str) -> str:
+    """Redact credential-bearing path segments before they reach a log sink.
+
+    `/ingest/<token>` keeps compatibility, but the token must never be written to
+    application or exception logs; reverse proxies should use the header route.
+    """
+    parts = path.split("/")
+    for index, part in enumerate(parts):
+        if part in _SECRET_PATH_SEGMENTS and index + 1 < len(parts) and parts[index + 1]:
+            parts[index + 1] = "<redacted>"
+    return "/".join(parts)
+
+
 class RequestContextMiddleware(BaseHTTPMiddleware):
     """Assign a request ID and emit one structured access log line per request."""
 
@@ -73,14 +89,14 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
         except Exception:
             logger.exception(
                 "unhandled_request_error",
-                extra={"extra_fields": {"method": request.method, "path": request.url.path}},
+                extra={"extra_fields": {"method": request.method, "path": _safe_log_path(request.url.path)}},
             )
             raise
         finally:
             elapsed_ms = int((time.perf_counter() - started) * 1000)
         response.headers["X-Request-ID"] = request_id
         route = request.scope.get("route")
-        path_template = getattr(route, "path", request.url.path)
+        path_template = getattr(route, "path", _safe_log_path(request.url.path))
         logger.info(
             "http_request",
             extra={
@@ -120,18 +136,93 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-class BodySizeLimitMiddleware(BaseHTTPMiddleware):
+class _BodyTooLarge(Exception):
+    """Retained for backwards compatibility with older middleware call sites."""
+
+
+class BodySizeLimitMiddleware:
+    """Bound request bodies even when the client omits or forges Content-Length.
+
+    Requests with a declared length are rejected before the application runs.
+    Requests without a length (chunked / HTTP2 streaming) are buffered with a
+    hard ceiling and replayed to the application; an oversized body is answered
+    with 413 without ever reaching the route handler. The previous header-only
+    check let chunked uploads bypass the limit entirely (VULN-018).
+    """
+
     def __init__(self, app, max_bytes: int = 30 * 1024 * 1024) -> None:  # type: ignore[no-untyped-def]
-        super().__init__(app)
+        self.app = app
         self.max_bytes = max_bytes
 
-    async def dispatch(self, request: Request, call_next):  # type: ignore[no-untyped-def]
-        length = request.headers.get("content-length")
-        if length and length.isdigit() and int(length) > self.max_bytes:
-            from starlette.responses import JSONResponse
+    async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
 
-            return JSONResponse(
-                {"error": {"code": "payload_too_large", "message": "Request body exceeds the 30 MB limit"}},
-                status_code=413,
-            )
-        return await call_next(request)
+        headers = {key.lower(): value for key, value in (scope.get("headers") or [])}
+        declared = headers.get(b"content-length")
+        if declared is not None:
+            if not declared.isdigit():
+                await _send_error(send, 400, "invalid_content_length", "Malformed Content-Length header")
+                return
+            if int(declared) > self.max_bytes:
+                await _send_payload_too_large(send, self.max_bytes)
+                return
+            await self.app(scope, receive, send)
+            return
+
+        if headers.get(b"transfer-encoding", b"").lower() == b"chunked" or scope.get("http_version") == "2":
+            chunks: list[bytes] = []
+            total = 0
+            while True:
+                message = await receive()
+                if message.get("type") == "http.disconnect":
+                    return
+                chunk = message.get("body", b"")
+                total += len(chunk)
+                if total > self.max_bytes:
+                    await _send_payload_too_large(send, self.max_bytes)
+                    return
+                chunks.append(chunk)
+                if not message.get("more_body"):
+                    break
+            body = b"".join(chunks)
+            replayed = False
+
+            async def replay_receive():  # type: ignore[no-untyped-def]
+                nonlocal replayed
+                if replayed:
+                    return {"type": "http.request", "body": b"", "more_body": False}
+                replayed = True
+                return {"type": "http.request", "body": body, "more_body": False}
+
+            await self.app(scope, replay_receive, send)
+            return
+
+        await self.app(scope, receive, send)
+
+
+async def _send_error(send, status_code: int, code: str, message: str) -> None:  # type: ignore[no-untyped-def]
+    body = json.dumps({"error": {"code": code, "message": message}}).encode()
+    await send(
+        {
+            "type": "http.response.start",
+            "status": status_code,
+            "headers": [
+                (b"content-type", b"application/json"),
+                (b"content-length", str(len(body)).encode()),
+                (b"x-content-type-options", b"nosniff"),
+                (b"cache-control", b"no-store"),
+            ],
+        }
+    )
+    await send({"type": "http.response.body", "body": body})
+
+
+async def _send_payload_too_large(send, max_bytes: int) -> None:  # type: ignore[no-untyped-def]
+    await _send_error(
+        send,
+        413,
+        "payload_too_large",
+        f"Request body exceeds the {max_bytes // (1024 * 1024)} MB limit",
+    )

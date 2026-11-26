@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from sqlalchemy import delete, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
 from app.core.audit import append_audit
@@ -26,7 +27,7 @@ from app.core.crypto import (
 from app.core.db import utcnow
 from app.core.errors import NotFound
 from app.models.core import Policy
-from app.models.events import IngestSource, SecurityEvent
+from app.models.events import IngestNonce, IngestSource, SecurityEvent
 from app.models.ti import ThreatIndicator
 from app.services.detection import run_detection
 from app.services.normalization import SCHEMA_VERSION, NormalizedEvent, make_event, sanitize_text, sanitize_value
@@ -36,6 +37,9 @@ HMAC_PREFIX = "hs_hmac_"
 MAX_BODY_BYTES = 1_048_576
 INGEST_RATE_LIMIT = 120
 INGEST_RATE_WINDOW = 60
+SIGNATURE_WINDOW_SECONDS = 300
+NONCE_RETENTION_HOURS = 24
+NONCE_PRUNE_BATCH = 500
 RETENTION_POLICY_NAME = "event-retention"
 DEFAULT_RETENTION: dict[str, Any] = {
     "hot_days": 90,
@@ -44,6 +48,7 @@ DEFAULT_RETENTION: dict[str, Any] = {
     "purge_enabled": False,
 }
 _MITRE_RE = re.compile(r"T\d{4}(?:\.\d{3})?")
+_NONCE_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
 _TYPE_ALIASES = {
     "ipv4": "ip",
     "ipv6": "ip",
@@ -62,9 +67,23 @@ _TYPE_ALIASES = {
 @dataclass(slots=True)
 class IngestResult:
     event_ids: list[int] = field(default_factory=list)
+    duplicates: int = 0
     alerts_created: int = 0
     alerts_updated: int = 0
     detection_errors: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class SignatureVerdict:
+    """Outcome of an ingestion signature check.
+
+    ``mode`` is ``none`` (source without secret), ``v2`` (timestamp + nonce) or
+    ``legacy`` (body-only HMAC accepted through an explicit opt-in flag).
+    """
+
+    ok: bool
+    mode: str
+    reason: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -134,21 +153,108 @@ def resolve_source_by_token(db: Session, raw_token: str) -> IngestSource | None:
     return db.execute(select(IngestSource).where(IngestSource.token_hash == token_hash(candidate))).scalar_one_or_none()
 
 
-def verify_source_signature(source: IngestSource, body: bytes, signature: str | None) -> bool:
-    """Constant-time HMAC-SHA256 verification when the source declares a secret."""
+def verify_source_signature(
+    source: IngestSource,
+    body: bytes,
+    *,
+    signature: str | None,
+    timestamp: str | None = None,
+    nonce: str | None = None,
+    now: datetime | None = None,
+) -> SignatureVerdict:
+    """Verify the ingestion signature of a source that declares a secret.
+
+    Canonical HMAC v2 message (mandatory by default)::
+
+        f"{epoch_seconds}.{nonce}." + raw_body
+
+    where ``epoch_seconds`` is the ``X-HS-Timestamp`` header, ``nonce`` is the
+    8-128 character ``X-HS-Nonce`` header and ``raw_body`` is the exact request
+    body bytes. Timestamps outside a +/-300 s window are rejected, and nonces
+    are single use (recorded by :func:`record_nonce`).
+
+    **Legacy compatibility:** a body-only HMAC (``HMAC(secret, body)``) is
+    accepted *exclusively* when ``source.config["allow_legacy_hmac"]`` is the
+    JSON boolean ``true``. The default is ``False``: without the explicit
+    opt-in, requests carrying only the legacy signature are rejected so a
+    replay cannot bypass nonce/timestamp verification.
+    """
     if not source.hmac_secret_encrypted:
-        return True
+        return SignatureVerdict(ok=True, mode="none")
     if not signature:
-        return False
+        return SignatureVerdict(ok=False, mode="none", reason="signature_missing")
+    provided = signature.strip().lower()
+    if not provided or len(provided) > 200:
+        return SignatureVerdict(ok=False, mode="none", reason="signature_malformed")
     try:
         secret = decrypt_secret(source.hmac_secret_encrypted)
     except ValueError:
-        return False
-    expected = hmac_sha256_hex(secret, body)
-    provided = signature.strip().lower()
-    if not provided or len(provided) > 200:
-        return False
-    return constant_time_equals(expected, provided)
+        return SignatureVerdict(ok=False, mode="none", reason="secret_unavailable")
+
+    config = source.config if isinstance(source.config, dict) else {}
+    allow_legacy = config.get("allow_legacy_hmac") is True
+
+    if timestamp is None or nonce is None:
+        if allow_legacy:
+            expected_legacy = hmac_sha256_hex(secret, body)
+            if constant_time_equals(expected_legacy, provided):
+                return SignatureVerdict(ok=True, mode="legacy")
+            return SignatureVerdict(ok=False, mode="legacy", reason="signature_invalid")
+        return SignatureVerdict(ok=False, mode="v2", reason="signature_v2_headers_missing")
+
+    stamp = timestamp.strip()
+    if not stamp.isdigit() or len(stamp) > 12:
+        return SignatureVerdict(ok=False, mode="v2", reason="timestamp_malformed")
+    candidate_nonce = nonce.strip()
+    if not _NONCE_RE.fullmatch(candidate_nonce):
+        return SignatureVerdict(ok=False, mode="v2", reason="nonce_malformed")
+    current = now or utcnow()
+    if abs(int(current.timestamp()) - int(stamp)) > SIGNATURE_WINDOW_SECONDS:
+        return SignatureVerdict(ok=False, mode="v2", reason="timestamp_out_of_window")
+
+    canonical = f"{stamp}.{candidate_nonce}.".encode() + body
+    expected = hmac_sha256_hex(secret, canonical)
+    if not constant_time_equals(expected, provided):
+        return SignatureVerdict(ok=False, mode="v2", reason="signature_invalid")
+    return SignatureVerdict(ok=True, mode="v2")
+
+
+def record_nonce(
+    db: Session,
+    *,
+    org_id: UUID,
+    source_id: UUID,
+    nonce: str,
+    now: datetime | None = None,
+) -> bool:
+    """Consume a nonce exactly once. Returns ``False`` when it was already used."""
+    received_at = now or utcnow()
+    statement = (
+        pg_insert(IngestNonce)
+        .values(
+            org_id=org_id,
+            source_id=source_id,
+            nonce=nonce,
+            received_at=received_at,
+        )
+        .on_conflict_do_nothing(index_elements=[IngestNonce.source_id, IngestNonce.nonce])
+        .returning(IngestNonce.id)
+    )
+    return db.execute(statement).scalar_one_or_none() is not None
+
+
+def prune_nonces(db: Session, *, source_id: UUID, now: datetime | None = None) -> int:
+    """Delete stale nonces for one source in bounded batches (never unbounded)."""
+    cutoff = (now or utcnow()) - timedelta(hours=NONCE_RETENTION_HOURS)
+    stale = (
+        select(IngestNonce.id)
+        .where(IngestNonce.source_id == source_id, IngestNonce.received_at < cutoff)
+        .order_by(IngestNonce.id.asc())
+        .limit(NONCE_PRUNE_BATCH)
+        .scalar_subquery()
+    )
+    result = db.execute(delete(IngestNonce).where(IngestNonce.id.in_(stale)))
+    return int(result.rowcount or 0)
 
 
 def serialize_source(source: IngestSource) -> dict[str, Any]:
@@ -278,11 +384,17 @@ def enrich_event_with_indicators(db: Session, event: SecurityEvent) -> list[dict
 
 
 def _dedupe_key(source_id: UUID | None, parsed: NormalizedEvent) -> str:
+    """Deterministic event fingerprint scoped to the ingestion source.
+
+    The normalized timestamp is intentionally excluded: a byte-identical
+    payload replayed at a later time must collide so persistent dedupe can
+    absorb it. Payloads that carry their own timestamp still differ because the
+    raw document is part of the hash.
+    """
     material = json.dumps(
         {
             "source": str(source_id) if source_id else None,
             "message": parsed.message,
-            "occurred_at": parsed.occurred_at.isoformat(),
             "raw": parsed.raw,
         },
         sort_keys=True,
@@ -292,19 +404,25 @@ def _dedupe_key(source_id: UUID | None, parsed: NormalizedEvent) -> str:
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
-def _record_from_parsed(org_id: UUID, source_id: UUID | None, parsed: NormalizedEvent) -> SecurityEvent:
-    values = parsed.column_values()
-    return SecurityEvent(
-        org_id=org_id,
-        source_id=source_id,
-        received_at=utcnow(),
-        schema_version=SCHEMA_VERSION,
-        ioc_matches=[],
-        mitre_techniques=[],
-        dedupe_key=_dedupe_key(source_id, parsed),
-        is_demo=False,
-        **values,
-    )
+def _record_values(
+    org_id: UUID,
+    source_id: UUID | None,
+    parsed: NormalizedEvent,
+    *,
+    received_at: datetime | None = None,
+) -> dict[str, Any]:
+    values: dict[str, Any] = {
+        "org_id": org_id,
+        "source_id": source_id,
+        "received_at": received_at or utcnow(),
+        "schema_version": SCHEMA_VERSION,
+        "ioc_matches": [],
+        "mitre_techniques": [],
+        "dedupe_key": _dedupe_key(source_id, parsed),
+        "is_demo": False,
+        **parsed.column_values(),
+    }
+    return values
 
 
 def ingest_parsed_events(
@@ -315,25 +433,60 @@ def ingest_parsed_events(
     events: list[NormalizedEvent],
     run_pipeline: bool = True,
 ) -> IngestResult:
-    """Persist normalized events, enrich IOCs and run detection in one transaction."""
+    """Persist normalized events, enrich IOCs and run detection in one transaction.
+
+    Persistence uses ``INSERT ... ON CONFLICT (org_id, dedupe_key) DO NOTHING``
+    so a duplicate event never aborts the surrounding batch and never races the
+    unique index. Skipped rows are reported through :attr:`IngestResult.duplicates`.
+    """
     if not events:
         return IngestResult()
-    records = [_record_from_parsed(org_id, source.id if source else None, parsed) for parsed in events]
-    db.add_all(records)
-    db.flush()
-    for record in records:
-        enrich_event_with_indicators(db, record)
-    db.flush()
+    source_id = source.id if source else None
+    received_at = utcnow()
+    candidates: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for parsed in events:
+        values = _record_values(org_id, source_id, parsed, received_at=received_at)
+        key = str(values["dedupe_key"])
+        if key in seen:
+            continue
+        seen.add(key)
+        candidates.append(values)
 
-    if source is not None:
+    inserted_ids: list[int] = []
+    if candidates:
+        statement = (
+            pg_insert(SecurityEvent)
+            .values(candidates)
+            .on_conflict_do_nothing(
+                index_elements=[SecurityEvent.org_id, SecurityEvent.dedupe_key],
+                index_where=SecurityEvent.dedupe_key.isnot(None),
+            )
+            .returning(SecurityEvent.id)
+        )
+        inserted_ids = sorted(int(value) for value in db.execute(statement).scalars())
+
+    duplicates = len(events) - len(inserted_ids)
+    records: list[SecurityEvent] = []
+    if inserted_ids:
+        records = list(
+            db.execute(
+                select(SecurityEvent).where(SecurityEvent.id.in_(inserted_ids)).order_by(SecurityEvent.id.asc())
+            ).scalars()
+        )
+        for record in records:
+            enrich_event_with_indicators(db, record)
+        db.flush()
+
+    if source is not None and records:
         last_seen = max(record.occurred_at for record in records)
         if source.last_event_at is None or last_seen > source.last_event_at:
             source.last_event_at = last_seen
         source.event_count = int(source.event_count or 0) + len(records)
         db.add(source)
 
-    result = IngestResult(event_ids=[record.id for record in records])
-    if run_pipeline:
+    result = IngestResult(event_ids=[record.id for record in records], duplicates=duplicates)
+    if run_pipeline and records:
         outcome = run_detection(db, org_id=org_id, events=records)
         result.alerts_created = outcome.alerts_created
         result.alerts_updated = outcome.alerts_updated
@@ -542,9 +695,13 @@ __all__ = [
     "INGEST_RATE_LIMIT",
     "INGEST_RATE_WINDOW",
     "MAX_BODY_BYTES",
+    "NONCE_PRUNE_BATCH",
+    "NONCE_RETENTION_HOURS",
     "RETENTION_POLICY_NAME",
+    "SIGNATURE_WINDOW_SECONDS",
     "TOKEN_PREFIX",
     "IngestResult",
+    "SignatureVerdict",
     "audit_ingest",
     "build_manual_event",
     "create_source",
@@ -553,7 +710,9 @@ __all__ = [
     "generate_source_token",
     "get_retention_policy",
     "ingest_parsed_events",
+    "prune_nonces",
     "purge_old_events",
+    "record_nonce",
     "resolve_source_by_token",
     "rotate_source_token",
     "save_retention_policy",

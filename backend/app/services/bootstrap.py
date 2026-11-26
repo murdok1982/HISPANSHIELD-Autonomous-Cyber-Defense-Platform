@@ -31,11 +31,15 @@ def bootstrap_admin(
     org_name: str = "HISPANSHIELD",
     org_slug: str | None = None,
     org_kind: str = "private",
+    promote_existing: bool = False,
 ) -> tuple[User, Organization, bool]:
     """Create the platform admin and organization if missing.
 
     Returns (user, organization, created). Existing accounts are never modified,
-    so running the script twice cannot reset a production password.
+    so running the script twice cannot reset a production password. Elevating an
+    existing non-admin account requires the explicit ``promote_existing`` flag:
+    an attacker able to set the bootstrap email must not inherit platform admin
+    just by running the provisioning script (VULN-025).
     """
     normalized = email.strip().lower()
     try:
@@ -55,9 +59,17 @@ def bootstrap_admin(
         )
         db.add(user)
         db.flush()
+    elif not existing.is_platform_admin:
+        if not promote_existing:
+            raise BootstrapError(
+                "An account with this email already exists and is not a platform administrator; "
+                "refusing to elevate it automatically (use --promote-existing after review)"
+            )
+        existing.is_platform_admin = True
+        db.flush()
+        user = existing
     else:
         user = existing
-        user.is_platform_admin = True
 
     slug = org_slug or _slugify(org_name)
     org = db.execute(select(Organization).where(Organization.slug == slug)).scalar_one_or_none()

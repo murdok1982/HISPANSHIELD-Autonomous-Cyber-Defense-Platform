@@ -3,7 +3,7 @@
 - **Fecha:** 2026-11-26
 - **Estado de release:** `RELEASE CANDIDATE 1` (RC1), no GA.
 - **Regla de honestidad:** `VERIFIED` exige comando ejecutado con éxito. `DEFERRED` significa ausente o simplificado y está enlazado en `.factory/TASKS.md`.
-- **Backlog:** `109 / 150` tareas verificadas; `47` aplazadas explícitamente a post-MVP; `0` pendientes sin clasificar.
+- **Backlog:** `128 / 172` tareas verificadas (incluye 22 de la ola 0.1.1); `44` aplazadas explícitamente a post-MVP; `0` pendientes sin clasificar.
 - **Seguridad:** informe adversarial en `.factory/SECURITY_AUDIT.md`.
 
 > RC1 entrega un SOC funcional de extremo a extremo: identidad y tenancy, inventario,
@@ -19,9 +19,9 @@
 | Gate | Comando | Resultado |
 | :--- | :--- | :--- |
 | Backend lint | `cd backend && ruff check app tests` | **All checks passed** |
-| Backend format | `ruff format --check app tests` | **215 files already formatted** |
-| Backend types | `mypy app` | **Success: no issues found in 179 source files** |
-| Backend tests | `pytest -q` con `HS_DATABASE_URL=…/hs_final_test` | **515 passed** |
+| Backend format | `ruff format --check app tests` | **223 files already formatted** |
+| Backend types | `mypy app` | **Success: no issues found in 181 source files** |
+| Backend tests | `pytest -o addopts="--strict-markers"` (PostgreSQL 18) | **609 passed** |
 | Edge tests | `cd edge && pytest -q` | **92 passed** |
 | Frontend types | `cd frontend && tsc -b` | **exit 0** |
 | Frontend build | `vite build` | **OK, route-split chunks** |
@@ -52,6 +52,7 @@
 | 9 | 10 marcos de cumplimiento (NIS2, CRA, GDPR, ENS, ISO 27001/27002, IEC 62443, ETSI 303 645, NIST CSF 2.0, EUCC), 105 controles, evaluaciones, evidencias, informes HTML/MD, auditoría, executive overview | `VERIFIED` | `test_frameworks`, `test_compliance`, `test_reports`, UI |
 | 10 | 24 pantallas, i18n ES/EN, dark/light, command palette, responsive, estados loading/empty/error, code splitting, E2E de pantallas | `VERIFIED` | Playwright + Vitest |
 | 11 | Dockerfile, Compose, K8s, CI, SBOM, backup/restore, gitleaks, pre-commit, manual de uso/integración, README, auditoría | `VERIFIED` (estático) | Manifiestos + scripts + docs |
+| 12 | Ola 0.1.1: replay/nonce, discovery authz, claim atómico, guardrails, audit v2, DNS pinning, presupuestos IA, recovery codes, break-glass dual, worker durable, `/readyz` real | `VERIFIED` | `pytest` 609 passed; `.factory/SECURITY_FINDINGS.md` addendum |
 
 ---
 

@@ -1,0 +1,260 @@
+code: IEC62443-3-3
+name: "IEC 62443-3-3 — Industrial automation and control system security"
+version: "2013"
+jurisdiction: International
+authority: "IEC"
+effective_date: 2013-08-06
+source_url: https://webstore.iec.ch/publication/7029
+status: published
+description: >-
+  System security requirements and security levels for industrial automation
+  and control systems, including zone and conduit design. Summaries are
+  paraphrased; clause numbers are provided for traceability only.
+controls:
+  - control_id: IEC-1
+    title: Identification and authentication control
+    description: >-
+      Users and devices are identified and authenticated before being granted
+      access to control system functions.
+    category: access_control
+    weight: 3
+    references:
+      - "SR 1.1"
+      - "SR 1.5"
+      - "SR 1.7"
+    evidence_requirements:
+      - key: account_inventory
+        title: Account and device inventory
+        description: Inventory of human and machine accounts with authentication method.
+    technical_checks:
+      - key: mfa
+        title: MFA for interactive access
+        type: mfa_enforced
+        params:
+          min_ratio: 1.0
+        description: All active platform users authenticate with MFA.
+      - key: least_privilege
+        title: Administrative roles bounded
+        type: rbac_least_privilege
+        params:
+          max_admins: 3
+        description: Administrative roles are limited to named staff.
+
+  - control_id: IEC-2
+    title: Use control
+    description: >-
+      Authorised use of control system components is enforced through role
+      permissions and session controls.
+    category: access_control
+    weight: 3
+    references:
+      - "SR 2.1"
+      - "SR 2.5"
+    evidence_requirements:
+      - key: authorisation_matrix
+        title: Role authorisation matrix
+        description: Mapping of roles to permitted operations on control assets.
+    technical_checks:
+      - key: session
+        title: Session timeout
+        type: session_timeout
+        params:
+          max_minutes: 30
+        description: Idle sessions expire within the configured maximum.
+      - key: review
+        title: Access review
+        type: access_review
+        params:
+          max_days: 180
+        description: Access rights are reviewed at least twice per year.
+
+  - control_id: IEC-3
+    title: System integrity
+    description: >-
+      The integrity of control system components and communications is
+      protected against unauthorised modification.
+    category: integrity
+    weight: 3
+    references:
+      - "SR 3.1"
+      - "SR 3.4"
+    evidence_requirements:
+      - key: integrity_records
+        title: Integrity verification records
+        description: Baseline hashes or signatures for critical control components.
+    technical_checks:
+      - key: audit
+        title: Tamper-evident audit trail
+        type: audit_chain_valid
+        params: {}
+        description: Security-relevant records remain tamper-evident.
+
+  - control_id: IEC-4
+    title: Data confidentiality
+    description: >-
+      Confidential information on control networks is protected at rest and in
+      transit.
+    category: confidentiality
+    weight: 3
+    references:
+      - "SR 4.1"
+      - "SR 4.3"
+    evidence_requirements:
+      - key: crypto_inventory
+        title: Cryptographic control inventory
+        description: Where encryption is applied across IT/OT boundaries.
+    technical_checks:
+      - key: encryption
+        title: Encryption at rest
+        type: encryption_at_rest
+        params: {}
+        description: Encryption at rest is declared for sensitive stores.
+      - key: tls
+        title: TLS verification
+        type: connector_tls
+        params:
+          require_all: true
+        description: Enabled connectors verify TLS certificates.
+
+  - control_id: IEC-5
+    title: Restricted data flow and network segmentation
+    description: >-
+      Control networks are divided into zones and conduits that restrict data
+      flow to authorised paths.
+    category: segmentation
+    weight: 3
+    references:
+      - "SR 5.1"
+      - "SR 5.2"
+      - "SR 5.3"
+    evidence_requirements:
+      - key: zone_conduit_diagram
+        title: Zone and conduit diagram
+        description: Approved zoning design with conduit rules and assigned security levels.
+    technical_checks:
+      - key: segmentation
+        title: Zones and conduits defined
+        type: network_segmentation
+        params:
+          min_ratio: 0.8
+        description: OT devices are assigned to zones and segmentation coverage meets policy.
+
+  - control_id: IEC-6
+    title: Timely response to events
+    description: >-
+      Security events on control systems are detected, logged and responded to
+      in a timely manner.
+    category: incident_management
+    weight: 3
+    references:
+      - "SR 6.1"
+      - "SR 6.2"
+    evidence_requirements:
+      - key: ot_incident_plan
+        title: OT incident response plan
+        description: Plan covering safety, production impact and coordination with IT.
+    technical_checks:
+      - key: incident
+        title: Incident process available
+        type: incident_process_exists
+        params: {}
+        description: An incident policy or published playbook exists.
+      - key: logging
+        title: Logging enabled
+        type: logging_enabled
+        params:
+          min_sources: 1
+        description: At least one event source is enabled.
+
+  - control_id: IEC-7
+    title: Resource availability
+    description: >-
+      Control system availability is protected against denial-of-service and
+      resource exhaustion, with recovery arrangements.
+    category: availability
+    weight: 3
+    references:
+      - "SR 7.1"
+      - "SR 7.2"
+      - "SR 7.6"
+    evidence_requirements:
+      - key: availability_plan
+        title: Availability and recovery plan
+        description: Capacity, redundancy and recovery arrangements for control systems.
+    technical_checks:
+      - key: backups
+        title: Backups configured
+        type: backup_configured
+        params: {}
+        description: Backups are declared operational.
+
+  - control_id: IEC-ZCR
+    title: Zone and conduit risk assessment
+    description: >-
+      Zones and conduits are identified from a risk assessment, with target
+      security levels assigned and validated.
+    category: architecture
+    weight: 3
+    references:
+      - "IEC 62443-3-2"
+      - "SR 5.1"
+    evidence_requirements:
+      - key: risk_assessment
+        title: Zone risk assessment
+        description: Risk assessment per zone with target SL-T and justification.
+    technical_checks:
+      - key: zones
+        title: Zone definitions present
+        type: network_segmentation
+        params:
+          min_ratio: 0.5
+        description: At least half of OT devices are attached to a defined zone.
+
+  - control_id: IEC-OTM
+    title: Passive-only OT monitoring
+    description: >-
+      Operational technology is monitored passively by default; active scanning
+      or writes to controllers require explicit authorization.
+    category: ot_operations
+    weight: 3
+    references:
+      - "IEC 62443-3-3 §4"
+      - "IEC 62443-2-1"
+    evidence_requirements:
+      - key: passive_monitoring_record
+        title: Passive monitoring configuration
+        description: Evidence that OT monitoring is passive and no active probes are enabled.
+    technical_checks:
+      - key: passive
+        title: OT devices in passive mode
+        type: ot_passive_only
+        params: {}
+        description: Every inventoried OT device is flagged passive-only.
+
+  - control_id: IEC-ASM
+    title: Industrial asset inventory and baseline
+    description: >-
+      Industrial assets are inventoried with firmware, model and zone, and a
+      configuration baseline is maintained.
+    category: asset_management
+    weight: 3
+    references:
+      - "IEC 62443-2-1 §4.2"
+    evidence_requirements:
+      - key: ias_inventory
+        title: Industrial asset inventory
+        description: Inventory of controllers, gateways and field devices with firmware versions.
+    technical_checks:
+      - key: coverage
+        title: Inventory coverage
+        type: asset_inventory_coverage
+        params:
+          min_ratio: 0.8
+        description: Assets carry owner, zone or classification metadata.
+      - key: patch
+        title: Firmware and patch tracking
+        type: patch_management
+        params:
+          max_days_since_scan: 90
+          min_ratio: 0.7
+        description: Industrial assets have a recent scan or patch record.

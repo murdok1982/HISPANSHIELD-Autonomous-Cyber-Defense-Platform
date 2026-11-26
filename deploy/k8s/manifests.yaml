@@ -164,6 +164,65 @@ spec:
           labelSelector:
             matchLabels: { app.kubernetes.io/name: hispanshield }
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hispanshield-worker
+  namespace: hispanshield
+  labels:
+    app.kubernetes.io/name: hispanshield-worker
+spec:
+  replicas: 2
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 1, maxSurge: 1 }
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: hispanshield-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: hispanshield-worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: worker
+          image: ghcr.io/example/hispanshield:0.1.0
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "app.workers.runtime", "--role", "all"]
+          envFrom:
+            - configMapRef: { name: hispanshield-config }
+            - secretRef: { name: hispanshield-secrets }
+          env:
+            - { name: HS_RUN_MIGRATIONS, value: "false" }
+          volumeMounts:
+            - { name: evidence, mountPath: /app/data/evidence }
+            - { name: tmp, mountPath: /tmp }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: 1, memory: 1Gi }
+      volumes:
+        - name: evidence
+          persistentVolumeClaim: { claimName: hispanshield-evidence }
+        - name: tmp
+          emptyDir: {}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: { app.kubernetes.io/name: hispanshield-worker }
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -205,6 +264,27 @@ spec:
       resource:
         name: cpu
         target: { type: Utilization, averageUtilization: 65 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: hispanshield-worker
+  namespace: hispanshield
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: hispanshield-worker
+  policyTypes: ["Ingress", "Egress"]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+    - ports:
+        - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 5432 }
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

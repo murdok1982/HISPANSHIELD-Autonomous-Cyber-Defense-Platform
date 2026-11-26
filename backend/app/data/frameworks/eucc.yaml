@@ -1,0 +1,158 @@
+code: EUCC
+name: "European Common Criteria-based Cybersecurity Certification Scheme (EUCC)"
+version: "1.0"
+jurisdiction: EU
+authority: "ENISA / European Commission"
+effective_date: 2024-02-07
+source_url: https://eur-lex.europa.eu/eli/reg_impl/2024/482/oj
+status: published
+description: >-
+  EU certification scheme for ICT products based on Common Criteria. The
+  controls below cover evidence an evaluated product or its supporting
+  environment should retain; summaries are paraphrased.
+controls:
+  - control_id: EUCC-01
+    title: Security target and scope definition
+    description: >-
+      The evaluated product and its security target clearly define the target
+      of evaluation, assumptions and security objectives.
+    category: certification_scope
+    weight: 3
+    references:
+      - "EUCC §4.2"
+      - "ISO/IEC 15408-1"
+    evidence_requirements:
+      - key: security_target
+        title: Security target
+        description: Approved security target with TOE boundary and assumptions.
+    technical_checks:
+      - key: inventory
+        title: Product asset inventory
+        type: asset_inventory_coverage
+        params:
+          min_ratio: 0.8
+        description: Assets in scope are inventoried with ownership metadata.
+
+  - control_id: EUCC-02
+    title: Assurance level selection
+    description: >-
+      The assurance level (AVA_VAN) is selected according to the risk and
+      justified in the certification documentation.
+    category: assurance
+    weight: 3
+    references:
+      - "EUCC Annex I"
+    evidence_requirements:
+      - key: assurance_rationale
+        title: Assurance rationale
+        description: Justification of the chosen assurance level and threat environment.
+    technical_checks:
+      - key: sla
+        title: Vulnerability remediation performance
+        type: vulnerability_sla
+        params:
+          max_overdue_ratio: 0.05
+        description: Remediation dates support the claimed assurance level.
+
+  - control_id: EUCC-03
+    title: Development environment security
+    description: >-
+      The developer environment applies configuration management and security
+      controls that protect the integrity of the evaluated product.
+    category: lifecycle
+    weight: 3
+    references:
+      - "ALC_DVS.1"
+      - "ALC_CMC.4"
+    evidence_requirements:
+      - key: dev_environment
+        title: Development environment description
+        description: Configuration management, access control and build integrity measures.
+    technical_checks:
+      - key: least_privilege
+        title: Administrative access bounded
+        type: rbac_least_privilege
+        params:
+          max_admins: 3
+        description: Build and repository administration is limited.
+      - key: audit
+        title: Tamper-evident records
+        type: audit_chain_valid
+        params: {}
+        description: Change records remain tamper-evident.
+
+  - control_id: EUCC-04
+    title: Guidance documentation
+    description: >-
+      Administrators and users receive guidance covering secure installation,
+      configuration and operation of the product.
+    category: documentation
+    weight: 2
+    references:
+      - "AGD_PRE.1"
+      - "AGD_OPE.1"
+    evidence_requirements:
+      - key: admin_guide
+        title: Administrator guidance
+        description: Published guidance with secure configuration instructions.
+    technical_checks:
+      - key: logging
+        title: Security logging available
+        type: logging_enabled
+        params:
+          min_sources: 1
+        description: Operators can collect security events as documented.
+
+  - control_id: EUCC-05
+    title: Lifecycle support and flaw remediation
+    description: >-
+      Security flaws are tracked, corrected and communicated through a defined
+      flaw remediation process for the supported lifetime.
+    category: maintenance
+    weight: 3
+    references:
+      - "ALC_FLR.2"
+    evidence_requirements:
+      - key: flaw_process
+        title: Flaw remediation procedure
+        description: Severity classification, fix targets and customer communication.
+    technical_checks:
+      - key: patch
+        title: Patch management
+        type: patch_management
+        params:
+          max_days_since_scan: 45
+          min_ratio: 0.8
+        description: Assets have recent patch or scan evidence.
+      - key: incident
+        title: Incident handling
+        type: incident_process_exists
+        params: {}
+        description: An incident process exists to handle exploited flaws.
+
+  - control_id: EUCC-06
+    title: Vulnerability analysis and penetration testing
+    description: >-
+      Independent vulnerability analysis and penetration testing support the
+      claimed resistance to attackers.
+    category: evaluation
+    weight: 3
+    references:
+      - "AVA_VAN.3"
+    evidence_requirements:
+      - key: pentest_report
+        title: Penetration test report
+        description: Independent test report with findings and remediation evidence.
+    technical_checks:
+      - key: vuln_sla
+        title: Vulnerability SLA
+        type: vulnerability_sla
+        params:
+          max_overdue_ratio: 0.0
+        description: No open vulnerability is past its remediation due date.
+      - key: tls
+        title: TLS verification
+        type: connector_tls
+        params:
+          require_all: true
+        description: Exposed integrations verify TLS certificates.

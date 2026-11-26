@@ -1,0 +1,451 @@
+{
+  "version": "15",
+  "source": "MITRE ATT&CK Enterprise & ICS (curated operational subset)",
+  "updated": "2026-11-26",
+  "techniques": [
+    {
+      "id": "T1595",
+      "name": "Active Scanning",
+      "tactics": ["reconnaissance"],
+      "description": "Adversaries probe victim infrastructure with port, vulnerability and service scans to enumerate exploitable entry points."
+    },
+    {
+      "id": "T1592",
+      "name": "Gather Victim Host Information",
+      "tactics": ["reconnaissance"],
+      "description": "Adversaries collect host details such as OS, firmware, browser and security software to tailor follow-on attacks."
+    },
+    {
+      "id": "T1589",
+      "name": "Gather Victim Identity Information",
+      "tactics": ["reconnaissance"],
+      "description": "Adversaries collect names, email addresses and credentials to support phishing and credential attacks."
+    },
+    {
+      "id": "T1598",
+      "name": "Phishing for Information",
+      "tactics": ["reconnaissance"],
+      "description": "Adversaries send deceptive messages to elicit information or credentials from targeted users."
+    },
+    {
+      "id": "T1590",
+      "name": "Gather Victim Network Information",
+      "tactics": ["reconnaissance"],
+      "description": "Adversaries map IP ranges, DNS records and network topology before attempting intrusion."
+    },
+    {
+      "id": "T1588",
+      "name": "Obtain Capabilities",
+      "tactics": ["resource-development"],
+      "description": "Adversaries acquire malware, exploits, certificates or tooling from markets and public sources."
+    },
+    {
+      "id": "T1587",
+      "name": "Develop Capabilities",
+      "tactics": ["resource-development"],
+      "description": "Adversaries build custom malware, exploits or signed certificates for their operations."
+    },
+    {
+      "id": "T1583",
+      "name": "Acquire Infrastructure",
+      "tactics": ["resource-development"],
+      "description": "Adversaries purchase or rent domains, VPS, cloud accounts and botnets to support operations."
+    },
+    {
+      "id": "T1608",
+      "name": "Stage Capabilities",
+      "tactics": ["resource-development"],
+      "description": "Adversaries upload tooling to staging locations and prepare infrastructure before execution."
+    },
+    {
+      "id": "T1566",
+      "name": "Phishing",
+      "tactics": ["initial-access"],
+      "description": "Adversaries send malicious emails with attachments or links to gain a foothold."
+    },
+    {
+      "id": "T1190",
+      "name": "Exploit Public-Facing Application",
+      "tactics": ["initial-access"],
+      "description": "Adversaries exploit internet-facing services such as VPNs, web apps and gateways to enter the network."
+    },
+    {
+      "id": "T1133",
+      "name": "External Remote Services",
+      "tactics": ["initial-access", "persistence"],
+      "description": "Adversaries use VPN, RDP, SSH and remote management services to access victim environments."
+    },
+    {
+      "id": "T1078",
+      "name": "Valid Accounts",
+      "tactics": ["initial-access", "persistence", "privilege-escalation", "defense-evasion"],
+      "description": "Adversaries reuse legitimate credentials to blend in and move through the environment."
+    },
+    {
+      "id": "T1091",
+      "name": "Replication Through Removable Media",
+      "tactics": ["initial-access", "lateral-movement"],
+      "description": "Adversaries spread via removable drives, including into air-gapped or OT networks."
+    },
+    {
+      "id": "T1195",
+      "name": "Supply Chain Compromise",
+      "tactics": ["initial-access"],
+      "description": "Adversaries compromise software, firmware or hardware suppliers to reach downstream victims."
+    },
+    {
+      "id": "T1200",
+      "name": "Hardware Additions",
+      "tactics": ["initial-access"],
+      "description": "Adversaries introduce rogue devices such as implants or wireless access points into a network."
+    },
+    {
+      "id": "T1059",
+      "name": "Command and Scripting Interpreter",
+      "tactics": ["execution"],
+      "description": "Adversaries execute commands through PowerShell, Bash, Python, WMI or similar interpreters."
+    },
+    {
+      "id": "T1204",
+      "name": "User Execution",
+      "tactics": ["execution"],
+      "description": "Adversaries rely on users opening malicious files or links to trigger execution."
+    },
+    {
+      "id": "T1047",
+      "name": "Windows Management Instrumentation",
+      "tactics": ["execution"],
+      "description": "Adversaries abuse WMI for local and remote execution, discovery and persistence."
+    },
+    {
+      "id": "T1053",
+      "name": "Scheduled Task/Job",
+      "tactics": ["execution", "persistence", "privilege-escalation"],
+      "description": "Adversaries create scheduled tasks, cron jobs or systemd timers to run malicious code."
+    },
+    {
+      "id": "T1569",
+      "name": "System Services",
+      "tactics": ["execution"],
+      "description": "Adversaries abuse service execution mechanisms to launch payloads with elevated context."
+    },
+    {
+      "id": "T1547",
+      "name": "Boot or Logon Autostart Execution",
+      "tactics": ["persistence", "privilege-escalation"],
+      "description": "Adversaries configure autostart entries so their code runs at boot or logon."
+    },
+    {
+      "id": "T1543",
+      "name": "Create or Modify System Process",
+      "tactics": ["persistence", "privilege-escalation"],
+      "description": "Adversaries install or alter system services and daemons to maintain persistence."
+    },
+    {
+      "id": "T1136",
+      "name": "Create Account",
+      "tactics": ["persistence"],
+      "description": "Adversaries create local, domain or cloud accounts to retain access."
+    },
+    {
+      "id": "T1505",
+      "name": "Server Software Component",
+      "tactics": ["persistence"],
+      "description": "Adversaries implant web shells or malicious server modules to persist on exposed systems."
+    },
+    {
+      "id": "T1098",
+      "name": "Account Manipulation",
+      "tactics": ["persistence", "privilege-escalation"],
+      "description": "Adversaries modify accounts, roles, permissions or credentials to escalate and persist."
+    },
+    {
+      "id": "T1055",
+      "name": "Process Injection",
+      "tactics": ["defense-evasion", "privilege-escalation"],
+      "description": "Adversaries inject code into legitimate processes to evade detection and gain context."
+    },
+    {
+      "id": "T1070",
+      "name": "Indicator Removal",
+      "tactics": ["defense-evasion"],
+      "description": "Adversaries clear logs, delete files and wipe command history to hide activity."
+    },
+    {
+      "id": "T1562",
+      "name": "Impair Defenses",
+      "tactics": ["defense-evasion"],
+      "description": "Adversaries disable AV, EDR, firewalls or logging to reduce detection."
+    },
+    {
+      "id": "T1027",
+      "name": "Obfuscated Files or Information",
+      "tactics": ["defense-evasion"],
+      "description": "Adversaries encode, pack or encrypt payloads to hinder analysis."
+    },
+    {
+      "id": "T1218",
+      "name": "System Binary Proxy Execution",
+      "tactics": ["defense-evasion"],
+      "description": "Adversaries abuse signed system binaries such as rundll32 or mshta to run code."
+    },
+    {
+      "id": "T1112",
+      "name": "Modify Registry",
+      "tactics": ["defense-evasion"],
+      "description": "Adversaries alter registry settings for persistence, configuration or defence evasion."
+    },
+    {
+      "id": "T1014",
+      "name": "Rootkit",
+      "tactics": ["defense-evasion"],
+      "description": "Adversaries use kernel or user-mode rootkits to hide files, processes and network activity."
+    },
+    {
+      "id": "T1542",
+      "name": "Pre-OS Boot",
+      "tactics": ["persistence", "defense-evasion"],
+      "description": "Adversaries modify bootloaders, firmware or BIOS to persist below the operating system."
+    },
+    {
+      "id": "T1003",
+      "name": "OS Credential Dumping",
+      "tactics": ["credential-access"],
+      "description": "Adversaries extract credential material from LSASS, SAM, NTDS or memory."
+    },
+    {
+      "id": "T1555",
+      "name": "Credentials from Password Stores",
+      "tactics": ["credential-access"],
+      "description": "Adversaries harvest browser, keychain and password-manager stores."
+    },
+    {
+      "id": "T1552",
+      "name": "Unsecured Credentials",
+      "tactics": ["credential-access"],
+      "description": "Adversaries search files, environment variables and repositories for plaintext secrets."
+    },
+    {
+      "id": "T1110",
+      "name": "Brute Force",
+      "tactics": ["credential-access"],
+      "description": "Adversaries attempt password guessing, spraying or credential stuffing against accounts."
+    },
+    {
+      "id": "T1556",
+      "name": "Modify Authentication Process",
+      "tactics": ["credential-access", "defense-evasion", "persistence"],
+      "description": "Adversaries patch or reconfigure authentication to accept attacker-controlled credentials."
+    },
+    {
+      "id": "T1621",
+      "name": "Multi-Factor Authentication Request Generation",
+      "tactics": ["credential-access"],
+      "description": "Adversaries flood users with MFA prompts to obtain approval through fatigue."
+    },
+    {
+      "id": "T1087",
+      "name": "Account Discovery",
+      "tactics": ["discovery"],
+      "description": "Adversaries enumerate local and domain accounts to identify targets."
+    },
+    {
+      "id": "T1082",
+      "name": "System Information Discovery",
+      "tactics": ["discovery"],
+      "description": "Adversaries gather host configuration, OS version and patch level."
+    },
+    {
+      "id": "T1018",
+      "name": "Remote System Discovery",
+      "tactics": ["discovery"],
+      "description": "Adversaries enumerate reachable hosts through ping sweeps, ARP and directory queries."
+    },
+    {
+      "id": "T1046",
+      "name": "Network Service Discovery",
+      "tactics": ["discovery"],
+      "description": "Adversaries scan for open services and protocols to find further attack paths."
+    },
+    {
+      "id": "T1069",
+      "name": "Permission Groups Discovery",
+      "tactics": ["discovery"],
+      "description": "Adversaries enumerate groups and roles to find privileged accounts."
+    },
+    {
+      "id": "T1057",
+      "name": "Process Discovery",
+      "tactics": ["discovery"],
+      "description": "Adversaries list running processes to locate security tooling and targets."
+    },
+    {
+      "id": "T1049",
+      "name": "System Network Connections Discovery",
+      "tactics": ["discovery"],
+      "description": "Adversaries inspect active network connections to understand topology."
+    },
+    {
+      "id": "T1021",
+      "name": "Remote Services",
+      "tactics": ["lateral-movement"],
+      "description": "Adversaries use RDP, SMB, SSH, WinRM and VNC to move between systems."
+    },
+    {
+      "id": "T1570",
+      "name": "Lateral Tool Transfer",
+      "tactics": ["lateral-movement"],
+      "description": "Adversaries copy tools and payloads to other systems after initial access."
+    },
+    {
+      "id": "T1550",
+      "name": "Use Alternate Authentication Material",
+      "tactics": ["lateral-movement", "defense-evasion"],
+      "description": "Adversaries use pass-the-hash, pass-the-ticket or stolen tokens to authenticate."
+    },
+    {
+      "id": "T1563",
+      "name": "Remote Service Session Hijacking",
+      "tactics": ["lateral-movement"],
+      "description": "Adversaries hijack existing remote sessions to inherit authenticated access."
+    },
+    {
+      "id": "T1005",
+      "name": "Data from Local System",
+      "tactics": ["collection"],
+      "description": "Adversaries collect files and data from compromised hosts before exfiltration."
+    },
+    {
+      "id": "T1039",
+      "name": "Data from Network Shared Drive",
+      "tactics": ["collection"],
+      "description": "Adversaries harvest data from SMB shares and network storage."
+    },
+    {
+      "id": "T1114",
+      "name": "Email Collection",
+      "tactics": ["collection"],
+      "description": "Adversaries search and export mailbox content for intelligence and credentials."
+    },
+    {
+      "id": "T1056",
+      "name": "Input Capture",
+      "tactics": ["collection", "credential-access"],
+      "description": "Adversaries capture keystrokes, screens or clipboard content on victim systems."
+    },
+    {
+      "id": "T1074",
+      "name": "Data Staged",
+      "tactics": ["collection"],
+      "description": "Adversaries gather collected data in a staging location before exfiltration."
+    },
+    {
+      "id": "T1560",
+      "name": "Archive Collected Data",
+      "tactics": ["collection"],
+      "description": "Adversaries compress and encrypt collected data to simplify exfiltration."
+    },
+    {
+      "id": "T1071",
+      "name": "Application Layer Protocol",
+      "tactics": ["command-and-control"],
+      "description": "Adversaries blend C2 traffic into HTTP, DNS or other common application protocols."
+    },
+    {
+      "id": "T1105",
+      "name": "Ingress Tool Transfer",
+      "tactics": ["command-and-control"],
+      "description": "Adversaries download additional tools and payloads into the victim network."
+    },
+    {
+      "id": "T1572",
+      "name": "Protocol Tunneling",
+      "tactics": ["command-and-control"],
+      "description": "Adversaries encapsulate C2 traffic inside DNS, SSH or other allowed protocols."
+    },
+    {
+      "id": "T1090",
+      "name": "Proxy",
+      "tactics": ["command-and-control"],
+      "description": "Adversaries route traffic through proxies, including compromised internal hosts."
+    },
+    {
+      "id": "T1102",
+      "name": "Web Service",
+      "tactics": ["command-and-control"],
+      "description": "Adversaries use legitimate cloud and web services as C2 channels."
+    },
+    {
+      "id": "T1486",
+      "name": "Data Encrypted for Impact",
+      "tactics": ["impact"],
+      "description": "Adversaries encrypt victim data, typically for ransomware extortion."
+    },
+    {
+      "id": "T1490",
+      "name": "Inhibit System Recovery",
+      "tactics": ["impact"],
+      "description": "Adversaries delete shadow copies and backups to prevent restoration."
+    },
+    {
+      "id": "T1489",
+      "name": "Service Stop",
+      "tactics": ["impact"],
+      "description": "Adversaries stop critical services to disrupt operations during attacks."
+    },
+    {
+      "id": "T1485",
+      "name": "Data Destruction",
+      "tactics": ["impact"],
+      "description": "Adversaries destroy data and system files to cause irreversible damage."
+    },
+    {
+      "id": "T1498",
+      "name": "Network Denial of Service",
+      "tactics": ["impact"],
+      "description": "Adversaries flood networks or services to deny availability."
+    },
+    {
+      "id": "T1565",
+      "name": "Data Manipulation",
+      "tactics": ["impact"],
+      "description": "Adversaries alter stored or transmitted data to mislead or disrupt operations."
+    },
+    {
+      "id": "T0831",
+      "name": "Manipulation of Control",
+      "tactics": ["impact"],
+      "description": "ICS adversaries manipulate controller state or setpoints to affect physical processes."
+    },
+    {
+      "id": "T0836",
+      "name": "Modify Parameter",
+      "tactics": ["impact"],
+      "description": "ICS adversaries change device parameters such as alarm thresholds or calibration values."
+    },
+    {
+      "id": "T0855",
+      "name": "Unauthorized Command Message",
+      "tactics": ["impact"],
+      "description": "ICS adversaries send unauthorized protocol commands to field devices."
+    },
+    {
+      "id": "T0821",
+      "name": "Modify Controller Tasking",
+      "tactics": ["execution"],
+      "description": "ICS adversaries alter PLC program logic or task scheduling."
+    },
+    {
+      "id": "T0800",
+      "name": "Activate Firmware Update Mode",
+      "tactics": ["inhibit-response-function", "impact"],
+      "description": "ICS adversaries force devices into firmware update mode to disrupt protections."
+    },
+    {
+      "id": "T0811",
+      "name": "Data from Information Repositories",
+      "tactics": ["collection"],
+      "description": "ICS adversaries exfiltrate engineering documents, historian data and configuration exports."
+    }
+  ]
+}

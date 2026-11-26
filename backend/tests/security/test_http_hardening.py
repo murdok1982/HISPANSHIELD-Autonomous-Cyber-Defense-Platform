@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from app.core.config import settings
 from app.core.crypto import hash_password, token_hash, verify_password
+from app.core.logging import BodySizeLimitMiddleware
 from app.core.ssrf import SSRFError, validate_outbound_url
 from tests.conftest import ADMIN_EMAIL, ADMIN_PASSWORD, login
 
@@ -53,12 +54,14 @@ def test_rate_limit_resets_after_window(seeded, client: TestClient, monkeypatch)
 
 def test_mfa_enrollment_login_and_replay_protection(seeded, client: TestClient) -> None:
     login(client)
-    enrollment = client.post("/api/v1/auth/mfa/enroll")
+    no_password = client.post("/api/v1/auth/mfa/enroll")
+    assert no_password.status_code == 422
+    enrollment = client.post("/api/v1/auth/mfa/enroll", json={"password": ADMIN_PASSWORD})
     assert enrollment.status_code == 200, enrollment.text
     secret = enrollment.json()["secret"]
     totp = pyotp.TOTP(secret)
 
-    activated = client.post("/api/v1/auth/mfa/activate", json={"code": totp.now()})
+    activated = client.post("/api/v1/auth/mfa/activate", json={"code": totp.now(), "password": ADMIN_PASSWORD})
     assert activated.status_code == 200, activated.text
     client.post("/api/v1/auth/logout")
     client.cookies.clear()
@@ -88,6 +91,76 @@ def test_mfa_enrollment_login_and_replay_protection(seeded, client: TestClient) 
         json={"challenge_token": challenge_again["challenge_token"], "code": next_code},
     )
     assert replay.status_code == 401
+
+
+def test_mfa_recovery_codes_are_single_use_and_regeneration_invalidates_them(seeded, client: TestClient) -> None:
+    login(client)
+    enrollment = client.post("/api/v1/auth/mfa/enroll", json={"password": ADMIN_PASSWORD})
+    secret = enrollment.json()["secret"]
+    activated = client.post(
+        "/api/v1/auth/mfa/activate", json={"code": pyotp.TOTP(secret).now(), "password": ADMIN_PASSWORD}
+    )
+    assert activated.status_code == 200, activated.text
+    codes = activated.json()["recovery_codes"]
+    assert len(codes) == 10
+    assert all(len(code) == 14 for code in codes)
+
+    client.post("/api/v1/auth/logout")
+    client.cookies.clear()
+    client.headers.clear()
+    login_response = client.post("/api/v1/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+    assert login_response.json()["mfa_required"] is True
+    challenge = login_response.json()["challenge_token"]
+
+    recovered = client.post(
+        "/api/v1/auth/mfa/recovery",
+        json={"challenge_token": challenge, "recovery_code": codes[0]},
+    )
+    assert recovered.status_code == 200, recovered.text
+    assert client.cookies.get("hs_session")
+
+    # Replay of the consumed code must fail even with a fresh challenge.
+    client.headers.update({"X-CSRF-Token": client.cookies.get("hs_csrf", "")})
+    client.post("/api/v1/auth/logout")
+    client.cookies.clear()
+    client.headers.clear()
+    replay_challenge = client.post(
+        "/api/v1/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}
+    ).json()["challenge_token"]
+    replay = client.post(
+        "/api/v1/auth/mfa/recovery",
+        json={"challenge_token": replay_challenge, "recovery_code": codes[0]},
+    )
+    assert replay.status_code == 401
+
+    # A TOTP challenge still works (next time step; the activation step is spent),
+    # then regenerating codes invalidates the old set.
+    totp = pyotp.TOTP(secret)
+    next_code = totp.generate_otp(int(time.time() // 30) + 1)
+    totp_login = client.post(
+        "/api/v1/auth/mfa/verify",
+        json={"challenge_token": replay_challenge, "code": next_code},
+    )
+    assert totp_login.status_code == 200, totp_login.text
+    client.headers.update({"X-CSRF-Token": client.cookies.get("hs_csrf", "")})
+    denied = client.post("/api/v1/auth/mfa/recovery-codes", json={"password": "wrong-password"})
+    assert denied.status_code == 401
+    regenerated = client.post("/api/v1/auth/mfa/recovery-codes", json={"password": ADMIN_PASSWORD})
+    assert regenerated.status_code == 200
+    new_codes = regenerated.json()["recovery_codes"]
+    assert set(new_codes).isdisjoint(set(codes))
+
+    client.post("/api/v1/auth/logout")
+    client.cookies.clear()
+    client.headers.clear()
+    new_challenge = client.post("/api/v1/auth/login", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD}).json()[
+        "challenge_token"
+    ]
+    old_code = client.post(
+        "/api/v1/auth/mfa/recovery",
+        json={"challenge_token": new_challenge, "recovery_code": codes[1]},
+    )
+    assert old_code.status_code == 401
 
 
 def test_tampered_mfa_challenge_is_rejected(client: TestClient, seeded) -> None:
@@ -120,3 +193,28 @@ def test_security_primitives_are_not_plaintext_hashes() -> None:
     assert verify_password("A-Str0ng-Password!2026", digest)
     assert not verify_password("wrong", digest)
     assert len(token_hash("token")) == 64
+
+
+def test_body_limit_counts_streamed_chunks_without_content_length() -> None:
+    """Regression VULN-018: chunked bodies must not bypass the 30 MB guard."""
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+
+    async def echo(request):  # type: ignore[no-untyped-def]
+        body = await request.body()
+        return PlainTextResponse(str(len(body)))
+
+    inner = Starlette(routes=[Route("/echo", echo, methods=["POST"])])
+    app = BodySizeLimitMiddleware(inner, max_bytes=16)
+    with TestClient(app) as limited:
+        within = limited.post("/echo", content=b"x" * 16)
+        assert within.status_code == 200
+        declared = limited.post("/echo", content=b"x" * 32)
+        assert declared.status_code == 413
+        assert declared.json()["error"]["code"] == "payload_too_large"
+        # No Content-Length: httpx streams chunks and the middleware must count
+        # the bytes actually read by the application.
+        chunked = limited.post("/echo", content=iter([b"x" * 8, b"y" * 20]))
+        assert chunked.status_code == 413
+        assert chunked.json()["error"]["code"] == "payload_too_large"

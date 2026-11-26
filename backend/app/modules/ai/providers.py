@@ -8,6 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, or_, select
 
+from app.core.config import settings
 from app.core.crypto import encrypt_secret
 from app.core.db import utcnow
 from app.core.deps import RequestContext, require_permission
@@ -63,6 +64,15 @@ def create_provider(
 ) -> ProviderOut:
     if payload.scope == "platform" and not is_platform_admin(ctx):
         raise Forbidden("Only platform administrators can create platform-wide AI providers")
+    if not payload.is_local:
+        if not settings.ai_allow_external_providers:
+            raise Forbidden(
+                "External AI providers are disabled on this platform; enable HS_AI_ALLOW_EXTERNAL_PROVIDERS "
+                "and record the organization's external_opt_in before use"
+            )
+        region = str((payload.config or {}).get("data_region", "")).strip().lower()
+        if not region.startswith("eu"):
+            raise Forbidden("External AI providers must declare an EU data_region (sovereignty policy)")
     org_id = None if payload.scope == "platform" else ctx.org.id
     duplicate = ctx.db.execute(
         select(AIProvider).where(
@@ -73,7 +83,7 @@ def create_provider(
     if duplicate is not None:
         raise Conflict("An AI provider with this name already exists")
 
-    base_url = validate_provider_url(payload.base_url)
+    base_url = validate_provider_url(payload.base_url, is_local=payload.is_local)
     provider = AIProvider(
         org_id=org_id,
         name=payload.name.strip(),
@@ -121,7 +131,8 @@ def update_provider(
     ensure_can_manage_provider(ctx, provider)
     changes = payload.model_dump(exclude_unset=True)
     if "base_url" in changes and changes["base_url"] is not None:
-        changes["base_url"] = validate_provider_url(changes["base_url"])
+        effective_local = changes.get("is_local", provider.is_local)
+        changes["base_url"] = validate_provider_url(changes["base_url"], is_local=bool(effective_local))
     if payload.clear_api_key:
         provider.api_key_encrypted = None
     if payload.api_key:

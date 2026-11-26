@@ -139,10 +139,14 @@ def register_gateway(db: Session, payload: Any) -> dict[str, Any]:
             raise Unauthorized("Enrollment token has expired")
 
     duplicate = db.execute(
-        select(EdgeGateway).where(EdgeGateway.fingerprint == payload.fingerprint)
+        select(EdgeGateway).where(
+            EdgeGateway.org_id == organization.id,
+            EdgeGateway.fingerprint == payload.fingerprint,
+            EdgeGateway.id != gateway.id,
+        )
     ).scalar_one_or_none()
-    if duplicate is not None and duplicate.id != gateway.id:
-        raise Conflict("A gateway with this fingerprint is already registered")
+    if duplicate is not None:
+        raise Conflict("A gateway with this fingerprint is already registered in this organization")
 
     secret = generate_gateway_secret()
     public_config = {key: value for key, value in (gateway.config or {}).items() if not str(key).startswith("_")}

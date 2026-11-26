@@ -4,6 +4,52 @@ All notable changes to HISPANSHIELD are documented here. The format follows
 Keep a Changelog and the project uses Semantic Versioning once a stable API is
 declared.
 
+## [Unreleased] — 2026-11-26 — Security remediation wave 2
+
+### Security
+
+- Ingest: HMAC v2 over timestamp + nonce + body, one-time nonce table and
+  persistent `(org_id, dedupe_key)` uniqueness; legacy body-only HMAC requires
+  an explicit source flag. Tokens can be sent in `Authorization`; the legacy
+  path is deprecated and redacted from logs.
+- SSRF: connection-time DNS pinning (`httpcore` network backend) for connectors,
+  MCP and AI; no redirects; cloud metadata always blocked. Local AI providers
+  are restricted to `HS_AI_PRIVATE_ALLOWED_CIDRS`.
+- Identity: per-source login-failure attribution (no single-IP account
+  lockout), password step-up for MFA enrollment/activation, per-challenge MFA
+  rate limiting, one-time recovery codes (Argon2id) and session listing/
+  revocation.
+- Break-glass: dual control when a second platform admin exists, explicit
+  approval endpoint, no implicit grant via `switch-org`.
+- Autonomy: deterministic budgets, cooldowns, freeze windows, blast-radius and
+  target-kind guardrails; fail-closed on malformed policy or DB errors; playbook
+  compensation steps now require the same RBAC as direct steps.
+- Audit: versioned hash covers request id, IP, user agent and actor email while
+  legacy chains remain verifiable.
+- Files/backups: CSV export formula neutralisation; backup directories 0700,
+  artefacts 0600, encryption mandatory in production.
+- AI: per-organization token/request budgets and concurrency isolation; external
+  providers require platform + tenant opt-in, HTTPS and an EU data region.
+- Edge: gateway fingerprints unique per organization.
+- Body limits now apply to chunked/streaming requests.
+
+### Added
+
+- Durable worker runtime (`app.workers.runtime`) for playbooks and connector
+  sync, deployed in Compose and Kubernetes with its own NetworkPolicy.
+- Readiness now reports database, migration head/current and queue depth.
+- Discovery authorizations (approved, time-boxed, scope-bound) required before
+  any active probe.
+- One-time MFA recovery-code generation UI and active-session management.
+- `.factory/REPO_INVENTORY.md`, `REALITY_CHECK.md`, `SECURITY_FINDINGS.md`,
+  `ARCHITECTURE_GAP_ANALYSIS.md`, `BASELINE_TEST_RESULTS.md`.
+
+### Fixed
+
+- Fresh clones now include `backend/app/data/**` reference frameworks (the root
+  `data/` ignore rule was too broad).
+- Trusted proxy headers default to loopback instead of `*`.
+
 ## [0.1.0] — 2026-11-26 — Release candidate 1
 
 ### Added

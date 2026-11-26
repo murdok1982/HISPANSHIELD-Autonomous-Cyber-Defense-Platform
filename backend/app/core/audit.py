@@ -1,8 +1,20 @@
 """Append-only, hash-chained audit trail.
 
 Each record's hash covers the previous hash, the organization, actor, action,
-resource, outcome and a canonical JSON payload. Writes take a per-organization
-transactional advisory lock so concurrent requests cannot fork the chain.
+resource, outcome, a canonical JSON payload and — for records written with the
+current scheme — the request correlation metadata (``request_id``,
+``ip_address``, ``user_agent``) plus the covered ``actor_email``.
+
+Hash-scheme versioning keeps existing chains verifiable. Version ``v1`` is the
+original canonical document (no request metadata). Version ``v2`` — the only
+scheme used for new writes — adds an explicit ``audit-v2`` marker and the
+request metadata, so a v1 record can never be mistaken for a v2 one. The
+verifier recomputes both schemes and accepts whichever the stored hash matches;
+tampering with any v2-covered field therefore breaks verification, while legacy
+v1 records keep validating against their original field set.
+
+Writes take a per-organization transactional advisory lock so concurrent
+requests cannot fork the chain.
 """
 
 from __future__ import annotations
@@ -19,6 +31,10 @@ from sqlalchemy.orm import Session
 from app.core.crypto import sha256_hex
 from app.core.db import utcnow
 from app.models.core import AuditRecord
+
+AUDIT_HASH_VERSION = 2
+LEGACY_AUDIT_HASH_VERSION = 1
+AUDIT_SCHEME_MARKER = "audit-v2"
 
 _SENSITIVE_KEYS = {
     "password",
@@ -72,24 +88,61 @@ def _canonical_payload(
     outcome: str,
     payload: dict[str, Any],
     created_at: datetime,
+    *,
+    version: int = AUDIT_HASH_VERSION,
+    request_id: str | None = None,
+    ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> str:
+    """Serialize the exact field set covered by a given hash-scheme version.
+
+    ``version=1`` reproduces the original document byte-for-byte so historical
+    hashes remain valid. ``version>=2`` adds an explicit scheme marker and the
+    request correlation fields.
+    """
+    document: dict[str, Any] = {
+        "org_id": str(org_id) if org_id else None,
+        "actor_type": actor_type,
+        "actor_id": actor_id,
+        "actor_email": actor_email,
+        "action": action,
+        "resource_type": resource_type,
+        "resource_id": resource_id,
+        "outcome": outcome,
+        "payload": payload,
+        "created_at": created_at.astimezone(UTC).isoformat(),
+    }
+    if version >= 2:
+        document["scheme"] = AUDIT_SCHEME_MARKER
+        document["request_id"] = request_id
+        document["ip_address"] = ip_address
+        document["user_agent"] = user_agent
     return json.dumps(
-        {
-            "org_id": str(org_id) if org_id else None,
-            "actor_type": actor_type,
-            "actor_id": actor_id,
-            "actor_email": actor_email,
-            "action": action,
-            "resource_type": resource_type,
-            "resource_id": resource_id,
-            "outcome": outcome,
-            "payload": payload,
-            "created_at": created_at.astimezone(UTC).isoformat(),
-        },
+        document,
         sort_keys=True,
         separators=(",", ":"),
         default=str,
     )
+
+
+def _hash_for_version(record: AuditRecord, previous: str | None, version: int) -> str:
+    canonical = _canonical_payload(
+        record.org_id,
+        record.actor_type,
+        record.actor_id,
+        record.actor_email,
+        record.action,
+        record.resource_type,
+        record.resource_id,
+        record.outcome,
+        record.payload or {},
+        record.created_at,
+        version=version,
+        request_id=record.request_id,
+        ip_address=record.ip_address,
+        user_agent=record.user_agent,
+    )
+    return sha256_hex((previous or "") + canonical)
 
 
 def append_audit(
@@ -120,30 +173,40 @@ def append_audit(
 
     created_at = utcnow()
     safe_payload = redact(payload or {})
+    # Hash exactly the values that are persisted, otherwise column truncation
+    # would make legitimate records unverifiable.
+    stored_actor_email = (actor_email or "")[:255] or None
+    stored_request_id = (request_id or "")[:64] or None
+    stored_ip = (ip_address or "")[:64] or None
+    stored_user_agent = (user_agent or "")[:400] or None
     canonical = _canonical_payload(
         org_id,
         actor_type,
         actor_id,
-        actor_email,
+        stored_actor_email,
         action,
         resource_type,
         resource_id,
         outcome,
         safe_payload,
         created_at,
+        version=AUDIT_HASH_VERSION,
+        request_id=stored_request_id,
+        ip_address=stored_ip,
+        user_agent=stored_user_agent,
     )
     record = AuditRecord(
         org_id=org_id,
         actor_type=actor_type,
         actor_id=actor_id,
-        actor_email=actor_email,
+        actor_email=stored_actor_email,
         action=action,
         resource_type=resource_type,
         resource_id=resource_id,
         outcome=outcome,
-        request_id=request_id,
-        ip_address=ip_address,
-        user_agent=(user_agent or "")[:400] or None,
+        request_id=stored_request_id,
+        ip_address=stored_ip,
+        user_agent=stored_user_agent,
         payload=safe_payload,
         prev_hash=last_hash,
         hash=sha256_hex((last_hash or "") + canonical),
@@ -155,41 +218,57 @@ def append_audit(
 
 
 def verify_audit_chain(db: Session, org_id: UUID | None) -> dict[str, Any]:
-    """Recompute the chain and report the first divergence, if any."""
+    """Recompute the chain and report the first divergence, if any.
+
+    Both hash schemes are accepted: the current v2 scheme is tried first, then
+    the legacy v1 scheme. A record is valid only when its stored hash matches a
+    recomputation under one scheme *and* its ``prev_hash`` links to the previous
+    accepted hash.
+    """
     stmt = (
         select(AuditRecord)
         .where(AuditRecord.org_id.is_(None) if org_id is None else AuditRecord.org_id == org_id)
         .order_by(AuditRecord.created_at.asc(), AuditRecord.id.asc())
+        .execution_options(populate_existing=True)
     )
     records = list(db.execute(stmt).scalars())
     previous: str | None = None
     checked = 0
+    schemes = {"v1": 0, "v2": 0}
     for record in records:
-        canonical = _canonical_payload(
-            record.org_id,
-            record.actor_type,
-            record.actor_id,
-            record.actor_email,
-            record.action,
-            record.resource_type,
-            record.resource_id,
-            record.outcome,
-            record.payload,
-            record.created_at,
-        )
-        expected = sha256_hex((previous or "") + canonical)
-        if record.prev_hash != previous or record.hash != expected:
+        if record.prev_hash != previous:
             return {
                 "valid": False,
                 "checked": checked,
                 "broken_at": str(record.id),
-                "expected_hash": expected,
+                "expected_hash": _hash_for_version(record, previous, AUDIT_HASH_VERSION),
                 "stored_hash": record.hash,
-                "reason": "prev_hash mismatch" if record.prev_hash != previous else "hash mismatch",
+                "reason": "prev_hash mismatch",
             }
+        expected_v2 = _hash_for_version(record, previous, AUDIT_HASH_VERSION)
+        if record.hash == expected_v2:
+            schemes["v2"] += 1
+        else:
+            expected_v1 = _hash_for_version(record, previous, LEGACY_AUDIT_HASH_VERSION)
+            if record.hash != expected_v1:
+                return {
+                    "valid": False,
+                    "checked": checked,
+                    "broken_at": str(record.id),
+                    "expected_hash": expected_v2,
+                    "stored_hash": record.hash,
+                    "reason": "hash mismatch",
+                }
+            schemes["v1"] += 1
         previous = record.hash
         checked += 1
-    return {"valid": True, "checked": checked, "head": previous, "broken_at": None}
+    return {
+        "valid": True,
+        "checked": checked,
+        "head": previous,
+        "broken_at": None,
+        "schemes": schemes,
+    }
 
 
 def audit_ref(value: uuid.UUID | str | None) -> str | None:

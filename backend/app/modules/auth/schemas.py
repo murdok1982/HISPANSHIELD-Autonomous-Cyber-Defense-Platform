@@ -32,13 +32,27 @@ class ChangePasswordRequest(StrictModel):
     new_password: str = Field(min_length=12, max_length=128)
 
 
+class MfaEnrollRequest(StrictModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
 class MfaActivateRequest(StrictModel):
     code: str = Field(min_length=6, max_length=8, pattern=r"^\d{6,8}$")
+    password: str = Field(min_length=1, max_length=128)
 
 
 class MfaDisableRequest(StrictModel):
     password: str = Field(min_length=1, max_length=128)
     code: str = Field(min_length=6, max_length=8, pattern=r"^\d{6,8}$")
+
+
+class RecoveryLoginRequest(StrictModel):
+    challenge_token: str = Field(min_length=20, max_length=2000)
+    recovery_code: str = Field(min_length=8, max_length=32)
+
+
+class RecoveryCodesRequest(StrictModel):
+    password: str = Field(min_length=1, max_length=128)
 
 
 class OrgSummary(ORMModel):
@@ -74,6 +88,17 @@ class SessionInfo(StrictModel):
     expires_at: datetime
 
 
+class SessionSummary(StrictModel):
+    id: UUID
+    created_at: datetime
+    last_seen_at: datetime
+    expires_at: datetime
+    ip_address: str | None
+    user_agent: str | None
+    mfa_verified: bool
+    is_current: bool
+
+
 class SwitchOrgRequest(StrictModel):
     org_id: UUID
     reason: str | None = Field(default=None, max_length=1000)
@@ -92,6 +117,9 @@ class BreakGlassResponse(StrictModel):
     expires_at: datetime
     reason: str
     ticket: str
+    status: str = "approved"
+    approved_by: UUID | None = None
+    approved_at: datetime | None = None
 
 
 class ApiTokenCreate(StrictModel):

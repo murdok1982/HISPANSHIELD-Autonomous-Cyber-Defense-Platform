@@ -49,6 +49,18 @@ const SECURE_COPY: Record<Lang, Record<string, string>> = {
     "secure.enrollStarted": "Enrolamiento iniciado",
     "secure.mfaEnabled": "MFA activado",
     "secure.mfaDisabled": "MFA desactivado",
+    "secure.recoveryCodes": "Códigos de recuperación",
+    "secure.recoveryHint": "Guárdalos fuera de línea. Cada código se puede usar una sola vez si pierdes el autenticador. No se volverán a mostrar.",
+    "secure.recoveryOnlyOnce": "Solo se muestran una vez",
+    "secure.copyRecovery": "Copiar códigos",
+    "secure.downloadRecovery": "Descargar .txt",
+    "secure.recoverySaved": "He guardado los códigos",
+    "secure.regenerateRecovery": "Regenerar códigos",
+    "secure.recoveryRegenerated": "Nuevos códigos generados. Los anteriores ya no son válidos.",
+    "secure.recoveryCopied": "Códigos copiados al portapapeles",
+    "secure.enrollPasswordTitle": "Confirma tu contraseña para activar MFA",
+    "secure.enrollPasswordHint": "La contraseña evita que una sesión robada vincule un autenticador ajeno.",
+    "secure.enrollPasswordConfirm": "Continuar",
     "secure.disableWarning": "Al desactivar MFA tu cuenta queda protegida solo por contraseña. La acción requiere contraseña actual y código TOTP válido.",
     "secure.currentPassword": "Contraseña actual",
     "secure.newPassword": "Nueva contraseña",
@@ -120,6 +132,18 @@ const SECURE_COPY: Record<Lang, Record<string, string>> = {
     "secure.enrollStarted": "Enrollment started",
     "secure.mfaEnabled": "MFA enabled",
     "secure.mfaDisabled": "MFA disabled",
+    "secure.recoveryCodes": "Recovery codes",
+    "secure.recoveryHint": "Store them offline. Each code works once if you lose your authenticator. They will not be shown again.",
+    "secure.recoveryOnlyOnce": "Shown only once",
+    "secure.copyRecovery": "Copy codes",
+    "secure.downloadRecovery": "Download .txt",
+    "secure.recoverySaved": "I have saved the codes",
+    "secure.regenerateRecovery": "Regenerate codes",
+    "secure.recoveryRegenerated": "New codes generated. Previous codes are no longer valid.",
+    "secure.recoveryCopied": "Codes copied to clipboard",
+    "secure.enrollPasswordTitle": "Confirm your password to enable MFA",
+    "secure.enrollPasswordHint": "The password prevents a stolen session from binding an attacker-controlled authenticator.",
+    "secure.enrollPasswordConfirm": "Continue",
     "secure.disableWarning": "Disabling MFA leaves your account protected by password only. The action requires the current password and a valid TOTP code.",
     "secure.currentPassword": "Current password",
     "secure.newPassword": "New password",
@@ -181,6 +205,12 @@ interface MfaEnrollment {
   issuer: string;
 }
 
+interface MfaActivationResult {
+  message: string;
+  revoked_other_sessions?: number;
+  recovery_codes?: string[];
+}
+
 interface ApiTokenInfo {
   id: string;
   name: string;
@@ -229,7 +259,13 @@ export function MfaPanel() {
   const toast = useToast();
   const idPrefix = useId();
   const [enrollment, setEnrollment] = useState<MfaEnrollment | null>(null);
+  const [recoveryCodes, setRecoveryCodes] = useState<string[]>([]);
   const [activationCode, setActivationCode] = useState("");
+  const [activationPassword, setActivationPassword] = useState("");
+  const [enrollOpen, setEnrollOpen] = useState(false);
+  const [enrollPassword, setEnrollPassword] = useState("");
+  const [regenOpen, setRegenOpen] = useState(false);
+  const [regenPassword, setRegenPassword] = useState("");
   const [disableOpen, setDisableOpen] = useState(false);
   const [disablePassword, setDisablePassword] = useState("");
   const [disableCode, setDisableCode] = useState("");
@@ -238,9 +274,11 @@ export function MfaPanel() {
   const mfaEnabled = session?.user.mfa_enabled ?? false;
 
   const enrollMutation = useMutation({
-    mutationFn: () => api.post<MfaEnrollment>("/auth/mfa/enroll"),
+    mutationFn: (password: string) => api.post<MfaEnrollment>("/auth/mfa/enroll", { password }),
     onSuccess: (result) => {
       setEnrollment(result);
+      setEnrollOpen(false);
+      setEnrollPassword("");
       toast.push(t("secure.enrollStarted"), "success");
     },
     onError: (error) => {
@@ -250,10 +288,13 @@ export function MfaPanel() {
   });
 
   const activateMutation = useMutation({
-    mutationFn: (code: string) => api.post<{ message: string }>("/auth/mfa/activate", { code }),
-    onSuccess: async () => {
+    mutationFn: ({ code, password }: { code: string; password: string }) =>
+      api.post<MfaActivationResult>("/auth/mfa/activate", { code, password }),
+    onSuccess: async (result) => {
       setEnrollment(null);
       setActivationCode("");
+      setActivationPassword("");
+      setRecoveryCodes(result.recovery_codes ?? []);
       setFormError(null);
       toast.push(t("secure.mfaEnabled"), "success");
       await refresh();
@@ -262,6 +303,50 @@ export function MfaPanel() {
       setFormError(errorMessage(error));
     },
   });
+
+  const regenerateMutation = useMutation({
+    mutationFn: (password: string) => api.post<{ recovery_codes: string[] }>("/auth/mfa/recovery-codes", { password }),
+    onSuccess: (result) => {
+      setRecoveryCodes(result.recovery_codes);
+      setRegenOpen(false);
+      setRegenPassword("");
+      toast.push(t("secure.recoveryRegenerated"), "success");
+    },
+    onError: (error) => {
+      setFormError(errorMessage(error));
+    },
+  });
+
+  async function copyRecoveryCodes() {
+    const payload = [
+      "HISPANSHIELD — MFA recovery codes",
+      "Each code can be used once.",
+      "",
+      ...recoveryCodes,
+    ].join("\n");
+    try {
+      await navigator.clipboard.writeText(payload);
+      toast.push(t("secure.recoveryCopied"), "success");
+    } catch {
+      setFormError(t("secure.recoveryCopied"));
+    }
+  }
+
+  function downloadRecoveryCodes() {
+    const payload = [
+      "HISPANSHIELD — MFA recovery codes",
+      "Each code can be used once. Store this file offline.",
+      "",
+      ...recoveryCodes,
+    ].join("\n");
+    const blob = new Blob([payload], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "hispanshield-recovery-codes.txt";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
 
   const disableMutation = useMutation({
     mutationFn: () => api.post<{ message: string }>("/auth/mfa/disable", { password: disablePassword, code: disableCode }),
@@ -292,16 +377,27 @@ export function MfaPanel() {
           </span>
         </div>
         {mfaEnabled ? (
-          <Button size="sm" variant="danger" onClick={() => { setFormError(null); setDisableOpen(true); }} data-testid="security-mfa-disable-open">
-            {t("secure.disableMfa")}
-          </Button>
+          <div className="row wrap" style={{ gap: 6 }}>
+            <Button
+              size="sm"
+              variant="ghost"
+              loading={regenerateMutation.isPending}
+              onClick={() => { setFormError(null); setRegenPassword(""); setRegenOpen(true); }}
+              data-testid="security-mfa-regenerate"
+            >
+              {t("secure.regenerateRecovery")}
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => { setFormError(null); setDisableOpen(true); }} data-testid="security-mfa-disable-open">
+              {t("secure.disableMfa")}
+            </Button>
+          </div>
         ) : (
           <Button
             size="sm"
             variant="primary"
             icon={QrCode}
             loading={enrollMutation.isPending}
-            onClick={() => { setFormError(null); enrollMutation.mutate(); }}
+            onClick={() => { setFormError(null); setEnrollPassword(""); setEnrollOpen(true); }}
             data-testid="security-mfa-enroll"
           >
             {t("secure.enrollMfa")}
@@ -341,21 +437,145 @@ export function MfaPanel() {
                 data-testid="security-mfa-code"
               />
             </Field>
+            <Field label={t("secure.password")} htmlFor={`${idPrefix}-activate-password`}>
+              <Input
+                id={`${idPrefix}-activate-password`}
+                type="password"
+                autoComplete="current-password"
+                value={activationPassword}
+                onChange={(event) => setActivationPassword(event.target.value)}
+                data-testid="security-mfa-activate-password"
+              />
+            </Field>
             <Button
               variant="primary"
               loading={activateMutation.isPending}
-              disabled={!/^\d{6,8}$/.test(activationCode)}
-              onClick={() => activateMutation.mutate(activationCode)}
+              disabled={!/^\d{6,8}$/.test(activationCode) || activationPassword.length === 0}
+              onClick={() => activateMutation.mutate({ code: activationCode, password: activationPassword })}
               data-testid="security-mfa-activate"
             >
               {t("secure.activate")}
             </Button>
-            <Button variant="ghost" onClick={() => { setEnrollment(null); setActivationCode(""); }}>
+            <Button variant="ghost" onClick={() => { setEnrollment(null); setActivationCode(""); setActivationPassword(""); }}>
               {t("common.cancel")}
             </Button>
           </div>
         </div>
       ) : null}
+
+      {recoveryCodes.length > 0 ? (
+        <div className="card card-pad stack" data-testid="security-recovery-codes">
+          <div className="row-between wrap">
+            <div className="section-label">{t("secure.recoveryCodes")}</div>
+            <Badge tone="warning">{t("secure.recoveryOnlyOnce")}</Badge>
+          </div>
+          <p className="muted" style={{ fontSize: 12 }}>{t("secure.recoveryHint")}</p>
+          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 6 }}>
+            {recoveryCodes.map((code) => (
+              <code
+                key={code}
+                className="mono"
+                style={{
+                  fontSize: 12.5,
+                  letterSpacing: "0.06em",
+                  padding: "6px 8px",
+                  border: "1px solid var(--border)",
+                  borderRadius: 6,
+                  background: "var(--surface-2, rgba(255,255,255,0.04))",
+                  userSelect: "all",
+                }}
+              >
+                {code}
+              </code>
+            ))}
+          </div>
+          <div className="row wrap" style={{ gap: 8 }}>
+            <Button size="sm" variant="primary" onClick={() => void copyRecoveryCodes()}>
+              {t("secure.copyRecovery")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={downloadRecoveryCodes}>
+              {t("secure.downloadRecovery")}
+            </Button>
+            <Button size="sm" variant="ghost" onClick={() => setRecoveryCodes([])}>
+              {t("secure.recoverySaved")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <Modal
+        open={regenOpen}
+        onClose={() => setRegenOpen(false)}
+        title={t("secure.regenerateRecovery")}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setRegenOpen(false)} disabled={regenerateMutation.isPending}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              loading={regenerateMutation.isPending}
+              disabled={regenPassword.length === 0}
+              onClick={() => regenerateMutation.mutate(regenPassword)}
+              data-testid="security-mfa-regenerate-confirm"
+            >
+              {t("secure.regenerateRecovery")}
+            </Button>
+          </>
+        }
+      >
+        <div className="stack">
+          <div className="notice notice-warning">{t("secure.recoveryHint")}</div>
+          {formError ? <ErrorBanner compact message={formError} /> : null}
+          <Field label={t("secure.password")} htmlFor={`${idPrefix}-regen-password`} required>
+            <Input
+              id={`${idPrefix}-regen-password`}
+              type="password"
+              autoComplete="current-password"
+              value={regenPassword}
+              onChange={(event) => setRegenPassword(event.target.value)}
+              data-testid="security-mfa-regenerate-password"
+            />
+          </Field>
+        </div>
+      </Modal>
+
+      <Modal
+        open={enrollOpen}
+        onClose={() => setEnrollOpen(false)}
+        title={t("secure.enrollPasswordTitle")}
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEnrollOpen(false)} disabled={enrollMutation.isPending}>
+              {t("common.cancel")}
+            </Button>
+            <Button
+              variant="primary"
+              loading={enrollMutation.isPending}
+              disabled={enrollPassword.length === 0}
+              onClick={() => enrollMutation.mutate(enrollPassword)}
+              data-testid="security-mfa-enroll-confirm"
+            >
+              {t("secure.enrollPasswordConfirm")}
+            </Button>
+          </>
+        }
+      >
+        <div className="stack">
+          <p className="muted" style={{ fontSize: 12 }}>{t("secure.enrollPasswordHint")}</p>
+          {formError ? <ErrorBanner compact message={formError} /> : null}
+          <Field label={t("secure.password")} htmlFor={`${idPrefix}-enroll-password`} required>
+            <Input
+              id={`${idPrefix}-enroll-password`}
+              type="password"
+              autoComplete="current-password"
+              value={enrollPassword}
+              onChange={(event) => setEnrollPassword(event.target.value)}
+              data-testid="security-mfa-enroll-password"
+            />
+          </Field>
+        </div>
+      </Modal>
 
       <Modal
         open={disableOpen}

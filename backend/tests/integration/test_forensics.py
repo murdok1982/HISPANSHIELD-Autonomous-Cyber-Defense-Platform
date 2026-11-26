@@ -304,6 +304,32 @@ def test_timeline_export_csv_and_json(seeded, auth_client: TestClient, db) -> No
     assert invalid.status_code == 422
 
 
+def test_timeline_export_neutralises_spreadsheet_formulas(seeded, auth_client: TestClient, db) -> None:
+    incident = _case(db, seeded["org"].id, ref="CASE-CSV-INJECTION")
+    db.add(
+        IncidentTimeline(
+            incident_id=incident.id,
+            org_id=seeded["org"].id,
+            at=utcnow(),
+            kind="note",
+            actor='=HYPERLINK("http://evil.example","click")',
+            summary="=cmd|' /C calc'!A0",
+            detail={"payload": "@SUM(1+1)"},
+        )
+    )
+    db.commit()
+
+    export = auth_client.get(f"{BASE}/timeline/export", params={"incident_id": str(incident.id), "format": "csv"})
+    assert export.status_code == 200
+    rows = list(csv.reader(io.StringIO(export.text)))
+    # Every attacker-controlled cell that begins with a formula trigger must
+    # start with a literal apostrophe so Excel/LibreOffice treat it as text.
+    assert len(rows) == 3, rows
+    assert rows[2][2].startswith("'="), rows
+    assert rows[2][3].startswith("'="), rows
+    assert rows[2][4] == '{"payload": "@SUM(1+1)"}', rows
+
+
 def test_case_tenant_isolation_returns_404(seeded, auth_client: TestClient, db) -> None:
     foreign_org = Organization(slug="forensic-foreign", name="Foreign Forensics", country="ES", sector="energy")
     db.add(foreign_org)

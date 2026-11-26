@@ -49,6 +49,31 @@ services:
     tmpfs: [/tmp]
     networks: [internal]
 
+  # Durable worker: playbook engine + connector scheduler. No HTTP port.
+  worker:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ../../.env
+    environment:
+      HS_ENV: production
+      HS_DATABASE_URL: postgresql+psycopg://hispanshield:${POSTGRES_PASSWORD}@postgres:5432/hispanshield
+      HS_FRONTEND_DIST: /app/frontend/dist
+      HS_EVIDENCE_DIR: /app/data/evidence
+      HS_RUN_MIGRATIONS: "false"
+    command: ["python", "-m", "app.workers.runtime", "--role", "all"]
+    volumes:
+      - evidence:/app/data/evidence
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs: [/tmp]
+    networks: [internal]
+
   # Optional local AI runtime. Enable with: docker compose --profile ai up -d
   ollama:
     image: ollama/ollama:0.6.2

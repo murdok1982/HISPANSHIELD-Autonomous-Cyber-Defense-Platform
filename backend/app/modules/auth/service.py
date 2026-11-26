@@ -7,10 +7,11 @@ import json
 import secrets
 import time
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 import pyotp
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import append_audit
@@ -27,9 +28,10 @@ from app.core.crypto import (
 )
 from app.core.db import utcnow
 from app.core.errors import Forbidden, NotFound, Unauthorized, ValidationFailure
+from app.core.rate_limit import record_attempt
 from app.core.rbac import ALL_PERMISSIONS, effective_permissions
 from app.core.schemas import PasswordPolicyError, validate_password_strength
-from app.models.core import ApiToken, BreakGlassGrant, Membership, Organization, User
+from app.models.core import ApiToken, BreakGlassGrant, Membership, Organization, RateLimitBucket, User
 from app.models.core import Session as AuthSession
 
 MAX_FAILED_ATTEMPTS = 5
@@ -121,8 +123,24 @@ def authenticate_password(
         raise Unauthorized("Invalid email or password")
 
     if not verify_password(password, user.password_hash):
+        source = (ip or "unknown")[:64]
+        # Attribute failures to the source address. A single source can never
+        # lock an account for its legitimate owner (VULN-017): a global lock is
+        # only applied when several distinct sources sustain the attack, while
+        # the per-IP login rate limit already throttles each source.
+        record_attempt(f"loginfail:{user.id}:{source}", LOCKOUT_MINUTES * 60)
         user.failed_login_count += 1
-        if user.failed_login_count >= MAX_FAILED_ATTEMPTS:
+        distinct_sources = int(
+            db.execute(
+                select(func.count())
+                .select_from(RateLimitBucket)
+                .where(
+                    RateLimitBucket.key.like(f"loginfail:{user.id}:%"),
+                    RateLimitBucket.expires_at > now,
+                )
+            ).scalar_one()
+        )
+        if distinct_sources >= 3 and user.failed_login_count >= MAX_FAILED_ATTEMPTS:
             user.locked_until = now + timedelta(minutes=LOCKOUT_MINUTES)
             user.failed_login_count = 0
         append_audit(
@@ -133,11 +151,18 @@ def authenticate_password(
             resource_id=str(user.id),
             outcome="failure",
             actor_email=user.email,
-            payload={"reason": "invalid_credentials"},
+            payload={"reason": "invalid_credentials", "distinct_sources": distinct_sources},
             ip_address=ip,
         )
         db.commit()
         raise Unauthorized("Invalid email or password")
+
+    # Correct credentials clear the failure ledger for this account. The global
+    # lock is only reached when several distinct sources attacked the account,
+    # so a legitimate owner from a new address can still recover control.
+    user.failed_login_count = 0
+    user.locked_until = None
+    db.execute(delete(RateLimitBucket).where(RateLimitBucket.key.like(f"loginfail:{user.id}:%")))
 
     if user.status != "active":
         append_audit(
@@ -311,6 +336,21 @@ def revoke_user_sessions(
     return count
 
 
+def list_active_sessions(db: Session, user_id: UUID) -> list[AuthSession]:
+    now = utcnow()
+    return list(
+        db.execute(
+            select(AuthSession)
+            .where(
+                AuthSession.user_id == user_id,
+                AuthSession.revoked_at.is_(None),
+                AuthSession.expires_at > now,
+            )
+            .order_by(AuthSession.last_seen_at.desc())
+        ).scalars()
+    )
+
+
 def change_password(db: Session, user: User, current: str, new: str) -> None:
     if not verify_password(current, user.password_hash):
         raise Unauthorized("Current password is incorrect")
@@ -324,7 +364,9 @@ def change_password(db: Session, user: User, current: str, new: str) -> None:
     user.password_changed_at = utcnow()
 
 
-def start_mfa_enrollment(db: Session, user: User) -> tuple[str, str]:
+def start_mfa_enrollment(db: Session, user: User, *, password: str) -> tuple[str, str]:
+    if not verify_password(password, user.password_hash):
+        raise Unauthorized("Password is incorrect")
     secret = pyotp.random_base32()
     user.mfa_secret_encrypted = encrypt_secret(secret)
     user.mfa_enabled = False
@@ -333,7 +375,9 @@ def start_mfa_enrollment(db: Session, user: User) -> tuple[str, str]:
     return secret, uri
 
 
-def activate_mfa(db: Session, user: User, code: str) -> None:
+def activate_mfa(db: Session, user: User, code: str, *, password: str) -> None:
+    if not verify_password(password, user.password_hash):
+        raise Unauthorized("Password is incorrect")
     if not user.mfa_secret_encrypted:
         raise ValidationFailure([{"field": "code", "message": "Start MFA enrollment first"}])
     if not verify_totp(user, code):
@@ -349,6 +393,94 @@ def disable_mfa(db: Session, user: User, password: str, code: str) -> None:
     user.mfa_enabled = False
     user.mfa_secret_encrypted = None
     user.mfa_last_counter = None
+    user.recovery_codes = []
+
+
+RECOVERY_CODE_COUNT = 10
+
+
+def _normalize_recovery_code(code: str) -> str:
+    return code.strip().replace("-", "").replace(" ", "").upper()
+
+
+def generate_recovery_codes(db: Session, user: User) -> list[str]:
+    """Replace the recovery-code set and return the plaintext values exactly once."""
+    codes: list[str] = []
+    stored: list[dict[str, Any]] = []
+    for _ in range(RECOVERY_CODE_COUNT):
+        raw = secrets.token_hex(6).upper()
+        code = f"{raw[0:4]}-{raw[4:8]}-{raw[8:12]}"
+        codes.append(code)
+        stored.append({"hash": hash_password(_normalize_recovery_code(code)), "used_at": None})
+    user.recovery_codes = stored
+    db.flush()
+    return codes
+
+
+def consume_recovery_code(db: Session, user: User, code: str) -> bool:
+    """Verify a one-time recovery code and mark it used. Never reveals which failed."""
+    normalized = _normalize_recovery_code(code)
+    if not normalized:
+        return False
+    entries = [dict(entry) for entry in (user.recovery_codes or []) if isinstance(entry, dict)]
+    for entry in entries:
+        if entry.get("used_at"):
+            continue
+        if verify_password(normalized, str(entry.get("hash", ""))):
+            entry["used_at"] = utcnow().isoformat()
+            user.recovery_codes = entries
+            db.flush()
+            return True
+    return False
+
+
+def remaining_recovery_codes(user: User) -> int:
+    return sum(1 for entry in (user.recovery_codes or []) if isinstance(entry, dict) and not entry.get("used_at"))
+
+
+def complete_recovery_login(
+    db: Session, *, challenge_token: str, recovery_code: str, ip: str | None, user_agent: str | None
+) -> tuple[User, Organization, str, str, AuthSession]:
+    """Second-factor login with a single-use recovery code.
+
+    A successful use consumes the code and revokes every existing session,
+    because recovery implies a possible device loss or compromise.
+    """
+    user_id = verify_challenge(challenge_token)
+    user = db.get(User, user_id)
+    if user is None or user.status != "active" or not user.mfa_enabled:
+        raise Unauthorized("Invalid MFA challenge")
+    if not consume_recovery_code(db, user, recovery_code):
+        append_audit(
+            db,
+            org_id=None,
+            action="auth.mfa.recovery.failure",
+            resource_type="auth",
+            resource_id=str(user.id),
+            outcome="failure",
+            actor_email=user.email,
+            ip_address=ip,
+        )
+        db.commit()
+        raise Unauthorized("Invalid recovery code")
+    org, role = select_org_for_login(db, user, None)
+    revoke_user_sessions(db, user.id, reason="recovery_code_used")
+    raw_token, session = create_session(db, user, org, ip=ip, user_agent=user_agent, mfa_verified=True)
+    user.failed_login_count = 0
+    user.last_login_at = utcnow()
+    append_audit(
+        db,
+        org_id=org.id,
+        action="auth.mfa.recovery.success",
+        resource_type="auth",
+        resource_id=str(user.id),
+        actor_id=str(user.id),
+        actor_email=user.email,
+        payload={"session_id": str(session.id), "remaining_codes": remaining_recovery_codes(user)},
+        ip_address=ip,
+        user_agent=user_agent,
+    )
+    return user, org, role, raw_token, session
 
 
 def create_api_token(
@@ -442,6 +574,7 @@ def active_break_glass(db: Session, user_id: UUID, org_id: UUID) -> BreakGlassGr
         .where(
             BreakGlassGrant.user_id == user_id,
             BreakGlassGrant.org_id == org_id,
+            BreakGlassGrant.status == "approved",
             BreakGlassGrant.revoked_at.is_(None),
             BreakGlassGrant.expires_at > now,
         )
@@ -460,19 +593,34 @@ def create_break_glass(
         raise ValidationFailure(
             [{"field": "reason", "message": "A justification of at least 10 characters is required"}]
         )
+    other_admins = int(
+        db.execute(
+            select(func.count())
+            .select_from(User)
+            .where(User.is_platform_admin.is_(True), User.status == "active", User.id != user.id)
+        ).scalar_one()
+    )
+    # Dual control whenever a second administrator exists. A single-admin
+    # deployment keeps a documented (audited) residual risk instead of becoming
+    # unusable; every grant still requires justification, ticket, TTL and audit.
+    needs_second_approver = other_admins > 0
+    now = utcnow()
     grant = BreakGlassGrant(
         user_id=user.id,
         org_id=org.id,
         reason=cleaned[:1000],
         ticket=ticket.strip()[:80],
-        expires_at=utcnow() + timedelta(minutes=settings.break_glass_ttl_minutes),
+        status="pending" if needs_second_approver else "approved",
+        approved_by=None if needs_second_approver else user.id,
+        approved_at=None if needs_second_approver else now,
+        expires_at=now + timedelta(minutes=settings.break_glass_ttl_minutes),
     )
     db.add(grant)
     db.flush()
     append_audit(
         db,
         org_id=org.id,
-        action="auth.break_glass.grant",
+        action="auth.break_glass.request" if needs_second_approver else "auth.break_glass.grant",
         resource_type="organization",
         resource_id=str(org.id),
         actor_id=str(user.id),
@@ -482,8 +630,35 @@ def create_break_glass(
             "reason": cleaned,
             "ticket": grant.ticket,
             "expires_at": grant.expires_at.isoformat(),
+            "status": grant.status,
+            "second_approver_required": needs_second_approver,
         },
         request_id=request_id,
+    )
+    return grant
+
+
+def approve_break_glass(db: Session, grant: BreakGlassGrant, *, approver: User) -> BreakGlassGrant:
+    if not approver.is_platform_admin:
+        raise Forbidden("Only platform administrators can approve break-glass grants")
+    if grant.user_id == approver.id:
+        raise Forbidden("The requester cannot approve their own break-glass grant")
+    if grant.status != "pending":
+        raise Forbidden(f"Break-glass grant is already {grant.status}")
+    if grant.revoked_at is not None or grant.expires_at <= utcnow():
+        raise Forbidden("Break-glass grant has expired or was revoked")
+    grant.status = "approved"
+    grant.approved_by = approver.id
+    grant.approved_at = utcnow()
+    append_audit(
+        db,
+        org_id=grant.org_id,
+        action="auth.break_glass.approve",
+        resource_type="organization",
+        resource_id=str(grant.org_id),
+        actor_id=str(approver.id),
+        actor_email=approver.email,
+        payload={"grant_id": str(grant.id), "requested_by": str(grant.user_id), "ticket": grant.ticket},
     )
     return grant
 

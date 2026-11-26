@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import uuid
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 
@@ -11,6 +13,17 @@ from app.models.core import AuditRecord
 from app.models.events import IngestSource, SecurityEvent
 from app.models.ti import ThreatIndicator
 from tests.conftest import break_glass
+
+
+def _v2_headers(secret: str, body: bytes) -> dict[str, str]:
+    stamp = str(int(datetime.now(UTC).timestamp()))
+    nonce = f"nonce-{uuid.uuid4().hex}"
+    canonical = f"{stamp}.{nonce}.".encode() + body
+    return {
+        "X-HS-Timestamp": stamp,
+        "X-HS-Nonce": nonce,
+        "X-HS-Signature": hmac_sha256_hex(secret, canonical),
+    }
 
 
 def _create_source(client, **overrides):
@@ -117,13 +130,12 @@ def test_hmac_signature_required_and_verified(auth_client):
     created = _create_source(auth_client, name="Signed source", hmac_secret=secret)
     assert created["hmac_secret"] == secret
     token = created["token"]
-    body = b'{"message":"signed event","severity":"medium"}'
+    body = b'{"message":"signed event","severity":"medium","timestamp":"2026-03-04T05:06:07Z"}'
 
     assert _ingest(auth_client, token, body).status_code == 401
-    assert _ingest(auth_client, token, body, headers={"X-HISPA-Signature": "0" * 64}).status_code == 401
+    assert _ingest(auth_client, token, body, headers={"X-HS-Signature": "0" * 64}).status_code == 401
 
-    signature = hmac_sha256_hex(secret, body)
-    accepted = _ingest(auth_client, token, body, headers={"X-HISPA-Signature": signature})
+    accepted = _ingest(auth_client, token, body, headers=_v2_headers(secret, body))
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["accepted"] == 1
 

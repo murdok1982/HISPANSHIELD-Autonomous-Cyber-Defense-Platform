@@ -9,9 +9,10 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import redact
+from app.core.config import settings
 from app.core.deps import RequestContext
 from app.core.errors import Forbidden, NotFound, ValidationFailure
-from app.core.ssrf import SSRFError, validate_outbound_url
+from app.core.ssrf import SSRFError, validate_outbound_url, validate_private_destination
 from app.models.ai import AIModel, AIProvider
 from app.modules.ai.schemas import ModelOut, ProviderOut
 
@@ -35,9 +36,17 @@ def ensure_can_manage_provider(ctx: RequestContext, provider: AIProvider) -> Non
         raise Forbidden("Only platform administrators can manage platform-wide AI providers")
 
 
-def validate_provider_url(url: str) -> str:
+def validate_provider_url(url: str, *, is_local: bool = True) -> str:
+    """Validate a provider endpoint against SSRF and transport policy.
+
+    Local inference servers may live on a private LAN, but only inside the
+    operator-managed allowlist; external providers must use HTTPS and must never
+    resolve to private, loopback or metadata ranges.
+    """
     try:
-        return validate_outbound_url(url.strip(), allow_private=True)
+        if is_local:
+            return validate_private_destination(url.strip(), settings.ai_private_allowed_cidrs)
+        return validate_outbound_url(url.strip(), allow_private=False, require_https=True)
     except SSRFError as exc:
         raise ValidationFailure([{"field": "base_url", "message": str(exc)}]) from exc
 

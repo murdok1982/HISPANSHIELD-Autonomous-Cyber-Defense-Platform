@@ -40,8 +40,8 @@ curl -H "Authorization: Bearer hs_pat_xxx" \
 | Paginación | `?cursor=<opaque>&limit=20` → `{data[], meta:{next_cursor,total_estimate}}` |
 | Filtros | Query params tipados; validados; error `422` con `path` |
 | Orden | `?sort=field:asc|desc` (allowlist por recurso) |
-| Errores | `{error:{code,message,fields?,request_id}}` |
-| Idempotencia | `Idempotency-Key` en POST de ingesta/ejecución/import |
+| Errores | `{error:{code,message,details?,request_id}}` |
+| Idempotencia | **Pendiente (roadmap):** `Idempotency-Key` no está implementado; la ingesta usa dedupe persistente por evento |
 | Correlación | `X-Request-Id` (opcional, devuelto siempre) |
 | Fechas | ISO 8601 UTC |
 
@@ -54,25 +54,30 @@ curl -H "Authorization: Bearer hs_pat_xxx" \
 | Método | Ruta | Descripción |
 | :--- | :--- | :--- |
 | POST | `/auth/login` | `200` sesión o `202 mfa_required` |
-| POST | `/auth/mfa/verify` | Verifica TOTP o recovery code |
-| POST | `/auth/mfa/enroll` | Devuelve `otpauth_url` y secreto una vez |
-| POST | `/auth/mfa/activate` | Activa y devuelve recovery codes |
+| POST | `/auth/mfa/verify` | Verifica TOTP |
+| POST | `/auth/mfa/recovery` | Completa el login con un recovery code de un solo uso |
+| POST | `/auth/mfa/enroll` | Devuelve `otpauth_uri` y secreto una vez; exige contraseña |
+| POST | `/auth/mfa/activate` | Activa, exige contraseña y devuelve 10 recovery codes |
+| POST | `/auth/mfa/recovery-codes` | Regenera los recovery codes e invalida los anteriores |
 | POST | `/auth/logout` | Revoca sesión actual |
 | GET | `/auth/me` | Usuario, memberships, permisos |
-| POST | `/auth/password/change` | Cambia y revoca otras sesiones |
+| POST | `/auth/change-password` | Cambia y revoca otras sesiones |
 | GET | `/auth/sessions` | Sesiones activas |
 | DELETE | `/auth/sessions/{id}` | Revoca una sesión |
+| POST | `/auth/break-glass` | Solicita acceso justificado a otra organización (doble aprobador si existe) |
+| POST | `/auth/break-glass/{grant_id}/approve` | Aprueba la solicitud de otro `platform_admin` |
+| POST | `/auth/break-glass/{grant_id}/revoke` | Revoca el grant |
 
 ### 3.2 `organizations` y `users`
 
 | Método | Ruta | Descripción |
 | :--- | :--- | :--- |
-| POST | `/setup` | Bootstrap inicial (solo si no hay orgs) |
+| POST | `/setup` | **No implementado:** el bootstrap inicial se hace con `scripts/bootstrap_admin.py` |
 | GET/POST | `/organizations` | Lista / crea |
 | GET/PATCH/DELETE | `/organizations/{id}` | Detalle / actualiza / soft delete |
-| GET/POST | `/organizations/{id}/members` | Lista / invita |
+| GET/POST | `/organizations/{id}/members` | Lista / añade |
 | PATCH/DELETE | `/organizations/{id}/members/{user_id}` | Cambia rol / elimina |
-| POST | `/invitations/{token}/accept` | Acepta invitación |
+| POST | `/invitations/{token}/accept` | **No implementado (roadmap)** |
 | GET/PATCH | `/organizations/{id}/settings` | Settings de organización |
 | GET/PATCH | `/users/{id}` | Perfil |
 | GET/POST/DELETE | `/users/{id}/tokens` | PAT |

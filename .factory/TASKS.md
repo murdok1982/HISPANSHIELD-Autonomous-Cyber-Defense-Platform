@@ -1,8 +1,8 @@
 # AUTONOMOUS EXECUTION BACKLOG
 
 - **Project Name:** HISPANSHIELD — Autonomous Cyber Defence Platform
-- **Current Phase:** `PHASE_11 — RC1 delivered; post-MVP backlog documented`
-- **Progress:** `109 / 150` tasks verified (`72.7%`) · `47` deferred post-MVP · release candidate 0.1.0
+- **Current Phase:** `PHASE_12 — post-RC1 security remediation wave (0.1.1)`
+- **Progress:** `128 / 172` tasks verified (`74.4%`) · `44` deferred post-MVP · release candidate 0.1.1
 - **State Legend:**
   - `- [ ]` Pending (Listo para ejecutar)
   - `- [~]` In Progress (Asignado a subagente activo)
@@ -1367,3 +1367,54 @@
 - **Dependencies:** `pip-audit --skip-editable` → **no known vulnerabilities**; `bandit` → 0 High/Medium after fixing the syslog bind default; `gitleaks` config added.
 - **Deferred:** the 47 `[!]` items above are explicitly post-MVP. They are not simulated; they are absent or simplified and are listed so no capability is overclaimed. None blocks the delivered SOC workflows, but they must be closed before a GA claim.
 - **Security gate:** see `.factory/SECURITY_AUDIT.md` for the adversarial report and residual risk.
+
+---
+
+## PHASE 12 — POST-RC1 SECURITY & OPERATIONS WAVE (2026-11-26)
+
+> Independent verification: `.factory/SECURITY_FINDINGS.md`. Baseline: `.factory/BASELINE_TEST_RESULTS.md`. Every task below has an executable regression test; no task is marked `- [x]` without running its verification command.
+
+- [x] **SEC-12-01 (VULN-018):** Body limit enforced for declared and chunked bodies via pure-ASGI middleware.
+  - **Verification:** `tests/security/test_http_hardening.py::test_body_limit_counts_streamed_chunks_without_content_length`
+- [x] **SEC-12-02 (VULN-022):** CSV formula injection neutralised in forensic timeline export.
+  - **Verification:** `tests/integration/test_forensics.py::test_timeline_export_neutralises_spreadsheet_formulas`
+- [x] **SEC-12-03 (VULN-025):** Bootstrap refuses to promote an existing non-admin without `--promote-existing`.
+  - **Verification:** `tests/security/test_bootstrap.py`
+- [x] **SEC-12-04 (VULN-028):** Edge fingerprints unique per organization (migration `0007`), scoped enrollment check.
+  - **Verification:** `tests/integration/test_edge.py` (full file)
+- [x] **SEC-12-05 (VULN-017):** Single source cannot lock an account; global lock only on distributed failures.
+  - **Verification:** `tests/integration/test_auth.py::test_single_source_cannot_lock_account_for_its_owner`, `::test_distributed_failures_still_trigger_a_global_lock`
+- [x] **SEC-12-06 (VULN-007/008/021):** Per-org AI token/request budgets, per-org concurrency, external-provider opt-in + EU region + HTTPS, local-provider CIDR allowlist.
+  - **Verification:** `tests/integration/test_ai.py::test_ai_budget_exhaustion_denies_before_calling_provider`, `::test_malformed_ai_budget_fails_closed`, `::test_external_provider_requires_platform_opt_in_and_eu_region`, `::test_local_provider_outside_operator_allowlist_is_rejected`
+- [x] **SEC-12-07 (VULN-009):** DNS pinning at connection time for connectors, MCP and AI (`core/outbound.py`).
+  - **Verification:** `tests/security/test_outbound_pinning.py`, existing connector/MCP/AI suites
+- [x] **SEC-12-08 (VULN-010):** HMAC v2 (timestamp + nonce) and persistent dedupe unique index (migration `0008`).
+  - **Verification:** `tests/integration/test_ingest_security.py` (replay/nonce/legacy/dedupe tests)
+- [x] **SEC-12-09 (VULN-011):** Discovery requires an approved, unexpired, in-scope authorization (migration `0008`).
+  - **Verification:** `tests/integration/test_attack_surface.py` (authorization suite)
+- [x] **SEC-12-10 (VULN-012):** Atomic worker claim with `FOR UPDATE SKIP LOCKED`, lease reclaim and recovery.
+  - **Verification:** `tests/security/test_playbook_claim.py`
+- [x] **SEC-12-11 (VULN-013/027):** Deterministic autonomy guardrails (budgets, cooldown, freeze windows, blast radius, target kinds) and fail-closed policy errors.
+  - **Verification:** `tests/unit/test_policy_guardrails.py`, `tests/security/test_autonomy_guardrails.py`
+- [x] **SEC-12-12 (VULN-014):** Versioned audit hash covers request id, IP, UA and actor email; legacy chains still verify.
+  - **Verification:** `tests/security/test_audit_integrity.py`
+- [x] **SEC-12-13 (VULN-003):** Break-glass dual control when a second platform admin exists; no implicit grant on `switch-org` (migration `0010`).
+  - **Verification:** `tests/integration/test_auth.py::test_break_glass_requires_a_second_approver_when_one_exists`, `::test_break_glass_is_not_created_implicitly_by_switch_org`
+- [x] **SEC-12-14 (VULN-004):** Ingestion token accepted via `Authorization` header; legacy path deprecated and redacted from logs.
+  - **Verification:** `tests/integration/test_ingest_security.py::test_ingest_accepts_token_in_authorization_header`, `tests/security/test_outbound_pinning.py::test_log_paths_redact_ingestion_tokens`
+- [x] **SEC-12-15 (VULN-006 residual):** Playbook compensation actions require the same permission as direct actions.
+  - **Verification:** `tests/integration/test_soar.py::test_playbook_steps_require_direct_permissions`
+- [x] **SEC-12-16 (NEW-001/002):** MFA enroll/activate require password step-up; per-challenge verification rate limit.
+  - **Verification:** `tests/security/test_http_hardening.py::test_mfa_enrollment_login_and_replay_protection`
+- [x] **SEC-12-17 (IAM):** One-time MFA recovery codes (Argon2id hashes, shown once, regeneration invalidates prior set) and active-session listing/revocation (migration `0009`).
+  - **Verification:** `tests/security/test_http_hardening.py::test_mfa_recovery_codes_are_single_use_and_regeneration_invalidates_them`, `tests/integration/test_auth.py::test_user_can_list_and_revoke_other_sessions`
+- [x] **OPS-12-01:** Durable worker runtime (playbooks + connector scheduler) deployed in Compose and Kubernetes, with dedicated NetworkPolicy.
+  - **Verification:** `tests/integration/test_worker_runtime.py`
+- [x] **OPS-12-02:** `/readyz` reports database, migration head/current and queue depth; 503 on schema drift.
+  - **Verification:** `tests/integration/test_auth.py::test_health_endpoints`
+- [x] **OPS-12-03:** Backups 0700/0600, encryption mandatory in production, manifest generated after encryption; restore verifies chain.
+  - **Verification:** manual dry-run documented in `.factory/RELEASE_READINESS.md`
+- [x] **OPS-12-04:** Fresh-clone reproducibility: `backend/app/data/**` tracked again (`.gitignore` narrowed).
+  - **Verification:** clean worktree `pytest tests/unit/test_frameworks.py`
+- [x] **OPS-12-05:** Trusted proxy default restricted to loopback (`HS_FORWARDED_ALLOW_IPS`), no `*`.
+  - **Verification:** `Dockerfile` inspection + Compose/K8s manifests

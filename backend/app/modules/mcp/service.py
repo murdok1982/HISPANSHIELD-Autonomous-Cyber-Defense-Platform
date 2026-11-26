@@ -11,7 +11,8 @@ from uuid import UUID
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.audit import redact
+from app.core.audit import append_audit, redact
+from app.core.crypto import sha256_hex
 from app.core.db import utcnow
 from app.core.errors import (
     Conflict,
@@ -23,11 +24,124 @@ from app.core.errors import (
 )
 from app.models.ai import AgentRun
 from app.models.connectors import MCPServer, MCPTool, ToolExecution
+from app.models.core import Approval
 from app.modules.mcp.client import JsonRpcClient, JsonRpcError, validate_arguments
 from app.services.llm.safety import scan_injection, strip_control_chars
 
 MAX_RESULT_CHARS = 50_000
 DISCOVERY_TIMEOUT_SECONDS = 20
+MCP_APPROVAL_REQUEST_TYPE = "mcp_tool_approval"
+MCP_APPROVAL_SCHEMA_VERSION = 1
+
+
+def _approval_snapshot(server: MCPServer, tool: MCPTool) -> dict[str, Any]:
+    """Canonical, hashable view of everything a human approval covers."""
+    return {
+        "schema_version": MCP_APPROVAL_SCHEMA_VERSION,
+        "org_id": str(tool.org_id),
+        "server_id": str(server.id),
+        "server_name": server.name,
+        "server_endpoint": server.endpoint,
+        "server_version": server.version,
+        "tool_id": str(tool.id),
+        "tool_name": tool.name,
+        "tool_version": tool.version,
+        "input_schema": tool.input_schema or {},
+    }
+
+
+def mcp_approval_fingerprint(server: MCPServer, tool: MCPTool) -> str:
+    """sha256 over the canonical approval scope (server + tool + schema + version)."""
+    return sha256_hex(json.dumps(_approval_snapshot(server, tool), sort_keys=True, separators=(",", ":"), default=str))
+
+
+def _active_tool_approval(db: Session, tool: MCPTool) -> Approval | None:
+    return db.execute(
+        select(Approval)
+        .where(
+            Approval.org_id == tool.org_id,
+            Approval.request_type == MCP_APPROVAL_REQUEST_TYPE,
+            Approval.resource_type == "mcp_tool",
+            Approval.resource_id == str(tool.id),
+            Approval.status == "approved",
+        )
+        .order_by(Approval.decided_at.desc().nullslast(), Approval.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+def _approval_changes(approval: Approval, server: MCPServer, tool: MCPTool) -> list[str]:
+    stored = approval.payload or {}
+    current = _approval_snapshot(server, tool)
+    tracked = (
+        "schema_version",
+        "org_id",
+        "server_id",
+        "server_name",
+        "server_endpoint",
+        "server_version",
+        "tool_id",
+        "tool_name",
+        "tool_version",
+        "input_schema",
+    )
+    return [field for field in tracked if stored.get(field) != current[field]]
+
+
+def _deny_drifted_execution(
+    db: Session,
+    tool: MCPTool,
+    *,
+    server: MCPServer,
+    arguments: dict[str, Any],
+    actor: str | None,
+    agent_run_id: UUID | None,
+    approval: Approval,
+    changes: list[str],
+) -> None:
+    current_fingerprint = mcp_approval_fingerprint(server, tool)
+    approved_fingerprint = (approval.payload or {}).get("fingerprint")
+    reason = (
+        "MCP tool approval no longer matches the current definition (changed: "
+        f"{', '.join(changes)}); re-approve the tool after review"
+    )
+    _execution_record(
+        db,
+        tool,
+        arguments=arguments,
+        status="denied",
+        latency_ms=0,
+        created_by=actor,
+        agent_run_id=agent_run_id,
+        error=reason,
+    )
+    append_audit(
+        db,
+        org_id=tool.org_id,
+        action="mcp.tool.execution.denied",
+        resource_type="mcp_tool",
+        resource_id=str(tool.id),
+        actor_type="user" if actor else "system",
+        actor_id=actor,
+        outcome="failure",
+        payload={
+            "reason": "approval_drift",
+            "changed": changes,
+            "approval_id": str(approval.id),
+            "approved_fingerprint": approved_fingerprint,
+            "current_fingerprint": current_fingerprint,
+            "server_id": str(server.id),
+            "server_name": server.name,
+            "server_endpoint": server.endpoint,
+            "tool_name": tool.name,
+            "tool_version": tool.version,
+        },
+    )
+    db.commit()
+    raise PolicyDenied(
+        reason,
+        details=[{"field": field, "message": "Changed since the approval was granted"} for field in changes],
+    )
 
 
 MALFORMED_SCHEMA: dict[str, Any] = {
@@ -167,9 +281,44 @@ def approve_tool(
     approved: bool,
     timeout_seconds: int | None,
     max_calls_per_hour: int | None,
+    actor: str | None = None,
+    decided_by: UUID | None = None,
 ) -> MCPTool:
     if approved and not (server.enabled and server.approved_at is not None):
         raise Conflict("The MCP server must be approved before its tools can be approved")
+    # Every (re-)approval supersedes previous snapshots, so only the latest
+    # human decision can authorize a call.
+    previous = list(
+        db.execute(
+            select(Approval).where(
+                Approval.org_id == tool.org_id,
+                Approval.request_type == MCP_APPROVAL_REQUEST_TYPE,
+                Approval.resource_type == "mcp_tool",
+                Approval.resource_id == str(tool.id),
+                Approval.status == "approved",
+            )
+        ).scalars()
+    )
+    for record in previous:
+        record.status = "superseded"
+    if approved:
+        fingerprint = mcp_approval_fingerprint(server, tool)
+        snapshot = _approval_snapshot(server, tool)
+        approval = Approval(
+            org_id=tool.org_id,
+            request_type=MCP_APPROVAL_REQUEST_TYPE,
+            resource_type="mcp_tool",
+            resource_id=str(tool.id),
+            payload={**snapshot, "fingerprint": fingerprint},
+            status="approved",
+            requested_by=(actor or "unknown")[:64],
+            requested_by_user_id=decided_by,
+            decided_by=decided_by,
+            decided_at=utcnow(),
+            reason="Approved MCP tool bound to server, tool, version and input schema",
+        )
+        db.add(approval)
+        db.flush()
     tool.approved = approved
     tool.enabled = approved
     if timeout_seconds is not None:
@@ -228,6 +377,62 @@ def _sanitize_result(result: Any) -> dict[str, Any]:
     }
 
 
+def _require_current_approval(
+    db: Session,
+    tool: MCPTool,
+    server: MCPServer,
+    *,
+    arguments: dict[str, Any],
+    actor: str | None,
+    agent_run_id: UUID | None,
+) -> Approval:
+    """Recompute the approval fingerprint and reject any post-approval drift."""
+    if tool.org_id != server.org_id:
+        raise PolicyDenied("MCP tool and server belong to different organizations")
+    approval = _active_tool_approval(db, tool)
+    if approval is None:
+        reason = "MCP tool has no active approval binding; re-approve the tool after review"
+        _execution_record(
+            db,
+            tool,
+            arguments=arguments,
+            status="denied",
+            latency_ms=0,
+            created_by=actor,
+            agent_run_id=agent_run_id,
+            error=reason,
+        )
+        append_audit(
+            db,
+            org_id=tool.org_id,
+            action="mcp.tool.execution.denied",
+            resource_type="mcp_tool",
+            resource_id=str(tool.id),
+            actor_type="user" if actor else "system",
+            actor_id=actor,
+            outcome="failure",
+            payload={"reason": "approval_missing", "server_id": str(server.id), "tool_name": tool.name},
+        )
+        db.commit()
+        raise PolicyDenied(reason)
+    changes = _approval_changes(approval, server, tool)
+    stored_fingerprint = (approval.payload or {}).get("fingerprint")
+    if stored_fingerprint != mcp_approval_fingerprint(server, tool) and not changes:
+        changes = ["approval_fingerprint"]
+    if changes:
+        _deny_drifted_execution(
+            db,
+            tool,
+            server=server,
+            arguments=arguments,
+            actor=actor,
+            agent_run_id=agent_run_id,
+            approval=approval,
+            changes=changes,
+        )
+    return approval
+
+
 def execute_tool(
     db: Session,
     tool: MCPTool,
@@ -241,6 +446,14 @@ def execute_tool(
         raise PolicyDenied("MCP server is not enabled and approved")
     if not tool.enabled or not tool.approved:
         raise PolicyDenied("MCP tool is not enabled and approved")
+    _require_current_approval(
+        db,
+        tool,
+        server,
+        arguments=arguments,
+        actor=actor,
+        agent_run_id=agent_run_id,
+    )
     if agent_run_id is not None:
         run = db.get(AgentRun, agent_run_id)
         if run is None or run.org_id != tool.org_id:
@@ -308,4 +521,11 @@ def execute_tool(
     }
 
 
-__all__ = ["approve_server", "approve_tool", "discover_server", "execute_tool"]
+__all__ = [
+    "MCP_APPROVAL_REQUEST_TYPE",
+    "approve_server",
+    "approve_tool",
+    "discover_server",
+    "execute_tool",
+    "mcp_approval_fingerprint",
+]

@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
@@ -16,12 +16,13 @@ from app.core.db import Base, TimestampMixin, UUIDPrimaryKeyMixin, utcnow
 
 class EdgeGateway(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "edge_gateways"
+    __table_args__ = (UniqueConstraint("org_id", "fingerprint", name="uq_edge_gateways_org_fingerprint"),)
 
     org_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
     )
     name: Mapped[str] = mapped_column(String(160), nullable=False)
-    fingerprint: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    fingerprint: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
     version: Mapped[str | None] = mapped_column(String(40), nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

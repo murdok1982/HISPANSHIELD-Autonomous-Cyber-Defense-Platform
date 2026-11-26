@@ -45,6 +45,17 @@ class Settings(BaseSettings):
     default_ollama_url: str = "http://127.0.0.1:11434"
     ai_request_timeout_seconds: int = 120
     ai_max_concurrency: int = 4
+    ai_max_concurrency_per_org: int = 2
+    # Per-organization AI governance. Zero means "blocked"; limits are enforced
+    # before any outbound call so a tenant cannot exhaust shared GPU capacity.
+    ai_daily_token_budget_per_org: int = 2_000_000
+    ai_monthly_token_budget_per_org: int = 20_000_000
+    ai_daily_request_budget_per_org: int = 5_000
+    # External (non-local) inference is opt-in at platform and tenant level.
+    ai_allow_external_providers: bool = False
+    # Private destinations explicitly authorized for local inference servers.
+    # Tenants cannot self-declare a "local" provider outside this allowlist.
+    ai_private_allowed_cidrs: Annotated[list[str], NoDecode] = Field(default_factory=lambda: ["127.0.0.0/8", "::1/128"])
 
     connector_deny_cidrs: Annotated[list[str], NoDecode] = Field(default_factory=list)
     connector_allow_private_networks: bool = False
@@ -57,7 +68,7 @@ class Settings(BaseSettings):
     # Directory containing the built SPA (frontend/dist).
     frontend_dist: str = "frontend/dist"
 
-    @field_validator("allowed_origins", "connector_deny_cidrs", mode="before")
+    @field_validator("allowed_origins", "connector_deny_cidrs", "ai_private_allowed_cidrs", mode="before")
     @classmethod
     def _split_csv(cls, value: object) -> object:
         if isinstance(value, str):
