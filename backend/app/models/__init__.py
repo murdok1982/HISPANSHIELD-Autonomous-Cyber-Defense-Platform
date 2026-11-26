@@ -34,8 +34,10 @@ from app.models.connectors import Connector, ConnectorErrorRecord, ConnectorRun,
 from app.models.core import (
     ApiToken,
     Approval,
+    AuditCheckpoint,
     AuditRecord,
     BreakGlassGrant,
+    Invitation,
     KillSwitch,
     Membership,
     Notification,
@@ -56,6 +58,7 @@ from app.models.incidents import (
     PlaybookStep,
     Remediation,
 )
+from app.models.operations import IdempotencyRecord, OutboxEvent
 from app.models.ti import ThreatActor, ThreatIndicator, TIFeed
 
 __all__ = [
@@ -72,6 +75,7 @@ __all__ = [
     "AssetIdentity",
     "AssetRelationship",
     "AttackSurfaceFinding",
+    "AuditCheckpoint",
     "AuditRecord",
     "BreakGlassGrant",
     "CVECatalog",
@@ -92,6 +96,8 @@ __all__ = [
     "Incident",
     "IncidentTimeline",
     "IngestSource",
+    "Invitation",
+    "IdempotencyRecord",
     "IoTDevice",
     "KillSwitch",
     "KnowledgeChunk",
@@ -102,6 +108,7 @@ __all__ = [
     "Notification",
     "OTDevice",
     "Organization",
+    "OutboxEvent",
     "Playbook",
     "PlaybookExecution",
     "PlaybookStep",

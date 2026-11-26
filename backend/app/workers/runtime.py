@@ -25,14 +25,17 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.core.db import SessionLocal, utcnow
+from app.core.idempotency import purge_expired_records
 from app.core.logging import configure_logging, get_logger
 from app.models.connectors import Connector
 from app.modules.connectors.sync import run_sync
+from app.services.outbox import dispatch_once as dispatch_outbox_once
 from app.services.playbook_engine import worker_run_once
 
 logger = get_logger("hispanshield.worker")
 
 PLAYBOOK_INTERVAL_SECONDS = 2.0
+OUTBOX_INTERVAL_SECONDS = 1.0
 SCHEDULER_INTERVAL_SECONDS = 30.0
 DEFAULT_SYNC_INTERVAL_MINUTES = 15
 DEFAULT_SYNC_LIMIT = 100
@@ -47,6 +50,9 @@ class WorkerStats:
     connector_passes: int = 0
     connector_synced: int = 0
     connector_failed: int = 0
+    outbox_passes: int = 0
+    outbox_processed: int = 0
+    outbox_failed: int = 0
 
     def as_dict(self) -> dict[str, int]:
         return {
@@ -56,6 +62,9 @@ class WorkerStats:
             "connector_passes": self.connector_passes,
             "connector_synced": self.connector_synced,
             "connector_failed": self.connector_failed,
+            "outbox_passes": self.outbox_passes,
+            "outbox_processed": self.outbox_processed,
+            "outbox_failed": self.outbox_failed,
         }
 
 
@@ -138,9 +147,16 @@ def sync_connectors_once(db: Session, *, now=None, limit: int = MAX_CONNECTORS_P
     return {"synced": synced, "failed": failed}
 
 
+def run_outbox_once(db: Session, *, limit: int = 100) -> dict[str, int]:
+    result = dispatch_outbox_once(db, limit=limit, worker_id="worker:outbox")
+    purge_expired_records(db)
+    return {key: int(value) for key, value in result.items()}
+
+
 def run_forever(stop: StopFlag, stats: WorkerStats, *, role: str = "all") -> None:
     next_playbooks = 0.0
     next_scheduler = 0.0
+    next_outbox = 0.0
     while not stop.stopped:
         now = time.monotonic()
         if role in {"all", "playbooks"} and now >= next_playbooks:
@@ -153,6 +169,17 @@ def run_forever(stop: StopFlag, stats: WorkerStats, *, role: str = "all") -> Non
             except Exception as exc:  # noqa: BLE001 - loop must survive transient DB errors
                 logger.error("playbook_pass_failed", extra={"extra_fields": {"error": str(exc)[:300]}})
             next_playbooks = time.monotonic() + PLAYBOOK_INTERVAL_SECONDS
+
+        if role in {"all", "outbox"} and now >= next_outbox:
+            try:
+                with SessionLocal() as db:
+                    result = run_outbox_once(db)
+                stats.outbox_passes += 1
+                stats.outbox_processed += int(result.get("processed", 0))
+                stats.outbox_failed += int(result.get("retried", 0)) + int(result.get("dead_lettered", 0))
+            except Exception as exc:  # noqa: BLE001 - loop must survive transient DB errors
+                logger.error("outbox_pass_failed", extra={"extra_fields": {"error": str(exc)[:300]}})
+            next_outbox = time.monotonic() + OUTBOX_INTERVAL_SECONDS
 
         if role in {"all", "connectors"} and now >= next_scheduler:
             try:
@@ -172,7 +199,7 @@ def run_forever(stop: StopFlag, stats: WorkerStats, *, role: str = "all") -> Non
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="HISPANSHIELD durable worker")
-    parser.add_argument("--role", choices=["all", "playbooks", "connectors"], default="all")
+    parser.add_argument("--role", choices=["all", "playbooks", "connectors", "outbox"], default="all")
     parser.add_argument("--once", action="store_true", help="run a single pass and exit")
     args = parser.parse_args(argv)
 
@@ -189,6 +216,11 @@ def main(argv: list[str] | None = None) -> int:
                 stats.playbook_passes += 1
                 stats.playbook_processed += int(result.get("processed", 0))
                 stats.playbook_failed += int(result.get("failed", 0))
+            if args.role in {"all", "outbox"}:
+                result = run_outbox_once(db)
+                stats.outbox_passes += 1
+                stats.outbox_processed += int(result.get("processed", 0))
+                stats.outbox_failed += int(result.get("retried", 0)) + int(result.get("dead_lettered", 0))
             if args.role in {"all", "connectors"}:
                 result = sync_connectors_once(db)
                 stats.connector_passes += 1

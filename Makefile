@@ -5,7 +5,7 @@ PYTHON ?= .venv/bin/python
 NODE   ?= node
 NPM    ?= npm
 
-.PHONY: help setup install migrate revision bootstrap seed-demo dev-backend dev-frontend build-frontend test test-backend test-frontend lint typecheck audit sbom backup restore compose-up compose-down
+.PHONY: help setup install migrate revision bootstrap seed-demo dev-backend dev-frontend build-frontend test test-backend test-frontend lint typecheck audit sbom backup restore compose-up compose-down metrics validate-deploy
 
 help:
 	@echo "HISPANSHIELD targets:"
@@ -22,6 +22,8 @@ help:
 	@echo "  audit            pip-audit + bandit"
 	@echo "  sbom             Generate a dependency inventory"
 	@echo "  backup/restore   PostgreSQL + evidence backup and restore"
+	@echo "  metrics          Recompute repository/task/AC metrics"
+	@echo "  validate-deploy  Render + validate the Kubernetes template (TEST values)"
 
 setup: install migrate build-frontend
 
@@ -73,8 +75,8 @@ typecheck:
 	cd frontend && $(NODE) node_modules/typescript/bin/tsc -b --force
 
 audit:
-	$(PYTHON) -m pip_audit --skip-editable || true
-	$(PYTHON) -m bandit -q -r backend/app -x backend/tests || true
+	$(PYTHON) -m pip_audit --skip-editable
+	$(PYTHON) -m bandit -q -r backend/app -x backend/tests
 
 sbom:
 	./scripts/sbom.sh
@@ -90,3 +92,11 @@ compose-up:
 
 compose-down:
 	docker compose -f deploy/compose/docker-compose.yml down
+
+metrics:
+	python3 scripts/factory_metrics.py
+	python3 scripts/ac_traceability.py
+
+validate-deploy:
+	./deploy/k8s/render.sh deploy/k8s/values.ci.env > /tmp/hispanshield-rendered.yaml
+	python3 scripts/validate_deploy.py /tmp/hispanshield-rendered.yaml

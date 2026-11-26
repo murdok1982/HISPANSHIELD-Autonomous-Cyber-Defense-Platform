@@ -27,7 +27,9 @@ data for research.
 ## Security architecture summary
 
 - Zero Trust between browser, API, workers and connectors.
-- Session cookies: HttpOnly, Secure (production), SameSite=Strict, 60-minute idle timeout;
+- First-run `POST /setup` is public only while no organization exists; it is
+  rate-limited and can require `X-Setup-Token` via `HS_SETUP_TOKEN` (recommended).
+- Session cookies: HttpOnly, Secure (production), SameSite=Strict, 30-minute idle timeout (configurable);
   CSRF double submit; TOTP MFA with single-use recovery codes (Argon2id-hashed,
   shown once); active-session listing and revocation; Argon2id password hashing;
   login throttling and distributed-only account lockout.
@@ -45,18 +47,28 @@ data for research.
   allow-list; external providers require HTTPS, an EU `data_region` and explicit
   platform + tenant opt-in.
 - Append-only audit chain (per organization) whose hash covers request id, IP,
-  user agent and actor email for new records, with backward-compatible
-  verification of older chains.
+  user agent and actor email. New records use HMAC-SHA256 v3 with a key held
+  outside PostgreSQL and a key id for rotation; signed checkpoints anchor the
+  chain. Production refuses to start without `HS_AUDIT_REQUIRE_HMAC=true`.
+  Historical v1/v2 chains remain verifiable. Checkpoints must be exported to
+  external/WORM storage to survive an attacker who controls both the key and
+  the database.
 - Defensive actions: catalogue + policy engine + approval + execution broker +
   verification + rollback + kill switches, with deterministic budgets, cooldowns,
   freeze windows and blast-radius limits. The LLM never holds execution
   authority. Playbook compensation steps require the same permissions as direct
   steps.
 - OT/IoT passive by default; dangerous action classes are hard-forbidden.
-- Durable worker process (playbooks + connector sync) deployed in Compose/K8s;
-  readiness verifies database, migrations and queue depth.
-- Supply chain: pinned dependencies, `pip-audit`, `bandit`, secret scanning,
-  SBOM generation and container image scanning guidance in CI.
+- Durable worker process (playbooks + connector sync + outbox + idempotency
+  cleanup) deployed in Compose/K8s; readiness verifies database, migrations,
+  playbook queue and outbox backlog. Outbox consumers are at-least-once and
+  notification delivery is idempotent by source event id.
+- SSE `/events/stream` requires `event:read`, filters by tenant and resumes with
+  `Last-Event-ID`; the frontend falls back to polling.
+- Supply chain: exact pins in `pyproject.toml`, `pip-audit`, `bandit`, gitleaks
+  configuration, SBOM generation and container image scanning guidance in CI.
+  The scans were not all executed in the 0.1.2 host; see
+  `docs/implementation-status.md`.
 
 ## Known limitations of this evaluation build
 

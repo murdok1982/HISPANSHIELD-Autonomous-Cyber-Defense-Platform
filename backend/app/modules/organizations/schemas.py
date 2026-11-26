@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import Field
+from pydantic import EmailStr, Field
 
 from app.core.schemas import ORMModel, StrictModel
 
@@ -32,7 +32,7 @@ class OrganizationCreate(StrictModel):
     country: str = Field(default="ES", min_length=2, max_length=2)
     sector: str = Field(default="general", max_length=80)
     tier: str = Field(default="standard", pattern="^(standard|high|critical)$")
-    autonomy_level: str = Field(default="A1", pattern="^A[0-4]$")
+    autonomy_level: str = Field(default="A0", pattern="^A[0-4]$")
 
 
 class OrganizationPatch(StrictModel):
@@ -43,6 +43,26 @@ class OrganizationPatch(StrictModel):
     tier: str | None = Field(default=None, pattern="^(standard|high|critical)$")
     autonomy_level: str | None = Field(default=None, pattern="^A[0-4]$")
     settings: dict | None = None
+
+
+class InvitationCreate(StrictModel):
+    email: EmailStr
+    role: str = Field(min_length=3, max_length=40)
+
+
+class InvitationOut(ORMModel):
+    id: UUID
+    email: str
+    role: str
+    status: str
+    expires_at: datetime
+    consumed_at: datetime | None
+    revoked_at: datetime | None
+    created_at: datetime
+
+
+class InvitationCreated(InvitationOut):
+    token: str
 
 
 class MemberOut(ORMModel):

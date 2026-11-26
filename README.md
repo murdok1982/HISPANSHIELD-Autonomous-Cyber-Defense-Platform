@@ -8,7 +8,7 @@
 
 *Plataforma europea de ciberdefensa autónoma gobernada por políticas, para administraciones públicas, empresas privadas e infraestructuras críticas.*
 
-[![Release](https://img.shields.io/badge/release-0.1.0-38BDF8?style=for-the-badge)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-0.1.2-38BDF8?style=for-the-badge)](CHANGELOG.md)
 [![Backend](https://img.shields.io/badge/backend-Python%203.12%20·%20FastAPI-3776AB?style=for-the-badge&logo=python&logoColor=white)](backend/)
 [![Frontend](https://img.shields.io/badge/frontend-React%2019%20·%20TypeScript-3178C6?style=for-the-badge&logo=react&logoColor=white)](frontend/)
 [![Data](https://img.shields.io/badge/data-PostgreSQL%2018-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](backend/migrations/)
@@ -37,14 +37,18 @@
 | ![Gestión de incidentes](docs/assets/ui-incidents.png)<br><sub>Gestión de incidentes · cola operativa, SLA y trazabilidad</sub> | ![Seguridad IoT/OT](docs/assets/ui-iot-ot.png)<br><sub>Seguridad IoT/OT · postura IEC 62443 y monitorización pasiva</sub> |
 | ![Cumplimiento normativo](docs/assets/ui-compliance.png)<br><sub>Cumplimiento normativo · catálogo de marcos y autoevaluación técnica</sub> | |
 
-> **Estado honesto:** release candidata `0.1.0` (RC1). El producto es funcional y
-> se entrega con **609 tests backend**, **92 tests del gateway**, **36 tests
-> frontend**, E2E de las 24 pantallas, `mypy` limpio, `pip-audit` sin
-> vulnerabilidades conocidas y manifiestos de despliegue. **No está certificado**
-> para ningún marco regulatorio y no debe operarse en infraestructura crítica
-> real sin evaluación independiente, análisis de riesgos y aprobación del CISO.
-> **109/150** tareas del backlog están verificadas; las **47 restantes** están
-> aplazadas de forma explícita en [`.factory/TASKS.md`](.factory/TASKS.md).
+> **Estado honesto:** release candidata `0.1.2`. El producto es funcional y se
+> entrega con **650 tests backend**, **92 tests del gateway**, **36 tests frontend**,
+> `tsc`/`vite build`/`vitest` verdes y la suite E2E existente (no re-ejecutada en
+> esta ola). Incluye outbox transaccional con leases/DLQ, SSE con
+> `Last-Event-ID`, auditoría HMAC v3 con checkpoints firmados, cursor pagination
+> e `Idempotency-Key`. **No está certificado** para ningún marco regulatorio y no
+> debe operarse en infraestructura crítica real sin evaluación independiente,
+> análisis de riesgos y aprobación del CISO. **138/176** tareas están verificadas;
+> **37** siguen aplazadas/bloqueadas y **1** en progreso, de forma explícita en
+> [`.factory/TASKS.md`](.factory/TASKS.md). El estado real por criterio de
+> aceptación está en [`.factory/AC_TRACEABILITY.md`](.factory/AC_TRACEABILITY.md)
+> (70 verificados, 32 parciales, 22 no verificados).
 
 ---
 
@@ -63,10 +67,10 @@ completa.
 | **SOAR** | Playbooks durables en PostgreSQL, condiciones, reintentos, timeouts, compensación, simulación, aprobaciones |
 | **Incidentes** | Ciclo completo, timeline, evidencias SHA-256, cadena de custodia, MTTR/MTTD |
 | **Threat Intelligence** | STIX 2.1, TAXII, MISP, OpenCTI, actores, MITRE ATT&CK, enriquecimiento con veredicto honesto |
-| **Respuesta autónoma** | Catálogo cerrado de acciones A0–A4, policy engine, broker, aprobaciones con separación de funciones, kill switches, verificación y rollback |
+| **Respuesta autónoma** | Catálogo cerrado de acciones A0–A3 (A4 reservado, sin acciones), policy engine, broker, aprobaciones con separación de funciones, kill switches, presupuesto/cooldown/freeze/blast radius, verificación y rollback |
 | **IA local** | Gateway Ollama/vLLM/llama.cpp, RAG con citas, 16 agentes especializados, MCP gobernado, resistencia a prompt/tool injection |
-| **Cumplimiento** | NIS2, CRA, GDPR, ENS, ISO 27001/27002, IEC 62443, ETSI 303 645, NIST CSF 2.0, EUCC — autoevaluación técnica versionada |
-| **Operación** | Multi-tenant, RBAC/ABAC, auditoría append-only, observabilidad, backup/restore, despliegue on-premise, Kubernetes y air-gapped |
+| **Cumplimiento** | NIS2, CRA, GDPR, ENS, ISO 27001/27002, IEC 62443, ETSI 303 645, NIST CSF 2.0, EUCC — autoevaluación técnica versionada (no certificación) |
+| **Operación** | Multi-tenant, RBAC/ABAC, auditoría append-only con HMAC v3 y checkpoints, SSE, observabilidad, backup/restore, Compose y plantilla Kubernetes validada |
 
 ### La regla que gobierna todo
 
@@ -267,14 +271,13 @@ Después, regístralo en **Model Management → Providers → Ollama** y ejecuta
 
 | Familia | Integraciones de referencia |
 | :--- | :--- |
-| **SIEM** | Wazuh, Elastic Security, Microsoft Sentinel, IBM QRadar / Splunk / Google SecOps (extensibles) |
-| **SOAR** | Shuffle, Cortex XSOAR, Splunk SOAR, Tines (vía webhook/API) |
-| **EDR/XDR** | Microsoft Defender, CrowdStrike, SentinelOne, Elastic Defend, Wazuh |
-| **Red** | pfSense, OPNsense, Suricata, Zeek, Palo Alto, Fortinet, Cisco |
-| **Threat Intel** | MISP, OpenCTI, STIX/TAXII, MITRE ATT&CK, NVD, CISA KEV, EPSS |
-| **Identidad** | Keycloak, Active Directory, Entra ID, Okta, LDAP, OIDC, SAML |
-| **Cloud** | AWS, Azure, Google Cloud, OpenStack |
-| **Industrial** | Modbus, DNP3, OPC UA, BACnet, PROFINET, EtherNet/IP, IEC 104/61850, S7, MQTT, LoRaWAN (pasivo) |
+| **SIEM (adaptadores reales)** | Wazuh, Elastic Security, Microsoft Sentinel |
+| **Threat Intel (adaptadores reales)** | MISP, OpenCTI, STIX 2.1 / TAXII |
+| **Identidad (adaptador real)** | Keycloak (el resto vía conector genérico gobernado) |
+| **Red (adaptadores reales)** | pfSense, OPNsense, Suricata (fichero), Zeek (fichero) |
+| **EDR (adaptador real)** | Microsoft Defender (CrowdStrike/SentinelOne/Elastic Defend: roadmap, no soportados) |
+| **Cloud** | **No CSPM**: la vista `/cloud` deriva postura de activos y hallazgos existentes. AWS/Azure/GCP/OpenStack no están soportados como cuentas cloud. |
+| **Industrial** | Monitorización pasiva y parseo de los protocolos implementados; Modbus/DNP3/OPC UA/BACnet/S7/EtherNet/IP/IEC 104/61850/MQTT aparecen en la matriz con su estado real (`SUPPORTED`, `EXPERIMENTAL`, `PASSIVE_ONLY`, `UNSUPPORTED`). |
 
 **Contrato de capacidades:** cada conector declara lectura y escritura por
 separado. Las llamadas de escritura se ejecutan únicamente a través del
@@ -310,7 +313,7 @@ conserva junto al normalizado OCSF.
 | HTTP | CSP, HSTS (producción), frame denial, nosniff, referrer/permissions policy, CORS explícito; límite de cuerpo real también para `chunked` |
 | Resiliencia | Rate limiting en PostgreSQL, lockout distribuido (un solo origen no bloquea la cuenta), límites de cuerpo, request IDs, manejo de errores sin stack traces |
 | Auditoría | Cadena de hashes por organización + trigger append-only; el hash cubre también IP, user-agent y `request_id` |
-| Autonomía | Catálogo cerrado A0–A4, kill switches global/org/conector/autonomía, aprobación humana ligada a parámetros, presupuestos/cooldown/freeze/blast radius, fail-closed |
+| Autonomía | Catálogo cerrado A0–A3 (A4 reservado, sin acciones), kill switches global/org/conector/autonomía, aprobación humana ligada a parámetros, presupuestos/cooldown/freeze/blast radius, fail-closed |
 | Operación | Worker durable desplegado en Compose/K8s para playbooks y sincronización de conectores; `/readyz` verifica migraciones y cola |
 | OT/IoT | Monitorización pasiva por defecto; clases de acción peligrosas **prohibidas en código** |
 | Supply chain | Dependencias pinneadas, `pip-audit` limpio, bandit, SBOM, CI con escaneo de imagen |
@@ -340,7 +343,7 @@ regulatorios reproducibles.
 ## Estructura del repositorio
 
 ```text
-backend/        FastAPI · dominios · servicios · migraciones · 609 tests
+backend/        FastAPI · dominios · servicios · migraciones · 650 tests
 frontend/       React 19 + TS + Vite · design system propio · 23 vistas
 edge/           Gateway offline-first con cola SQLite durable y HMAC/mTLS
 specs/          Constitución · producto · arquitectura · 15 dominios · ADR
@@ -381,7 +384,7 @@ Esta release es **funcional y verificable**, no una promesa:
   su distribución.
 
 Evidencias completas: [`docs/implementation-status.md`](docs/implementation-status.md).
-El backlog post-MVP (47 tareas marcadas `[!]` con motivo) está en
+El backlog post-MVP (44 tareas marcadas `[!]` con motivo) está en
 [`.factory/TASKS.md`](.factory/TASKS.md); hoja de ruta y riesgos en
 [`docs/roadmap.md`](docs/roadmap.md) y [`docs/risk-matrix.md`](docs/risk-matrix.md).
 

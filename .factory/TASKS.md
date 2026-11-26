@@ -1,8 +1,8 @@
 # AUTONOMOUS EXECUTION BACKLOG
 
 - **Project Name:** HISPANSHIELD — Autonomous Cyber Defence Platform
-- **Current Phase:** `PHASE_12 — post-RC1 security remediation wave (0.1.1)`
-- **Progress:** `128 / 172` tasks verified (`74.4%`) · `44` deferred post-MVP · release candidate 0.1.1
+- **Current Phase:** `PHASE_13 — evolution wave 1 (0.1.2)`
+- **Progress:** `138 / 176` tasks verified (`78.4%`) · `37` deferred/blocked · `1` in progress · release candidate 0.1.2
 - **State Legend:**
   - `- [ ]` Pending (Listo para ejecutar)
   - `- [~]` In Progress (Asignado a subagente activo)
@@ -57,13 +57,13 @@
   - **Verification:** `cd backend && ruff check app tests && mypy app && pytest -q`
   - **Retries:** `0/3`
 
-- [!] **TASK-005:** Migración baseline: `organizations`, `users`, `memberships`, `sessions`, `api_tokens`, `invitations` con índices, constraints y `row_version`.
+- [x] **TASK-005:** Migración baseline: `organizations`, `users`, `memberships`, `sessions`, `api_tokens`, `invitations` con índices, constraints y `row_version`.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-004`
   - **Spec Ref:** `ARCHITECTURE.md §3.2`, `AC-111`
   - **Target Files:** `backend/migrations/versions/0001_baseline_identity.py`, `backend/app/models/identity.py`
   - **Verification:** `cd backend && ruff check app tests && mypy app && pytest -q`
-  - **Deferred:** Invitations table/workflow not implemented; direct member provisioning used.
+  - **Evidence:** `migrations/versions/0014_invitations.py`, `test_invitations.py` (invitations added in evolution wave 1).
   - **Retries:** `0/3`
 
 - [x] **TASK-006:** Primitivas de seguridad: Argon2id, UUIDv7 helper, hash de tokens, HMAC-SHA256, comparación en tiempo constante.
@@ -82,13 +82,13 @@
   - **Verification:** `cd backend && ruff check app tests && mypy app && pytest -q`
   - **Retries:** `0/3`
 
-- [!] **TASK-008:** Transactional outbox + dispatcher `LISTEN/NOTIFY` + tabla `jobs` con `SKIP LOCKED` y leases.
+- [~] **TASK-008:** Transactional outbox + dispatcher `LISTEN/NOTIFY` + tabla `jobs` con `SKIP LOCKED` y leases.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-004`
   - **Spec Ref:** `ARCHITECTURE.md §4.1, §4.2`, `AC-110`
   - **Target Files:** `backend/app/core/events.py`, `backend/app/models/platform.py`, `backend/migrations/versions/0003_outbox_jobs.py`, `backend/app/workers/dispatcher.py`
   - **Verification:** `cd backend && ruff check app tests && mypy app && pytest -q`
-  - **Deferred:** Separate outbox/jobs dispatcher deferred; synchronous processing + durable rows.
+  - **Partial:** outbox, leases, retries, DLQ and notification consumer delivered (`app/services/outbox.py`, `test_outbox.py`); `LISTEN/NOTIFY` and a separate `jobs` table remain pending.
   - **Retries:** `0/3`
 
 - [x] **TASK-009:** Harness de migraciones (upgrade/downgrade limpio desde BD vacía) y script de seed de desarrollo idempotente.
@@ -143,13 +143,13 @@
   - **Verification:** `cd backend && pytest -q tests/integration/test_auth.py tests/integration/test_organizations.py tests/security && cd ../frontend && node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build && node node_modules/@playwright/test/cli.js test e2e/all-screens.spec.ts --project=chromium-desktop`
   - **Retries:** `0/3`
 
-- [!] **TASK-015:** MFA TOTP: enrolamiento, activación, verificación con ventana ±1, recovery codes hasheados y challenge de login.
+- [x] **TASK-015:** MFA TOTP: enrolamiento, activación, verificación con ventana ±1, recovery codes hasheados y challenge de login.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-014`
   - **Spec Ref:** `AC-02`
   - **Target Files:** `backend/app/services/mfa.py`, `backend/app/api/v1/auth.py`, `backend/migrations/versions/0004_mfa.py`, `backend/tests/integration/test_auth_mfa.py`
   - **Verification:** `cd backend && pytest -q tests/integration/test_auth.py tests/integration/test_organizations.py tests/security && cd ../frontend && node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build && node node_modules/@playwright/test/cli.js test e2e/all-screens.spec.ts --project=chromium-desktop`
-  - **Deferred:** TOTP MFA delivered; recovery codes deferred.
+  - **Evidence:** `migrations/versions/0009_recovery_codes.py`, `test_http_hardening.py::test_mfa_recovery_codes_are_single_use_and_regeneration_invalidates_them`.
   - **Retries:** `0/3`
 
 - [x] **TASK-016:** Política de contraseñas (longitud, denylist, historial), cambio de contraseña y bloqueo progresivo sin enumeración de usuarios.
@@ -182,16 +182,16 @@
   - **Spec Ref:** `AC-09, AC-14`
   - **Target Files:** `backend/app/services/organizations.py`, `backend/app/api/v1/organizations.py`, `backend/tests/integration/test_setup.py`, `backend/tests/integration/test_org_lifecycle.py`
   - **Verification:** `cd backend && pytest -q tests/integration/test_auth.py tests/integration/test_organizations.py tests/security && cd ../frontend && node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build && node node_modules/@playwright/test/cli.js test e2e/all-screens.spec.ts --project=chromium-desktop`
-  - **Deferred:** `/setup` endpoint and soft-delete flow deferred; bootstrap script + CRUD delivered.
+  - **Partial:** `/setup` delivered (`test_setup.py`); organization soft-delete flow remains deferred.
   - **Retries:** `0/3`
 
-- [!] **TASK-020:** Membresías, invitaciones (token un solo uso, TTL 72 h), cambio de rol y suspensión con guard de último owner.
+- [x] **TASK-020:** Membresías, invitaciones (token un solo uso, TTL 72 h), cambio de rol y suspensión con guard de último owner.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-019`
   - **Spec Ref:** `AC-13`
   - **Target Files:** `backend/app/services/memberships.py`, `backend/app/api/v1/organizations.py`, `backend/tests/integration/test_invitations.py`
   - **Verification:** `cd backend && pytest -q tests/integration/test_auth.py tests/integration/test_organizations.py tests/security && cd ../frontend && node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build && node node_modules/@playwright/test/cli.js test e2e/all-screens.spec.ts --project=chromium-desktop`
-  - **Deferred:** Invitation tokens deferred; membership lifecycle delivered.
+  - **Evidence:** `migrations/versions/0014_invitations.py`, `tests/integration/test_invitations.py` (single-use token, 72 h TTL, role binding, revocation).
   - **Retries:** `0/3`
 
 - [x] **TASK-021:** Dependencias de tenancy (`get_org`, `require_permission`), matriz RBAC declarativa y enforcement server-side en todos los routers existentes.
@@ -202,13 +202,13 @@
   - **Verification:** `cd backend && pytest -q tests/integration/test_auth.py tests/integration/test_organizations.py tests/security && cd ../frontend && node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build && node node_modules/@playwright/test/cli.js test e2e/all-screens.spec.ts --project=chromium-desktop`
   - **Retries:** `0/3`
 
-- [!] **TASK-022:** Gestión de usuarios de plataforma y perfil propio (`/auth/me`, preferencias, sesiones activas, revocación).
+- [x] **TASK-022:** Gestión de usuarios de plataforma y perfil propio (`/auth/me`, preferencias, sesiones activas, revocación).
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-021`
   - **Spec Ref:** `AC-06`, `SPEC.md §2`
   - **Target Files:** `backend/app/api/v1/users.py`, `backend/app/services/users.py`, `backend/tests/integration/test_users.py`
   - **Verification:** `cd backend && pytest -q tests/integration/test_auth.py tests/integration/test_organizations.py tests/security && cd ../frontend && node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build && node node_modules/@playwright/test/cli.js test e2e/all-screens.spec.ts --project=chromium-desktop`
-  - **Deferred:** Active-session listing UI deferred; revoke on logout/password change delivered.
+  - **Evidence:** `test_auth.py::test_user_can_list_and_revoke_other_sessions`; `frontend/src/components/features/govern/security.tsx::ActiveSessionsPanel`.
   - **Retries:** `0/3`
 
 - [x] **TASK-023:** App shell frontend: rail de navegación, topbar con selector de organización, indicador de autonomía/kill switch, command palette `Ctrl/Cmd+K`, layout responsive.
@@ -465,16 +465,16 @@
   - **Spec Ref:** `AC-42`
   - **Target Files:** `backend/app/workers/retention.py`, `backend/tests/integration/test_retention_job.py`
   - **Verification:** `cd backend && pytest -q tests/unit/test_normalization.py tests/unit/test_detection.py tests/integration/test_events.py tests/integration/test_siem.py tests/integration/test_ingest_security.py`
-  - **Deferred:** Partition maintenance and legal hold deferred; retention purge delivered.
+  - **Partial:** retention purge delivered; partition maintenance and legal hold remain deferred.
   - **Retries:** `0/3`
 
-- [!] **TASK-053:** Endpoint SSE `/events/stream` con filtros, heartbeat, backpressure y cierre limpio.
+- [x] **TASK-053:** Endpoint SSE `/events/stream` con filtros, heartbeat, backpressure y cierre limpio.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-051`
   - **Spec Ref:** `AC-101`
   - **Target Files:** `backend/app/api/v1/stream.py`, `backend/tests/integration/test_sse_stream.py`
   - **Verification:** `cd backend && pytest -q tests/unit/test_normalization.py tests/unit/test_detection.py tests/integration/test_events.py tests/integration/test_siem.py tests/integration/test_ingest_security.py`
-  - **Deferred:** SSE event stream deferred; polling with pause delivered.
+  - **Evidence:** `app/modules/events/stream.py`, `tests/integration/test_sse.py`, `frontend/.../useEventStream.ts` (Last-Event-ID, heartbeat, tenant filter, polling fallback).
   - **Retries:** `0/3`
 
 - [x] **TASK-054:** Pantallas 9, 3 y 2 — SIEM (query editor+resultados+salud), Live Threat Monitoring (stream SSE) y SOC Command Center (cola priorizada).
@@ -727,13 +727,13 @@
   - **Verification:** `cd backend && pytest -q tests/integration/test_defence.py tests/security/test_autonomy_guardrails.py`
   - **Retries:** `0/3`
 
-- [!] **TASK-083:** Presupuesto de acciones por hora, ventanas de cambio congelado y `break_glass` con doble aprobación y TTL.
+- [x] **TASK-083:** Presupuesto de acciones por hora, ventanas de cambio congelado y `break_glass` con doble aprobación y TTL.
   - **Owner:** `@builder` -> `@qa-verifier`
   - **Depends On:** `TASK-082`
   - **Spec Ref:** `AC-75, AC-76`
   - **Target Files:** `backend/app/autonomy/budget.py`, `backend/app/autonomy/change_window.py`, `backend/tests/autonomy/test_action_budget.py`, `backend/tests/autonomy/test_change_freeze.py`
   - **Verification:** `cd backend && pytest -q tests/integration/test_defence.py tests/security/test_autonomy_guardrails.py`
-  - **Deferred:** Autonomy budgets, frozen windows and break-glass deferred.
+  - **Evidence:** `tests/unit/test_policy_guardrails.py`, `tests/security/test_autonomy_guardrails.py`, `test_auth.py::test_break_glass_requires_a_second_approver_when_one_exists`.
   - **Retries:** `0/3`
 
 - [!] **TASK-084:** A4 con doble aprobación, time-box ≤30 min y safety interlock OT (`safety_function`, nivel Purdue, telemetría fresca).
@@ -1418,3 +1418,61 @@
   - **Verification:** clean worktree `pytest tests/unit/test_frameworks.py`
 - [x] **OPS-12-05:** Trusted proxy default restricted to loopback (`HS_FORWARDED_ALLOW_IPS`), no `*`.
   - **Verification:** `Dockerfile` inspection + Compose/K8s manifests
+
+## PHASE 13 — EVOLUTION WAVE 1: VERIFIABLE SECURITY, DURABILITY & CONTRACT
+
+> Added 2026-11-26 after repository reconciliation. Each task has an executable regression test; no claim is based on file existence alone.
+
+- [x] **EVO-01:** Keyed audit integrity v3 (HMAC-SHA256, key id, rotation) and signed checkpoints, preserving v1/v2 verification.
+  - **Owner:** `@builder` -> `@qa-verifier`
+  - **Spec Ref:** `AC-112`, `SECURITY_AUDIT.md` residual 2
+  - **Target Files:** `backend/app/core/audit.py`, `backend/app/models/core.py`, `backend/migrations/versions/0011_audit_hmac.py`, `backend/tests/security/test_audit_hmac.py`
+  - **Verification:** `cd backend && python -m pytest -o addopts="" -q tests/security/test_audit_hmac.py tests/security/test_audit_integrity.py` → **15 passed**
+  - **Evidence:** `.factory/EVIDENCE/BACKEND_TEST_RUN.md`
+  - **Retries:** `0/3`
+
+- [x] **EVO-02:** Idempotency-Key ledger scoped by tenant/actor with replay, payload binding and in-progress conflict; wired to incident creation, asset import and CVE import.
+  - **Owner:** `@builder` -> `@qa-verifier`
+  - **Spec Ref:** `AC-26`, `AC-35`
+  - **Target Files:** `backend/app/core/idempotency.py`, `backend/app/models/operations.py`, `backend/migrations/versions/0013_idempotency.py`, `backend/tests/integration/test_idempotency.py`
+  - **Verification:** `cd backend && python -m pytest -o addopts="" -q tests/integration/test_idempotency.py` → **7 passed**
+  - **Evidence:** `.factory/EVIDENCE/BACKEND_TEST_RUN.md`
+  - **Retries:** `0/3`
+
+- [x] **EVO-03:** Kubernetes render-and-validate gate that refuses placeholders, mutable tags and missing security controls; CI job included.
+  - **Owner:** `@builder` -> `@qa-verifier`
+  - **Spec Ref:** `SECURITY_AUDIT.md` deployment findings
+  - **Target Files:** `deploy/k8s/manifests.yaml`, `deploy/k8s/render.sh`, `deploy/k8s/values.example.env`, `scripts/validate_deploy.py`, `.github/workflows/ci.yml`
+  - **Verification:** `./deploy/k8s/render.sh /tmp/values.env > /tmp/rendered.yaml && python3 scripts/validate_deploy.py /tmp/rendered.yaml` → **PASS**; unrendered template → **FAIL (expected)**
+  - **Evidence:** `.factory/EVIDENCE/DEPLOY_VALIDATION.md`
+  - **Retries:** `0/3`
+
+- [x] **EVO-04:** Recomputable repository metrics and task/AC reconciliation tooling; conflicting counts replaced by generated evidence.
+  - **Owner:** `@builder` -> `@qa-verifier`
+  - **Spec Ref:** `REALITY_CHECK.md`
+  - **Target Files:** `scripts/factory_metrics.py`, `.factory/EVIDENCE/METRICS.json`, `.factory/EVIDENCE/METRICS.md`
+  - **Verification:** `python3 scripts/factory_metrics.py` → deterministic counts
+  - **Evidence:** `.factory/EVIDENCE/METRICS.json`
+  - **Retries:** `0/3`
+
+---
+
+## DELIVERY EVIDENCE — 0.1.2 (2026-11-26)
+
+- `.factory/EVIDENCE/METRICS.json` — 138/176 tasks, 650 backend tests, 92 edge,
+  36 frontend, 305 operations, 233 paths, 65 tables, 14 migrations, 12 adapters,
+  13 actions, 0 A4.
+- `.factory/EVIDENCE/BACKEND_TEST_RUN.md` — 650 passed, ruff, mypy, bandit,
+  pip-audit.
+- `.factory/EVIDENCE/FRONTEND_TEST_RUN.md` — tsc, vite build, 36 Vitest,
+  npm audit.
+- `.factory/EVIDENCE/DEPLOY_VALIDATION.md` — render PASS, unrendered template
+  FAIL (expected).
+- `.factory/EVIDENCE/WAVE_0_RECONCILIATION.md` — contradictory counts resolved.
+- `.factory/AC_TRACEABILITY.md` — 70 VERIFIED / 32 PARTIAL / 22 NOT_VERIFIED.
+- `.factory/reports/` — executive, architecture, security, functional,
+  performance, tests, deployment, risk and release readiness.
+
+**Exit Gate status: NOT MET for GA.** Playwright E2E, Docker/K8s runtime,
+backup restore, performance benchmarks and independent review remain open. This
+is an evidence-backed release candidate, not a production-ready claim.

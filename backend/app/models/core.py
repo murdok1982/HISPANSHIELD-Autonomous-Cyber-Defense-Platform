@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
@@ -32,7 +33,7 @@ class Organization(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     country: Mapped[str] = mapped_column(String(2), default="ES", nullable=False)
     sector: Mapped[str] = mapped_column(String(80), default="general", nullable=False)
     tier: Mapped[str] = mapped_column(String(20), default="standard", nullable=False)
-    autonomy_level: Mapped[str] = mapped_column(String(4), default="A1", nullable=False)
+    autonomy_level: Mapped[str] = mapped_column(String(4), default="A0", nullable=False)
     status: Mapped[str] = mapped_column(String(20), default="active", nullable=False)
     settings: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
@@ -135,6 +136,29 @@ class AuditRecord(UUIDPrimaryKeyMixin, Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    hash_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    key_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+
+
+class AuditCheckpoint(UUIDPrimaryKeyMixin, Base):
+    """Signed anchor for an audit chain segment.
+
+    The signature is produced with the same key custody as audit v3 hashes, so
+    an actor that only controls PostgreSQL cannot fabricate a checkpoint that
+    verifies. Exporting checkpoints to WORM storage remains an operational step.
+    """
+
+    __tablename__ = "audit_checkpoints"
+    __table_args__ = (Index("ix_audit_checkpoints_org_created", "org_id", "created_at"),)
+
+    org_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    head_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    record_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    key_id: Mapped[str] = mapped_column(String(40), nullable=False)
+    signature: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
 
@@ -222,6 +246,33 @@ class BreakGlassGrant(UUIDPrimaryKeyMixin, Base):
     revoked_by: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
 
 
+class Invitation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    __tablename__ = "invitations"
+    __table_args__ = (
+        Index(
+            "uq_invitations_pending_email",
+            "org_id",
+            "email",
+            unique=True,
+            postgresql_where=text("status = 'pending'"),
+        ),
+    )
+
+    org_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    role: Mapped[str] = mapped_column(String(40), nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    invited_by: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(20), default="pending", nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Notification(UUIDPrimaryKeyMixin, Base):
     __tablename__ = "notifications"
 
@@ -236,6 +287,7 @@ class Notification(UUIDPrimaryKeyMixin, Base):
     body: Mapped[str | None] = mapped_column(Text, nullable=True)
     resource_type: Mapped[str | None] = mapped_column(String(80), nullable=True)
     resource_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    source_event_id: Mapped[str | None] = mapped_column(String(80), nullable=True, index=True)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
 
@@ -243,8 +295,10 @@ class Notification(UUIDPrimaryKeyMixin, Base):
 __all__ = [
     "ApiToken",
     "Approval",
+    "AuditCheckpoint",
     "AuditRecord",
     "BreakGlassGrant",
+    "Invitation",
     "KillSwitch",
     "Membership",
     "Notification",

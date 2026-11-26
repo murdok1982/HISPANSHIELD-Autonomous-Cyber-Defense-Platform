@@ -36,6 +36,7 @@ from sqlalchemy.orm import Session
 
 from app.core.db import utcnow
 from app.models.events import Alert, DetectionRule, SecurityEvent
+from app.services.outbox import enqueue
 
 MAX_RULES_PER_BATCH = 250
 MAX_WINDOW_EVENTS = 5000
@@ -778,6 +779,23 @@ def _upsert_alert(
     )
     db.add(alert)
     db.flush()
+    enqueue(
+        db,
+        org_id=org_id,
+        event_type="alert.created",
+        aggregate_type="alert",
+        aggregate_id=str(alert.id),
+        dedupe_key=f"alert.created:{alert.id}",
+        payload={
+            "title": alert.title[:240],
+            "body": f"Severity {alert.severity} · risk {alert.risk_score:.0f}",
+            "severity": alert.severity,
+            "rule_id": str(rule.id),
+            "alert_id": str(alert.id),
+            "event_ids": event_ids[:20],
+            "mitre": list(alert.mitre or [])[:20],
+        },
+    )
     return alert, True
 
 

@@ -7,6 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Path, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
@@ -14,7 +15,7 @@ from app.core.db import get_db, utcnow
 from app.core.deps import RequestContext, require_any_permission, require_permission
 from app.core.errors import AppError, Conflict, NotFound, Unauthorized, ValidationFailure
 from app.core.rate_limit import enforce
-from app.core.schemas import Page, paginate
+from app.core.schemas import Page, decode_cursor, encode_cursor, paginate
 from app.models.connectors import Connector
 from app.models.events import IngestSource, SecurityEvent
 from app.modules.events import service
@@ -33,6 +34,7 @@ from app.modules.events.schemas import (
     RetentionPolicyUpdate,
     RetentionPurgeResult,
 )
+from app.modules.events.stream import parse_last_event_id, sse_stream
 from app.services.normalization import ParseError, parse_payload, sanitize_text
 
 router = APIRouter(tags=["Security Events & SIEM Ingest"])
@@ -601,6 +603,7 @@ def list_events(
     ctx: RequestContext = Depends(require_permission("event:read")),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
+    cursor: str | None = Query(default=None, max_length=700, description="Opaque keyset cursor from meta.next_cursor"),
     occurred_from: datetime | None = Query(default=None),
     occurred_to: datetime | None = Query(default=None),
     severity_id: int | None = Query(default=None, ge=0, le=5),
@@ -649,10 +652,52 @@ def list_events(
     column = SORT_COLUMNS.get(sort)
     if column is None:
         raise ValidationFailure([{"field": "sort", "message": f"Unsupported sort column: {sort}"}])
-    stmt = stmt.order_by(column.asc() if order == "asc" else column.desc(), SecurityEvent.id.desc())
+    next_cursor: str | None = None
+    if cursor:
+        if sort != "occurred_at" or order != "desc":
+            raise ValidationFailure(
+                [{"field": "cursor", "message": "Cursor pagination requires sort=occurred_at and order=desc"}]
+            )
+        try:
+            payload = decode_cursor(cursor)
+            last_id = int(payload["id"])
+            if payload.get("kind") != "events" or last_id < 0:
+                raise ValueError("Invalid cursor scope")
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ValidationFailure([{"field": "cursor", "message": "Invalid or expired cursor"}]) from exc
+        stmt = stmt.where(SecurityEvent.id < last_id).order_by(SecurityEvent.id.desc())
+        page = 1
+    else:
+        stmt = stmt.order_by(column.asc() if order == "asc" else column.desc(), SecurityEvent.id.desc())
     total = ctx.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
     rows = list(ctx.db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars())
-    return Page[EventSummary](**paginate([EventSummary.model_validate(row) for row in rows], total, page, page_size))
+    if rows and (cursor or (sort == "occurred_at" and order == "desc")) and len(rows) == page_size:
+        next_cursor = encode_cursor({"kind": "events", "id": int(rows[-1].id)})
+    return Page[EventSummary](
+        **paginate([EventSummary.model_validate(row) for row in rows], total, page, page_size, next_cursor=next_cursor)
+    )
+
+
+@router.get("/events/stream", summary="Server-Sent Events stream of new security events")
+def stream_events(
+    last_id: int | None = Query(default=None, ge=0),
+    ctx: RequestContext = Depends(require_permission("event:read")),
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+) -> StreamingResponse:
+    cursor = last_id if last_id is not None else parse_last_event_id(last_event_id)
+    org_id = ctx.org.id
+    # The stream must not hold an ORM session (which owns a pooled connection)
+    # for its whole lifetime; each poll uses a short-lived session internally.
+    ctx.db.close()
+    return StreamingResponse(
+        sse_stream(org_id, cursor=cursor),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-store",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
 
 
 @router.get("/events/{event_id}", response_model=EventDetail, summary="Read an event including its raw payload")

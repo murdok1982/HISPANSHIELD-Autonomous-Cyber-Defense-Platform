@@ -1,7 +1,7 @@
 # PROJECT SPECIFICATION (SINGLE SOURCE OF TRUTH)
 
 - **Project Name:** HISPANSHIELD — Autonomous Cyber Defence Platform
-- **Status:** `IN_PROGRESS — RELEASE CANDIDATE 1` (109/150 tareas verificadas; 47 aplazadas post-MVP; cierre de AC y GA pendientes)
+- **Status:** `IN_PROGRESS — RELEASE CANDIDATE 0.1.2` (138/176 tareas verificadas; 37 aplazadas/bloqueadas; 1 en progreso; 70/124 AC verificados, 32 parciales, 22 no verificados — ver `.factory/AC_TRACEABILITY.md`)
 - **Target Stack:** Python 3.12 + FastAPI + SQLAlchemy 2.0 (sync, psycopg3) + Alembic + PostgreSQL 18 · React 19 + TypeScript strict + Vite (CSS tokens propios, sin Tailwind) · Edge gateway Python + SQLite (WAL) store-and-forward · Workflow engine durable sobre PostgreSQL · Outbox + LISTEN/NOTIFY · JSONB float-vectors + numpy cosine
 - **Compliance Target:** NIS2 (UE 2022/2555), CRA (UE 2024/2847), GDPR (UE 2016/679), ENS (RD 311/2022), ISO/IEC 27001:2022 + 27002:2022, IEC 62443-3-3 / 4-2, ETSI EN 303 645
 - **Deployment Target:** On-premise, air-gapped, Kubernetes y single-node (sin dependencia de SaaS cloud)
@@ -77,7 +77,7 @@ Principios no negociables (derivados de `specs/constitution.md`):
 
 **Plataforma y operación**
 - API REST `/api/v1`, SSE para eventos en vivo, métricas Prometheus, health/readiness, auditoría encadenada, settings, feature flags, backup/restore, modo air-gapped, logs estructurados.
-- Frontend con **23 pantallas** operativas, design system propio, estados loading/empty/error obligatorios, responsive 375/768/1440, WCAG AA.
+- Frontend con **23 pantallas de navegación** (26 componentes de contenido: + Profile, AssetDetail, IncidentDetail; 28 ficheros incluyendo Login y NotFound), design system propio, estados loading/empty/error obligatorios, responsive 375/768/1440, WCAG AA.
 
 ### 1.2 Out-of-Scope (Exclusiones Explícitas)
 
@@ -129,6 +129,8 @@ Roles **por organización** (no globales). Un usuario puede tener roles distinto
 - Frontend: `frontend` con `npm run typecheck`, `npm run build`, `npm run test` (Vitest) y `npm run test:e2e` (Playwright).
 - Seguridad: `ruff`, `mypy --strict`, `bandit -r backend edge`, `pip-audit`, `gitleaks detect`, `scripts/generate_sbom.sh`.
 - Cada AC declara el comando exacto; un AC sin test no puede pasar a `- [x]`.
+
+> **Trazabilidad:** los checkboxes `AC-XX` de esta sección no son la fuente de verdad. El estado real, con el test ejecutable que lo respalda o el motivo de parcialidad, está en `.factory/AC_TRACEABILITY.md`, regenerado por `python3 scripts/ac_traceability.py`. Una tarea `[x]` en `TASKS.md` no implica que todos los AC de su `Spec Ref` estén verificados.
 
 ### Feature F-01: Identidad, Sesión y MFA (`specs/domains/identity.md`)
 
@@ -375,7 +377,7 @@ Roles **por organización** (no globales). Un usuario puede tener roles distinto
 
 ### Feature F-15: Frontend — 23 Pantallas y Craft Visual (`specs/product/requirements.md`)
 
-- **REQ-UI-001:** Las 23 pantallas existen en rutas estables, consumen la API real y cubren loading/empty/error.
+- **REQ-UI-001:** Las 23 pantallas de navegación (26 componentes de contenido) existen en rutas estables, consumen la API real y cubren loading/empty/error.
   - [ ] **AC-94:** **Dado** el build de producción, **cuando** Playwright navega a las 23 rutas autenticadas, **entonces** cada una renderiza su `<h1>` esperado, 0 errores de consola y 0 respuestas `5xx`.
     - *Verification Test:* `frontend/e2e/screens.spec.ts`
   - [ ] **AC-95:** **Dado** una vista de datos, **cuando** la respuesta tarda, **entonces** se muestra un skeleton con `aria-busy="true"` (no spinner global vacío) y `data-testid="skeleton-*"`; al terminar, el skeleton desaparece.
@@ -567,7 +569,7 @@ Rutas públicas: `/login`, `/mfa`, `/setup` (solo primer arranque), `/403`, `/40
 | `NFR-05` | Reanudación | Ejecución de workflow reanuda en ≤ 60 s tras reinicio | `test_workflow_resume.py` |
 | `NFR-06` | Autonomía | Kill switch efectivo ≤ 5 s; decisión de política ≤ 50 ms p95 | `test_kill_switch.py`, `test_policy_latency.py` |
 | `NFR-07` | Seguridad | 0 CRITICAL/HIGH abiertos; Argon2id; CSP estricta; CSRF; aislamiento tenant | `SECURITY_AUDIT.md` |
-| `NFR-08` | Accesibilidad | WCAG 2.2 AA en 23 pantallas | `frontend/e2e/a11y.spec.ts` |
+| `NFR-08` | Accesibilidad | WCAG 2.2 AA en 23 pantallas de navegación | `frontend/e2e/a11y.spec.ts` (gate axe pendiente: ver AC-99) |
 | `NFR-09` | Portabilidad | Instalación air-gapped sin red | `scripts/verify_airgap.sh` |
 | `NFR-10` | Retención | Política configurable por clase de dato; legal hold prevalece | `test_retention_job.py`, `test_legal_hold.py` |
 | `NFR-11` | Observabilidad | Métricas RED + colas + decisiones de autonomía; logs JSON con `request_id` | `/metrics`, `test_log_hygiene.py` |

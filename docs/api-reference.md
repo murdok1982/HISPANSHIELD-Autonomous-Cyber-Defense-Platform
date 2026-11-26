@@ -1,9 +1,9 @@
 # REFERENCIA DE API
 
 - **Documento:** `docs/api-reference.md`
-- **Estado:** `APPROVED` v1.0
+- **Estado:** `APPROVED` v1.1 (0.1.2)
 - **Contrato normativo:** `specs/api/rest-contract.md`
-- **OpenAPI en runtime:** `GET /api/v1/openapi.json` · Swagger UI en `/api/v1/docs` (solo redes internas)
+- **OpenAPI en runtime:** `GET /api/openapi.json` · Swagger UI en `/api/docs` (no expuesto en producción)
 - **Base:** `/api/v1`
 
 ---
@@ -37,11 +37,11 @@ curl -H "Authorization: Bearer hs_pat_xxx" \
 
 | Elemento | Regla |
 | :--- | :--- |
-| Paginación | `?cursor=<opaque>&limit=20` → `{data[], meta:{next_cursor,total_estimate}}` |
+| Paginación | Offset por defecto (`?page=&page_size=`) y cursor aditivo (`?cursor=` → `meta.next_cursor`) en assets/events; el resto de listados es offset |
 | Filtros | Query params tipados; validados; error `422` con `path` |
 | Orden | `?sort=field:asc|desc` (allowlist por recurso) |
-| Errores | `{error:{code,message,details?,request_id}}` |
-| Idempotencia | **Pendiente (roadmap):** `Idempotency-Key` no está implementado; la ingesta usa dedupe persistente por evento |
+| Errores | `{error:{code,message,details?,request_id}}` (el contrato usa `details`, no `fields`) |
+| Idempotencia | `Idempotency-Key` en `POST /incidents`, `POST /assets/import` y `POST /vulnerabilities/import/cve` (TTL 24 h, replay `Idempotent-Replayed: true`, conflicto si cambia payload/path). La ingesta usa dedupe persistente por evento |
 | Correlación | `X-Request-Id` (opcional, devuelto siempre) |
 | Fechas | ISO 8601 UTC |
 
@@ -49,10 +49,17 @@ curl -H "Authorization: Bearer hs_pat_xxx" \
 
 ## 3. MÓDULOS Y ENDPOINTS
 
+### 3.0 `setup` — primer arranque
+
+| Método | Ruta | Descripción |
+| :--- | :--- | :--- |
+| POST | `/setup` | Crea la primera organización (A0) y su owner; `409 setup_completed` si ya existe alguna; 5/h por IP; si `HS_SETUP_TOKEN` está definido exige `X-Setup-Token` |
+
 ### 3.1 `auth` — autenticación
 
 | Método | Ruta | Descripción |
 | :--- | :--- | :--- |
+| GET | `/auth/password-policy` | Política pública de contraseña/sesión |
 | POST | `/auth/login` | `200` sesión o `202 mfa_required` |
 | POST | `/auth/mfa/verify` | Verifica TOTP |
 | POST | `/auth/mfa/recovery` | Completa el login con un recovery code de un solo uso |
@@ -62,6 +69,7 @@ curl -H "Authorization: Bearer hs_pat_xxx" \
 | POST | `/auth/logout` | Revoca sesión actual |
 | GET | `/auth/me` | Usuario, memberships, permisos |
 | POST | `/auth/change-password` | Cambia y revoca otras sesiones |
+| POST | `/auth/invitations/accept` | Acepta una invitación single-use (72 h); cuenta existente debe probar su contraseña |
 | GET | `/auth/sessions` | Sesiones activas |
 | DELETE | `/auth/sessions/{id}` | Revoca una sesión |
 | POST | `/auth/break-glass` | Solicita acceso justificado a otra organización (doble aprobador si existe) |
@@ -72,12 +80,14 @@ curl -H "Authorization: Bearer hs_pat_xxx" \
 
 | Método | Ruta | Descripción |
 | :--- | :--- | :--- |
-| POST | `/setup` | **No implementado:** el bootstrap inicial se hace con `scripts/bootstrap_admin.py` |
+| POST | `/setup` | Primer arranque (ver §3.0) |
 | GET/POST | `/organizations` | Lista / crea |
-| GET/PATCH/DELETE | `/organizations/{id}` | Detalle / actualiza / soft delete |
-| GET/POST | `/organizations/{id}/members` | Lista / añade |
-| PATCH/DELETE | `/organizations/{id}/members/{user_id}` | Cambia rol / elimina |
-| POST | `/invitations/{token}/accept` | **No implementado (roadmap)** |
+| GET/PATCH | `/organizations/{id}` | Detalle / actualiza (soft delete de organización: pendiente) |
+| GET/POST | `/organizations/current/members` | Lista / añade |
+| PATCH/DELETE | `/organizations/current/members/{id}` | Cambia rol / elimina (guard de último admin) |
+| GET/POST | `/organizations/current/invitations` | Lista / crea invitación (token una vez) |
+| DELETE | `/organizations/current/invitations/{id}` | Revoca invitación pendiente |
+| POST | `/auth/invitations/accept` | Acepta invitación single-use |
 | GET/PATCH | `/organizations/{id}/settings` | Settings de organización |
 | GET/PATCH | `/users/{id}` | Perfil |
 | GET/POST/DELETE | `/users/{id}/tokens` | PAT |
@@ -134,7 +144,7 @@ curl -X POST https://hs.example.eu/api/v1/assets \
 | POST | `/events/webhook/{connector_id}` | Ingesta firmada |
 | POST | `/edge/ingest` | Ingesta edge (mTLS) |
 | POST | `/events/search` | Búsqueda |
-| GET | `/events/stream` | SSE |
+| GET | `/events/stream` | SSE con `Last-Event-ID` (ver §4) |
 | GET/POST | `/detection-rules` | Reglas |
 | POST | `/detection-rules/{id}/versions` | Nueva versión |
 | POST | `/detection-rules/{id}/publish` | Publica |
@@ -358,3 +368,21 @@ curl -b jar.txt -H "X-Organization-Id: $ORG" \
 - Campos obsoletos se marcan `deprecated` en OpenAPI durante ≥1 release.
 - Cambio incompatible → `/v2` con solapamiento.
 - Los `code` de error son estables; los `message` pueden cambiar.
+
+
+---
+
+## 4. STREAMING SSE
+
+`GET /api/v1/events/stream` (permiso `event:read`) emite `text/event-stream`:
+
+```text
+id: 12345
+event: security_event
+data: {"id":12345,"message":"...","severity_id":3,...}
+```
+
+- `Last-Event-ID` (o `?last_id=`) reanuda tras el último evento entregado.
+- Sin cursor, empieza en la cabeza actual (no reenvía el histórico).
+- Heartbeat cada 15 s; cada poll usa una sesión corta; el filtro de tenant es
+  obligatorio. El frontend cae a polling si SSE no está disponible.

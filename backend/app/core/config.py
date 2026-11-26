@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     secret_key: str = ""
     encryption_key: str = ""
     session_ttl_minutes: int = 720
-    session_idle_minutes: int = 60
+    session_idle_minutes: int = 30
     break_glass_ttl_minutes: int = 30
     cookie_name: str = "hs_session"
     csrf_cookie_name: str = "hs_csrf"
@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     bootstrap_admin_email: str | None = None
     bootstrap_admin_password: str | None = None
     bootstrap_org_name: str = "HISPANSHIELD"
+    # Optional shared secret required by POST /setup. Recommended (and set by
+    # the Kubernetes template) so the first-run window is not open to the world.
+    setup_token: str = ""
 
     rate_limit_enabled: bool = True
     rate_limit_per_minute: int = 240
@@ -64,6 +67,14 @@ class Settings(BaseSettings):
     seed_demo: bool = False
     public_url: str = "http://localhost:8080"
     support_email: str = "security@example.eu"
+
+    # Audit integrity v3: HMAC-SHA256 with a key held outside PostgreSQL.
+    # ``audit_hmac_previous_keys`` is a comma-separated list of
+    # ``key_id:secret`` pairs kept only for verification during rotation.
+    audit_hmac_key: str = ""
+    audit_hmac_key_id: str = "k1"
+    audit_hmac_previous_keys: str = ""
+    audit_require_hmac: bool = False
 
     # Directory containing the built SPA (frontend/dist).
     frontend_dist: str = "frontend/dist"
@@ -108,6 +119,19 @@ class Settings(BaseSettings):
             problems.append("HS_METRICS_TOKEN must be set in production")
         if self.seed_demo:
             problems.append("HS_SEED_DEMO must be false in production")
+        if self.audit_require_hmac and len(self.audit_hmac_key) < 32:
+            problems.append("HS_AUDIT_HMAC_KEY must be at least 32 characters when HMAC is required")
+        for name, value in (
+            ("HS_SECRET_KEY", self.secret_key),
+            ("HS_ENCRYPTION_KEY", self.encryption_key),
+            ("HS_AUDIT_HMAC_KEY", self.audit_hmac_key),
+            ("HS_METRICS_TOKEN", self.metrics_token),
+            ("HS_SETUP_TOKEN", self.setup_token),
+        ):
+            if value and ("CHANGE_ME" in value or "REPLACE_ME" in value):
+                problems.append(f"{name} still contains a placeholder")
+        if self.is_production and not self.audit_require_hmac:
+            problems.append("HS_AUDIT_REQUIRE_HMAC must be true in production (audit chain must be keyed)")
         if problems:
             raise RuntimeError("Unsafe production configuration: " + "; ".join(problems))
 

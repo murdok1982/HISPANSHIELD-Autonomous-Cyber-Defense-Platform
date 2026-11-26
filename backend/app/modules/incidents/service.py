@@ -23,6 +23,7 @@ from app.models.assets import Asset
 from app.models.core import Membership, Organization
 from app.models.events import Alert
 from app.models.incidents import Incident, IncidentTimeline
+from app.services.outbox import enqueue
 
 SEVERITIES = ("info", "low", "medium", "high", "critical")
 _PRIORITY_BY_SEVERITY = {"info": 5, "low": 4, "medium": 3, "high": 2, "critical": 1}
@@ -163,6 +164,21 @@ def create_incident_core(
         actor=actor,
         detail={"severity": severity, "priority": priority, "title": incident.title},
         at=incident.created_at,
+    )
+    enqueue(
+        db,
+        org_id=org.id,
+        event_type="incident.created",
+        aggregate_type="incident",
+        aggregate_id=str(incident.id),
+        dedupe_key=f"incident.created:{incident.id}",
+        payload={
+            "title": f"Incident {incident.ref}: {incident.title}"[:240],
+            "body": f"Severity {severity} · priority P{priority}",
+            "severity": severity,
+            "priority": priority,
+            "incident_id": str(incident.id),
+        },
     )
     return incident
 

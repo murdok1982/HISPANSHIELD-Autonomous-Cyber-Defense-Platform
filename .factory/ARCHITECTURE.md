@@ -18,9 +18,9 @@
 | **Validation** | Pydantic v2 + pydantic-settings | `^2.9` / `^2.6` | Validación estricta en frontera, `model_config = ConfigDict(extra="forbid")` |
 | **ORM / DB access** | SQLAlchemy 2.0 (sync) + psycopg 3 | `^2.0` / `^3.2` | Sesiones síncronas en threadpool: simple, depurable, sin `greenlet`; SQL explícito en consultas críticas |
 | **Migrations** | Alembic | `^1.14` | Migraciones versionadas, upgrade/downgrade testeados |
-| **Database** | PostgreSQL | `18.x` | Fuente de verdad única: JSONB, FTS (`tsvector`, `pg_trgm`), particiones declarativas, `LISTEN/NOTIFY`, row-level scoping por `organization_id` |
+| **Database** | PostgreSQL | `18.x` | Fuente de verdad única: JSONB, FTS (`tsvector`, `pg_trgm`), row-level scoping por `organization_id`. Particiones declarativas y `LISTEN/NOTIFY` son objetivo, no estado actual. |
 | **Jobs / colas** | Tabla `jobs` + `FOR UPDATE SKIP LOCKED` | — | Cola durable sin broker externo; leases, reintentos, dead-letter |
-| **Event bus** | Transactional outbox + `LISTEN/NOTIFY` | — | Atomicidad con la transacción de negocio; fan-out in-process y SSE |
+| **Event bus** | Transactional outbox | — | Outbox con leases/retries/DLQ implementado; fan-out a notificaciones y SSE. `LISTEN/NOTIFY` y tabla `jobs` separada siguen pendientes (`TASK-008`). |
 | **Auth crypto** | Argon2id (`argon2-cffi`), `itsdangerous`, `pyotp` | `^23.1` / `^2.2` / `^2.9` | Hashing memorio-duro, cookies firmadas, TOTP RFC 6238 |
 | **Secrets at rest** | `cryptography` Fernet (AES-128-CBC + HMAC-SHA256) | `^44` | Cifrado de secretos de conectores con clave externa (`HISPANSHIELD_SECRET_KEY`) |
 | **HTTP client** | `httpx` | `^0.28` | Cliente con timeouts, retries explícitos, límites de tamaño de respuesta |
@@ -93,7 +93,7 @@
 │   │   ├── main.tsx, App.tsx, routes.tsx
 │   │   ├── styles/{tokens.css,app.css}
 │   │   ├── components/{ui,layout,charts,features}/
-│   │   ├── pages/                      # 23 pantallas + Login, Mfa, Setup, NotFound
+│   │   ├── pages/                      # 23 pantallas de navegación + Profile, 2 detalles, Login, NotFound
 │   │   ├── lib/{api.ts,auth.tsx,i18n.tsx,query.ts,sse.ts,format.ts,download.ts}
 │   │   └── types/
 │   ├── e2e/                            # Playwright
@@ -183,6 +183,13 @@ flowchart LR
 **Procesos desplegables:** `hispanshield-api` (uvicorn, N workers), `hispanshield-worker-*` (scheduler, ingest, detection, workflow, ai — pueden co-localizarse con `--queue` selectivo), `hispanshield-web` (estático servido por Caddy/nginx), `hispanshield-edge` (por sitio). Sin broker ni caché externos.
 
 ---
+
+> **Nota de realidad (0.1.2):** esta arquitectura describe el objetivo y el
+> estado actual. Lo implementado en esta ola: outbox transaccional, SSE,
+> auditoría HMAC v3 con checkpoints, cursor pagination e `Idempotency-Key`.
+> Siguen siendo objetivo, no realidad: `LISTEN/NOTIFY`, tabla `jobs` separada,
+> capa `repository.py`, particiones mensuales de eventos/auditoría y soft delete
+> genérico. Ver `.factory/ARCHITECTURE_GAP_ANALYSIS.md` y `.factory/TASKS.md`.
 
 ## 3. DATA LAYER & SCHEMA CONTRACTS
 

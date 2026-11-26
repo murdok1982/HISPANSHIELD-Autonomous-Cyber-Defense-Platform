@@ -23,7 +23,7 @@
 ```bash
 export PATH=/tmp/opencode/node-v22.14.0-linux-x64/bin:$PATH
 source /tmp/opencode/hs-venv/bin/activate
-export HISPANSHIELD_DATABASE_URL="postgresql+psycopg://postgres@/hispanshield?host=/tmp/opencode&port=55432"
+export HS_DATABASE_URL="postgresql+psycopg://postgres@/hispanshield?host=/tmp/opencode&port=55432"
 ```
 
 ---
@@ -69,17 +69,21 @@ sudo systemctl enable --now hispanshield-api hispanshield-worker-ingest \
 ## 3. VARIABLES DE ENTORNO
 
 ```bash
-HISPANSHIELD_ENV=production
-HISPANSHIELD_DATABASE_URL=postgresql+psycopg://hispanshield:***@127.0.0.1:5432/hispanshield
-HISPANSHIELD_SECRET_KEY=<base64 32 bytes>
-HISPANSHIELD_ALLOWED_ORIGINS=https://hispanshield.example.eu
-HISPANSHIELD_EVIDENCE_PATH=/var/lib/hispanshield/evidence
-HISPANSHIELD_SESSION_IDLE_MINUTES=30
-HISPANSHIELD_SESSION_ABSOLUTE_HOURS=12
-HISPANSHIELD_REQUIRE_MIGRATIONS=true
-HISPANSHIELD_EDGE_REQUIRE_MTLS=true
-HISPANSHIELD_AI_PROVIDER=none
-HISPANSHIELD_LOG_LEVEL=INFO
+HS_ENV=production
+HS_AUDIT_REQUIRE_HMAC=true
+HS_AUDIT_HMAC_KEY=<48+ random bytes, outside the database>
+HS_AUDIT_HMAC_KEY_ID=k1
+HS_AUDIT_HMAC_PREVIOUS_KEYS=
+HS_DATABASE_URL=postgresql+psycopg://hispanshield:***@127.0.0.1:5432/hispanshield
+HS_SECRET_KEY=<base64 32 bytes>
+HS_ALLOWED_ORIGINS=https://hispanshield.example.eu
+HS_EVIDENCE_PATH=/var/lib/hispanshield/evidence
+HS_SESSION_IDLE_MINUTES=30
+HS_SESSION_ABSOLUTE_HOURS=12
+HS_REQUIRE_MIGRATIONS=true
+HS_EDGE_REQUIRE_MTLS=true
+HS_AI_PROVIDER=none
+HS_LOG_LEVEL=INFO
 ```
 
 **Nunca** versionar este fichero. Permisos `0600`, propietario `hispanshield`.
@@ -96,12 +100,12 @@ curl -sI https://hispanshield.example.eu | grep -Ei 'strict-transport|content-se
 
 | Comprobación | Esperado |
 | :--- | :--- |
-| `/healthz` | `{"db":"ok","migrations":"current","queue_depth":0}` |
-| `/readyz` | `200` |
+| `/healthz` | `200 {"status":"ok","version":"0.1.2"}` |
+| `/readyz` | `200` con DB, migraciones, `queue_depth` y `outbox.pending` |
 | HSTS | presente |
 | CSP | presente, sin `unsafe-eval` |
 | Login | flujo completo con MFA |
-| Auditoría | `GET /api/v1/audit/verify` → `valid:true` |
+| Auditoría | `GET /api/v1/organizations/current/audit/verify` → `valid:true`, esquemas v1/v2/v3 |
 
 ---
 
@@ -111,10 +115,12 @@ curl -sI https://hispanshield.example.eu | grep -Ei 'strict-transport|content-se
 | :--- | :--- | :--- |
 | Salud | `/readyz`, `/metrics` | Continua (monitor) |
 | Backups | `scripts/backup.sh` | Diaria 02:00 |
-| Cola | `hs_queue_depth` | Continua |
+| Cola | `hs_queue_depth` y `outbox.pending`/`dead_letter` | Continua |
 | Conectores | `/connectors/{id}/health` | Continua |
 | Retención | job automático | Diaria |
 | Revisión de alertas de seguridad | panel `/audit` | Diaria |
+| Checkpoint de auditoría firmado | `POST /organizations/current/audit/checkpoints` y export externo/WORM | Diaria |
+| Dead-letter outbox | `GET /api/v1/outbox/stats`; inspeccionar `last_error` | Diaria |
 | Drill de restore | `backup_restore_drill.sh` | Mensual |
 | Parches | `pip-audit`, `npm audit` | Semanal |
 

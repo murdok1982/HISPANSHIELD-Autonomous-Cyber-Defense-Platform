@@ -1,6 +1,6 @@
 # HISPANSHIELD — Manual de uso e integración
 
-**Versión:** 0.1.0 · release candidata
+**Versión:** 0.1.1 · release candidata
 **Audiencia:** operadores SOC, ingenieros de integración, administradores de plataforma, responsables de seguridad y equipos de cumplimiento.
 **Ámbito:** administraciones públicas, empresas privadas e infraestructuras críticas europeas.
 
@@ -42,7 +42,7 @@ HISPANSHIELD es un **centro de mando de ciberdefensa** que unifica:
 | SOAR | Playbooks durables, aprobaciones, compensación y simulación | *SOAR*, *Playbook Designer* |
 | Incidentes | Ciclo completo, timeline, evidencias con hash y cadena de custodia | *Incident Management*, *Forensics* |
 | Threat Intelligence | IOC, actores, MITRE ATT&CK, STIX/TAXII, MISP/OpenCTI | *Threat Intelligence* |
-| Respuesta autónoma | Catálogo de acciones, política A0–A4, broker, aprobaciones, rollback, kill switch | *Autonomous Defence* (dentro de Admin/SOAR) |
+| Respuesta autónoma | Catálogo de acciones A0–A3 (A4 reservado), broker, aprobaciones, rollback, kill switch | *Autonomous Defence* (dentro de Admin/SOAR) |
 | IA local | Gateway multi-proveedor, RAG con citas, 16 agentes especializados | *AI Agent Control*, *Model Management* |
 | Integraciones | Wazuh, Elastic, Sentinel, MISP, OpenCTI, Keycloak, pfSense, OPNsense, Suricata, Zeek, Defender, webhooks | *Integrations* |
 | Cumplimiento | NIS2, CRA, GDPR, ENS, ISO 27001/27002, IEC 62443, ETSI 303 645, NIST CSF, EUCC | *Compliance* |
@@ -158,12 +158,15 @@ docker exec -it <ollama-container> ollama pull qwen2.5:7b-instruct
 
 ### 3.4 Kubernetes y air-gapped
 
-- Aplica `deploy/k8s/manifests.yaml` tras sustituir imagen, dominio, TLS y
-  secretos. Ejecuta la migración como Job (`hispanshield-migrate`) y mantén
+- Renderiza la plantilla con tus valores y valida el resultado antes de aplicar:
+  `./deploy/k8s/render.sh values.production.env > rendered.yaml` y
+  `python3 scripts/validate_deploy.py rendered.yaml`. La plantilla sin renderizar
+  se rechaza por diseño. Ejecuta la migración como Job y mantén
   `HS_RUN_MIGRATIONS=false` en las réplicas.
-- Para air-gapped: exporta las imágenes y los modelos GGUF, cópialos al entorno
-  aislado, carga las imágenes y ejecuta `ollama create` desde el GGUF local.
-  No se requiere ninguna API externa.
+- Para air-gapped: el procedimiento previsto es exportar imágenes y modelos
+  GGUF, copiarlos al entorno aislado, cargarlos y ejecutar `ollama create`.
+  **El bundle offline no está construido ni probado en esta release**; no se
+  declara air-gap verificado.
 - Valida los manifiestos en tu plataforma: en el entorno de construcción no
   había daemon Docker disponible.
 
@@ -258,7 +261,7 @@ Fuente (SIEM/EDR/syslog/webhook/edge)
   timeout, política de fallo y compensación.
 - **Simular** no produce efectos externos: valida el plan y las condiciones.
 - **Ejecutar** revalida política, autonomía, kill switches y aprobaciones en el
-  servidor. Las acciones A3/A4 se pausan hasta aprobación humana.
+  servidor. Las acciones A3 se pausan hasta aprobación humana; A4 no tiene acciones.
 - Los pasos y su estado son durables en PostgreSQL; un reinicio no pierde la
   ejecución. Se puede reanudar una ejecución pendiente de aprobación.
 
@@ -284,7 +287,7 @@ Fuente (SIEM/EDR/syslog/webhook/edge)
 | `A1` | Investigación automática | Correlacionar, enriquecer, abrir incidente |
 | `A2` | Remediación reversible de bajo impacto | Revocar sesiones, aplicar bloqueo reversible |
 | `A3` | Contención defensiva preautorizada | Aislar endpoint, bloquear IP, deshabilitar identidad (con aprobación) |
-| `A4` | Acción crítica con autorización reforzada | Cambios de alto impacto; nunca OT por defecto |
+| `A4` | Reservado | Sin acciones en el catálogo actual; no habilitado por defecto |
 
 El nivel máximo por organización es un **techo duro**. Una aprobación no eleva
 el techo: un administrador debe modificar la política explícitamente.
@@ -477,12 +480,13 @@ humana. Una herramienta no puede ampliar sus permisos ni los del agente.
 - **Keycloak**: el conector administrativo permite leer usuarios, deshabilitar
   cuentas y revocar sesiones con aprobación. La federación SSO OIDC no está
   habilitada por defecto en esta release; el login local está implementado.
-- **Active Directory / Entra ID / Okta**: se integran a través de conectores de
-  identidad o exportaciones; las acciones de escritura deben pasar por el
+- **Active Directory / Entra ID / Okta**: **no hay adaptadores directos** en esta
+  release. Solo Keycloak tiene adaptador; el resto requeriría un conector
+  genérico gobernado o desarrollo específico. Las escrituras deben pasar por el
   catálogo defensivo y una aprobación.
-- **AWS/Azure/GCP**: la postura cloud se calcula desde inventario, hallazgos y
-  vulnerabilidades importados. No se requieren credenciales cloud para el
-  núcleo; si se añaden conectores, aplica mínimo privilegio y rotación.
+- **AWS/Azure/GCP**: no hay CSPM ni cuentas cloud. La vista `/cloud` calcula una
+  postura derivada de activos y hallazgos ya importados. No se soportan
+  credenciales cloud, descubrimiento ni remediación cloud.
 
 ### 7.7 Reglas de firewall y EDR
 
@@ -785,7 +789,7 @@ recalcula la cadena de auditoría. No continúes si la verificación falla.
 - Ejecutar `pip-audit`/escaneo de imagen y aplicar parches.
 - Revisar la auditoría y verificar la cadena periódicamente.
 - Probar el kill switch y el rollback en laboratorio.
-- No conceder A3/A4 sin aprobación y sin ventana operativa.
+- No conceder A3 sin aprobación y sin ventana operativa; A4 está reservado.
 
 ### 12.3 Respuesta a incidentes de la propia plataforma
 

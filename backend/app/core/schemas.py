@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
+import json
 import re
 from datetime import datetime
 from typing import Any, Generic, TypeVar
@@ -42,6 +45,9 @@ class PageMeta(BaseModel):
     page_size: int
     pages: int
     has_next: bool
+    # Keyset pagination is additive: existing offset clients keep working.
+    next_cursor: str | None = None
+    total_estimate: int | None = None
 
 
 class Page(BaseModel, Generic[T]):
@@ -69,7 +75,14 @@ class HealthResponse(BaseModel):
     timestamp: datetime
 
 
-def paginate(items: list[Any], total: int, page: int, page_size: int) -> dict[str, Any]:
+def paginate(
+    items: list[Any],
+    total: int,
+    page: int,
+    page_size: int,
+    *,
+    next_cursor: str | None = None,
+) -> dict[str, Any]:
     pages = (total + page_size - 1) // page_size if page_size else 0
     return {
         "items": items,
@@ -79,8 +92,32 @@ def paginate(items: list[Any], total: int, page: int, page_size: int) -> dict[st
             "page_size": page_size,
             "pages": pages,
             "has_next": page < pages,
+            "next_cursor": next_cursor,
+            "total_estimate": total,
         },
     }
+
+
+def encode_cursor(payload: dict[str, Any]) -> str:
+    """Opaque, bounded keyset cursor. It is not a security boundary."""
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    if len(raw) > 512:
+        raise ValueError("Cursor payload is too large")
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def decode_cursor(value: str) -> dict[str, Any]:
+    if not value or len(value) > 700:
+        raise ValueError("Invalid cursor")
+    padded = value + "=" * (-len(value) % 4)
+    try:
+        raw = base64.urlsafe_b64decode(padded.encode("ascii"))
+        payload = json.loads(raw.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, binascii.Error) as exc:
+        raise ValueError("Invalid cursor") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid cursor")
+    return payload
 
 
 def normalize_email(value: str) -> str:

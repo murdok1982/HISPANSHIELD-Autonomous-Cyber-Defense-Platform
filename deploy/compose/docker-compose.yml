@@ -35,6 +35,9 @@ services:
       HS_FRONTEND_DIST: /app/frontend/dist
       HS_EVIDENCE_DIR: /app/data/evidence
       HS_RUN_MIGRATIONS: "true"
+      HS_AUDIT_REQUIRE_HMAC: "true"
+      HS_AUDIT_HMAC_KEY: ${HS_AUDIT_HMAC_KEY:?set HS_AUDIT_HMAC_KEY}
+      HS_AUDIT_HMAC_KEY_ID: ${HS_AUDIT_HMAC_KEY_ID:-k1}
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
@@ -45,7 +48,7 @@ services:
       timeout: 5s
       retries: 5
     security_opt: ["no-new-privileges:true"]
-    read_only: false
+    read_only: true
     tmpfs: [/tmp]
     networks: [internal]
 
@@ -66,6 +69,9 @@ services:
       HS_FRONTEND_DIST: /app/frontend/dist
       HS_EVIDENCE_DIR: /app/data/evidence
       HS_RUN_MIGRATIONS: "false"
+      HS_AUDIT_REQUIRE_HMAC: "true"
+      HS_AUDIT_HMAC_KEY: ${HS_AUDIT_HMAC_KEY:?set HS_AUDIT_HMAC_KEY}
+      HS_AUDIT_HMAC_KEY_ID: ${HS_AUDIT_HMAC_KEY_ID:-k1}
     command: ["python", "-m", "app.workers.runtime", "--role", "all"]
     volumes:
       - evidence:/app/data/evidence

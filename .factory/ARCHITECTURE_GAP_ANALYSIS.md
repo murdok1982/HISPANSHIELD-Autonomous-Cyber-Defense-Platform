@@ -1,5 +1,11 @@
 # ARCHITECTURE GAP ANALYSIS — HISPANSHIELD
 
+> **Snapshot histórico (baseline RC1).** Se conserva para trazabilidad. El estado
+> reconciliado y las capacidades cerradas en 0.1.2 están en
+> `.factory/REPO_INVENTORY.md` §“Reconciliation 0.1.2”, `.factory/AC_TRACEABILITY.md`
+> y `.factory/EVIDENCE/`.
+
+
 - **Fecha:** 2026-11-26
 - **Base:** `.factory/ARCHITECTURE.md`, `.factory/SPEC.md`, `specs/**`, `docs/**` confrontados con el código en el árbol de trabajo (`HEAD 696655b` + snapshot inicial de 14 modificados/2 untracked; el diff creció a 24 archivos durante la sesión). Los conteos pueden variar en el siguiente commit.
 - **Alcance:** diferencias de arquitectura, acoplamientos, deuda estructural, riesgos de escalabilidad, módulos declarados no cableados y priorización P0/P1/P2.

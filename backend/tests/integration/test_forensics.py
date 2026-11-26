@@ -87,7 +87,15 @@ def test_empty_case_list(seeded, auth_client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json() == {
         "items": [],
-        "meta": {"total": 0, "page": 1, "page_size": 25, "pages": 0, "has_next": False},
+        "meta": {
+            "total": 0,
+            "page": 1,
+            "page_size": 25,
+            "pages": 0,
+            "has_next": False,
+            "next_cursor": None,
+            "total_estimate": 0,
+        },
     }
 
 

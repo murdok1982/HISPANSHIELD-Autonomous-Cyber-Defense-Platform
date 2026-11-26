@@ -1,8 +1,8 @@
 # CONTRATO REST `/api/v1`
 
 - **Documento:** `specs/api/rest-contract.md`
-- **Estado:** `LOCKED` v1.0
-- **OpenAPI:** generado por FastAPI en `/api/v1/openapi.json` (fuente ejecutable); este documento es el contrato normativo y la guía de consumo.
+- **Estado:** `LOCKED` v1.1 (reconciliado con la implementación 0.1.2)
+- **OpenAPI:** generado por FastAPI en `/api/openapi.json` (fuente ejecutable); este documento es el contrato normativo y la guía de consumo.
 - **Catálogo humano:** `docs/api-reference.md`
 
 ---
@@ -14,12 +14,12 @@
 | Base | `/api/v1` |
 | Formato | JSON UTF-8 (`application/json`); binarios con `Content-Type` específico |
 | Fechas | ISO 8601 UTC con `Z` (`2026-11-26T10:00:00Z`) |
-| IDs | UUIDv7 en string |
+| IDs | UUIDv4 en string (UUIDv7 sigue siendo objetivo, no implementado) |
 | Nombres | `snake_case` en JSON (coherente con Python) |
-| Paginación | Cursor: `?cursor=<opaque>&limit=<1..200>` → `{data[], meta:{next_cursor, total_estimate}}` |
+| Paginación | Offset por defecto: `?page=&page_size=` → `{items[], meta:{total,page,page_size,pages,has_next}}`. Cursor aditivo en assets/events: `?cursor=<opaque>` → `meta.next_cursor` + `meta.total_estimate`. `limit` no es el nombre actual; se usa `page_size`. |
 | Orden | Por defecto `created_at DESC`; `?sort=` con allowlist por recurso |
-| Errores | `{error:{code, message, fields?:[{path,message}], request_id}}` |
-| Idempotencia | `Idempotency-Key` en POST de ingesta/ejecución/import; TTL 24 h |
+| Errores | `{error:{code, message, details?:[{field,message}], request_id}}` |
+| Idempotencia | `Idempotency-Key` en `POST /incidents`, `/assets/import`, `/vulnerabilities/import/cve`; TTL 24 h; replay con `Idempotent-Replayed: true`; la ingesta usa dedupe persistente |
 | Correlación | `X-Request-Id` aceptado (validado) o generado; devuelto siempre |
 | Versionado | `/v1`; cambio incompatible → `/v2` con solapamiento ≥1 release |
 | Compresión | `gzip`/`br` para respuestas >1 KB |
@@ -42,7 +42,7 @@
 
 ## 3. TENANCY
 
-`X-Organization-Id: <uuid>` obligatorio en rutas org-scoped (todas salvo auth, setup, health, metrics). Validaciones: formato → `400`; membership → `403 organization_forbidden`; recurso ajeno → `404 not_found`.
+La organización activa se resuelve por la sesión o el token; `X-Organization-Id` es opcional y solo se usa para seleccionar una organización a la que el usuario ya pertenece (o para plataforma con break-glass). No se exige `400` si falta la cabecera. Membership ausente → `403 organization_forbidden`; recurso ajeno → `404 not_found`.
 
 ---
 
@@ -50,7 +50,7 @@
 
 | `code` | HTTP | Significado |
 | :--- | :--- | :--- |
-| `validation_error` | 422 | Esquema inválido; `fields[]` con path |
+| `validation_error` | 422 | Esquema inválido; `details[]` con field/message |
 | `bad_request` | 400 | Petición malformada (JSON inválido, cabecera ausente) |
 | `unauthenticated` | 401 | Sin sesión/token válido |
 | `invalid_credentials` | 401 | Login fallido (uniforme) |

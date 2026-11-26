@@ -787,3 +787,41 @@ Residual risk (accepted for RC1, tracked for GA): MEDIUM findings VULN-007..014 
 - **NEW-003/004/005:** RESOLVED (TTL ≤90 días, backup `required` en producción, recovery codes con contraseña).
 - **Caveat LOW no bloqueante:** si `HS_AI_PRIVATE_ALLOWED_CIDRS=""`, `PinnedDNSBackend` interpreta lista vacía como “sin allowlist”; tratar como *deny all* cuando `allow_private=True`.
 - **Ready for Production Delivery: `APPROVED (RC1)`** — 0 CRITICAL / 0 HIGH; residuales MEDIUM/LOW aceptados con owner y fecha (2026-12-10). E2E/Docker no ejecutados en esta pasada por límites del entorno (riesgo aceptado).
+
+---
+
+## 9. ADDENDUM — 0.1.2 EVOLUTION WAVE 1 (2026-11-26)
+
+This addendum covers the code added after the RC1 audit. It does not replace a
+truly independent review; the same auditor re-verified the changes.
+
+### 9.1 New attack surface reviewed
+
+| Surface | Control | Evidence |
+| :--- | :--- | :--- |
+| `POST /api/v1/setup` (public) | 409 after first organization, transaction advisory lock, 5/hour per IP, password policy, no user elevation | `test_setup.py` |
+| `POST /api/v1/auth/invitations/accept` (public) | one-time hashed token, 72 h TTL, revocation, role allowlist (no `platform_admin`), existing account must prove its password | `test_invitations.py` |
+| `GET /api/v1/events/stream` (SSE) | requires `event:read`, tenant filter in every poll, no cross-tenant rows, short-lived DB session per poll | `test_sse.py` |
+| `Idempotency-Key` ledger | tenant+actor scope, request/path binding, in-progress 409, 24 h TTL, no replay across paths | `test_idempotency.py` |
+| Outbox dispatcher | `SKIP LOCKED` claim + lease, bounded retries, dead-letter, tenant-scoped notification consumer, duplicate-safe by `source_event_id` | `test_outbox.py` |
+| Audit v3 | HMAC-SHA256 with key id outside PostgreSQL, rotation, signed checkpoints, v1/v2 compatibility | `test_audit_hmac.py` |
+| Kubernetes template | render + placeholder/mutable-tag/security-context validator | `scripts/validate_deploy.py`, CI job |
+
+### 9.2 Residual status update
+
+- **VULN-014 (audit integrity):** the keyed-HMAC gap is now addressed for new
+  records (`audit-v3`); production refuses to start without
+  `HS_AUDIT_REQUIRE_HMAC=true`. Residual: an actor with both the HMAC key and
+  PostgreSQL can still forge, and checkpoints are only as good as their external
+  export. State: **PARTIAL (accepted residual)**.
+- **VULN-026 (deployment):** K8s is now a template that cannot pass validation
+  unrendered; egress NetworkPolicy remains CIDR-less. State: **PARTIAL**.
+- **No new CRITICAL or HIGH findings** were identified in the added code.
+- **Not executed:** a fresh penetration test, Playwright E2E, Docker/K8s runtime,
+  gitleaks in this environment.
+
+### 9.3 Explicit non-claims
+
+The following remain absent and must not be described as available: cloud CSPM,
+Nessus/OpenVAS/Trivy importers, legal hold, monthly event partitions, A4 actions,
+durable agent-run resume, OIDC/SAML login and an external WORM audit sink.

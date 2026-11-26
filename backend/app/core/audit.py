@@ -19,6 +19,7 @@ requests cannot fork the chain.
 
 from __future__ import annotations
 
+import hmac
 import json
 import uuid
 from datetime import UTC, datetime
@@ -28,13 +29,16 @@ from uuid import UUID
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
-from app.core.crypto import sha256_hex
+from app.core.config import settings
+from app.core.crypto import hmac_sha256_hex, sha256_hex
 from app.core.db import utcnow
-from app.models.core import AuditRecord
+from app.models.core import AuditCheckpoint, AuditRecord
 
 AUDIT_HASH_VERSION = 2
+HMAC_AUDIT_HASH_VERSION = 3
 LEGACY_AUDIT_HASH_VERSION = 1
 AUDIT_SCHEME_MARKER = "audit-v2"
+HMAC_AUDIT_SCHEME_MARKER = "audit-v3"
 
 _SENSITIVE_KEYS = {
     "password",
@@ -113,7 +117,7 @@ def _canonical_payload(
         "created_at": created_at.astimezone(UTC).isoformat(),
     }
     if version >= 2:
-        document["scheme"] = AUDIT_SCHEME_MARKER
+        document["scheme"] = HMAC_AUDIT_SCHEME_MARKER if version >= 3 else AUDIT_SCHEME_MARKER
         document["request_id"] = request_id
         document["ip_address"] = ip_address
         document["user_agent"] = user_agent
@@ -125,7 +129,30 @@ def _canonical_payload(
     )
 
 
-def _hash_for_version(record: AuditRecord, previous: str | None, version: int) -> str:
+def _configured_keys() -> dict[str, str]:
+    """Return ``{key_id: secret}`` including retired keys kept for verification."""
+    keys: dict[str, str] = {}
+    for item in settings.audit_hmac_previous_keys.split(","):
+        item = item.strip()
+        if not item or ":" not in item:
+            continue
+        key_id, secret = item.split(":", 1)
+        key_id, secret = key_id.strip(), secret.strip()
+        if key_id and len(secret) >= 16:
+            keys[key_id] = secret
+    if settings.audit_hmac_key:
+        keys[settings.audit_hmac_key_id] = settings.audit_hmac_key
+    return keys
+
+
+def active_audit_key() -> tuple[str, str] | None:
+    """Return the active ``(key_id, secret)`` or ``None`` when HMAC is not configured."""
+    if not settings.audit_hmac_key:
+        return None
+    return settings.audit_hmac_key_id, settings.audit_hmac_key
+
+
+def _hash_for_version(record: AuditRecord, previous: str | None, version: int, *, secret: str | None = None) -> str:
     canonical = _canonical_payload(
         record.org_id,
         record.actor_type,
@@ -142,6 +169,10 @@ def _hash_for_version(record: AuditRecord, previous: str | None, version: int) -
         ip_address=record.ip_address,
         user_agent=record.user_agent,
     )
+    if version >= 3:
+        if secret is None:
+            raise ValueError("Audit v3 verification requires the HMAC secret")
+        return hmac_sha256_hex(secret, ((previous or "") + canonical).encode("utf-8"))
     return sha256_hex((previous or "") + canonical)
 
 
@@ -179,6 +210,8 @@ def append_audit(
     stored_request_id = (request_id or "")[:64] or None
     stored_ip = (ip_address or "")[:64] or None
     stored_user_agent = (user_agent or "")[:400] or None
+    key = active_audit_key()
+    version = HMAC_AUDIT_HASH_VERSION if key else AUDIT_HASH_VERSION
     canonical = _canonical_payload(
         org_id,
         actor_type,
@@ -190,11 +223,17 @@ def append_audit(
         outcome,
         safe_payload,
         created_at,
-        version=AUDIT_HASH_VERSION,
+        version=version,
         request_id=stored_request_id,
         ip_address=stored_ip,
         user_agent=stored_user_agent,
     )
+    if key:
+        key_id, secret = key
+        record_hash = hmac_sha256_hex(secret, ((last_hash or "") + canonical).encode("utf-8"))
+    else:
+        key_id = None
+        record_hash = sha256_hex((last_hash or "") + canonical)
     record = AuditRecord(
         org_id=org_id,
         actor_type=actor_type,
@@ -209,7 +248,9 @@ def append_audit(
         user_agent=stored_user_agent,
         payload=safe_payload,
         prev_hash=last_hash,
-        hash=sha256_hex((last_hash or "") + canonical),
+        hash=record_hash,
+        hash_version=version,
+        key_id=key_id,
         created_at=created_at,
     )
     db.add(record)
@@ -235,6 +276,7 @@ def verify_audit_chain(db: Session, org_id: UUID | None) -> dict[str, Any]:
     previous: str | None = None
     checked = 0
     schemes = {"v1": 0, "v2": 0}
+    keys = _configured_keys()
     for record in records:
         if record.prev_hash != previous:
             return {
@@ -245,6 +287,31 @@ def verify_audit_chain(db: Session, org_id: UUID | None) -> dict[str, Any]:
                 "stored_hash": record.hash,
                 "reason": "prev_hash mismatch",
             }
+        if record.hash_version == HMAC_AUDIT_HASH_VERSION or record.key_id:
+            secret = keys.get(record.key_id or "")
+            if secret is None:
+                return {
+                    "valid": False,
+                    "checked": checked,
+                    "broken_at": str(record.id),
+                    "expected_hash": None,
+                    "stored_hash": record.hash,
+                    "reason": f"unknown audit HMAC key: {record.key_id}",
+                }
+            expected_v3 = _hash_for_version(record, previous, HMAC_AUDIT_HASH_VERSION, secret=secret)
+            if record.hash != expected_v3:
+                return {
+                    "valid": False,
+                    "checked": checked,
+                    "broken_at": str(record.id),
+                    "expected_hash": expected_v3,
+                    "stored_hash": record.hash,
+                    "reason": "HMAC hash mismatch",
+                }
+            schemes["v3"] = schemes.get("v3", 0) + 1
+            previous = record.hash
+            checked += 1
+            continue
         expected_v2 = _hash_for_version(record, previous, AUDIT_HASH_VERSION)
         if record.hash == expected_v2:
             schemes["v2"] += 1
@@ -269,6 +336,53 @@ def verify_audit_chain(db: Session, org_id: UUID | None) -> dict[str, Any]:
         "broken_at": None,
         "schemes": schemes,
     }
+
+
+def _checkpoint_payload(org_id: UUID | None, head_hash: str, record_count: int, created_at: datetime) -> str:
+    return f"{org_id or 'global'}:{head_hash}:{record_count}:{created_at.astimezone(UTC).isoformat()}"
+
+
+def create_audit_checkpoint(db: Session, org_id: UUID | None) -> tuple[AuditCheckpoint | None, dict[str, Any]]:
+    """Create a signed checkpoint for the current head of a chain.
+
+    Returns ``(checkpoint, chain_result)``. Without an HMAC key the checkpoint
+    cannot be signed and is therefore not created; the caller must report that
+    limitation instead of pretending the anchor is tamper-proof.
+    """
+    chain = verify_audit_chain(db, org_id)
+    if not chain["valid"]:
+        return None, chain
+    key = active_audit_key()
+    if key is None:
+        return None, {**chain, "checkpoint": "not_created", "reason": "HS_AUDIT_HMAC_KEY is not configured"}
+    key_id, secret = key
+    created_at = utcnow()
+    head = chain["head"] or ""
+    signature = hmac_sha256_hex(secret, _checkpoint_payload(org_id, head, int(chain["checked"]), created_at).encode())
+    checkpoint = AuditCheckpoint(
+        org_id=org_id,
+        head_hash=head,
+        record_count=int(chain["checked"]),
+        key_id=key_id,
+        signature=signature,
+        created_at=created_at,
+    )
+    db.add(checkpoint)
+    db.flush()
+    return checkpoint, chain
+
+
+def verify_audit_checkpoint(checkpoint: AuditCheckpoint) -> bool:
+    secret = _configured_keys().get(checkpoint.key_id)
+    if secret is None:
+        return False
+    expected = hmac_sha256_hex(
+        secret,
+        _checkpoint_payload(
+            checkpoint.org_id, checkpoint.head_hash, checkpoint.record_count, checkpoint.created_at
+        ).encode(),
+    )
+    return hmac.compare_digest(expected, checkpoint.signature)
 
 
 def audit_ref(value: uuid.UUID | str | None) -> str | None:

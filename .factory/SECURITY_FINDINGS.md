@@ -428,3 +428,23 @@ Interpretación: el alta sigue aceptando el host porque resuelve a `127.0.0.1` (
 - **PoC de rebinding (ejecutado):** el alta con `rebind.test → 127.0.0.1` pasa la allowlist `127.0.0.0/8`; la conexión posterior con DNS cambiado a `10.0.0.5` se bloquea con `Destination is outside the configured private allowlist` y **`socket.connect` no se invoca**.
 - **Caveat LOW (no bloqueante):** si un operador configura `HS_AI_PRIVATE_ALLOWED_CIDRS=""` (lista vacía), `PinnedDNSBackend` interpreta “sin allowlist” y permitiría cualquier IP privada para un proveedor local preexistente; el alta/actualización sí rechazaría cualquier destino. Recomendación: tratar lista vacía como *deny all* cuando `allow_private=True`.
 - **Veredicto final:** **`APPROVED (RC1)`** — 0 CRITICAL / 0 HIGH; VULN-008 y NEW-003/004/005 cerrados; residuales MEDIUM/LOW aceptados y documentados con owner/fecha. E2E/Docker no ejecutados en esta pasada por límites del entorno (aceptado como riesgo de release).
+
+---
+
+## ADDENDUM 2026-11-26 — 0.1.2 re-verification
+
+| Cambio | Verificación | Resultado |
+| :--- | :--- | :--- |
+| Auditoría HMAC v3 + key rotation + checkpoints | `tests/security/test_audit_hmac.py` (6) | PASS; v1/v2 compatibles, manipulación y clave desconocida detectadas |
+| Outbox leases/retries/DLQ + consumidor idempotente | `tests/integration/test_outbox.py` (10) | PASS; rollback atómico, dedupe, reclaim, DLQ |
+| SSE tenant-scoped + Last-Event-ID | `tests/integration/test_sse.py` (5) | PASS; sin filas cross-tenant |
+| Idempotency-Key | `tests/integration/test_idempotency.py` (7) | PASS; replay, conflicto payload/path, clave inválida |
+| Setup/invitaciones | `test_setup.py`, `test_invitations.py` | PASS; 409 tras setup, single-use, TTL, password proof |
+| Plantilla K8s | `scripts/validate_deploy.py` + CI | PASS renderizado; FAIL sin renderizar |
+
+**VULN-014:** el tramo SHA-256 sin clave queda resuelto para registros nuevos.
+Residual aceptado: quien posea la clave HMAC y PostgreSQL puede forjar; los
+checkpoints solo sobreviven si se exportan a WORM externo. Estado: `PARTIAL`.
+
+**No realizado:** pentest independiente nuevo, gitleaks en esta ola, E2E
+Playwright, runtime Docker/K8s y restore de backup.

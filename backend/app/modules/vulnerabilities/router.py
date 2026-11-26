@@ -4,12 +4,13 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
+from fastapi import APIRouter, Depends, Header, Query, Response
 from sqlalchemy import case, func, or_, select
 
 from app.core.db import utcnow
 from app.core.deps import RequestContext, require_permission
 from app.core.errors import PolicyDenied
+from app.core.idempotency import execute as execute_idempotent
 from app.core.schemas import Page, paginate
 from app.models.assets import Vulnerability
 from app.modules.vulnerabilities import service
@@ -91,22 +92,38 @@ def list_vulnerabilities(
 
 @router.post("/import/cve", response_model=CVEImportResult, summary="Upsert CVE catalogue and create asset findings")
 def import_cve(
-    payload: CVEImportRequest, ctx: RequestContext = Depends(require_permission("vuln:import"))
+    payload: CVEImportRequest,
+    response: Response,
+    ctx: RequestContext = Depends(require_permission("vuln:import")),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> CVEImportResult:
-    result = service.import_cve(ctx.db, ctx.org.id, payload)
-    ctx.audit(
-        action="vuln.import.cve",
-        resource_type="cve_catalog",
-        payload={
-            "catalog_created": result.catalog_created,
-            "catalog_updated": result.catalog_updated,
-            "vulnerabilities_created": result.vulnerabilities_created,
-            "vulnerabilities_updated": result.vulnerabilities_updated,
-            "errors": len(result.errors),
-        },
+    def run() -> CVEImportResult:
+        result = service.import_cve(ctx.db, ctx.org.id, payload)
+        ctx.audit(
+            action="vuln.import.cve",
+            resource_type="cve_catalog",
+            payload={
+                "catalog_created": result.catalog_created,
+                "catalog_updated": result.catalog_updated,
+                "vulnerabilities_created": result.vulnerabilities_created,
+                "vulnerabilities_updated": result.vulnerabilities_updated,
+                "errors": len(result.errors),
+            },
+        )
+        ctx.db.commit()
+        return result
+
+    body, replayed = execute_idempotent(
+        ctx,
+        idempotency_key,
+        method="POST",
+        path="/api/v1/vulnerabilities/import/cve",
+        payload=payload,
+        fn=run,
     )
-    ctx.db.commit()
-    return result
+    if replayed:
+        response.headers["Idempotent-Replayed"] = "true"
+    return body  # type: ignore[return-value]
 
 
 @router.post("/import/kev", response_model=KEVImportResult, summary="Apply CISA KEV entries")

@@ -11,14 +11,14 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import append_audit
 from app.core.config import settings
-from app.core.crypto import constant_time_equals, token_hash, verify_password
+from app.core.crypto import constant_time_equals, hash_password, token_hash, verify_password
 from app.core.db import get_db, utcnow
 from app.core.deps import RequestContext, get_context, require_permission
-from app.core.errors import Forbidden, NotFound, Unauthorized, ValidationFailure
+from app.core.errors import AppError, Forbidden, NotFound, Unauthorized, ValidationFailure
 from app.core.rate_limit import enforce
 from app.core.rbac import ALL_PERMISSIONS, ROLE_PERMISSIONS, effective_permissions
-from app.core.schemas import PasswordPolicyError, validate_password_strength
-from app.models.core import ApiToken, BreakGlassGrant, Membership, Organization
+from app.core.schemas import COMMON_PASSWORDS, PasswordPolicyError, validate_password_strength
+from app.models.core import ApiToken, BreakGlassGrant, Invitation, Membership, Notification, Organization, User
 from app.models.core import Session as AuthSession
 from app.modules.auth import service
 from app.modules.auth.schemas import (
@@ -28,6 +28,8 @@ from app.modules.auth.schemas import (
     BreakGlassRequest,
     BreakGlassResponse,
     ChangePasswordRequest,
+    InvitationAccepted,
+    InvitationAcceptRequest,
     LoginRequest,
     MfaActivateRequest,
     MfaDisableRequest,
@@ -35,6 +37,7 @@ from app.modules.auth.schemas import (
     MfaEnrollRequest,
     MfaRequiredResponse,
     MfaVerifyRequest,
+    PasswordPolicyOut,
     PermissionsCatalogue,
     RecoveryCodesRequest,
     RecoveryLoginRequest,
@@ -82,6 +85,135 @@ def _set_session_cookies(response: Response, raw_token: str, session: AuthSessio
 def _clear_session_cookies(response: Response) -> None:
     response.delete_cookie(settings.cookie_name, path="/", domain=settings.cookie_domain or None)
     response.delete_cookie(settings.csrf_cookie_name, path="/", domain=settings.cookie_domain or None)
+
+
+def _client_ip(request: Request) -> str:
+    return (request.client.host if request.client else "unknown")[:64]
+
+
+@router.get("/password-policy", response_model=PasswordPolicyOut, summary="Public password and session policy")
+def password_policy() -> PasswordPolicyOut:
+    """Expose the same rules the server enforces, so clients can pre-validate.
+
+    No account data is returned; this endpoint is intentionally unauthenticated
+    (the login form needs it before a session exists).
+    """
+    return PasswordPolicyOut(
+        min_length=12,
+        max_length=128,
+        required_classes=3,
+        classes=["lowercase", "uppercase", "digits", "symbols"],
+        denylist_entries=len(COMMON_PASSWORDS),
+        mfa_recovery_codes=10,
+        session_idle_minutes=settings.session_idle_minutes,
+        session_ttl_minutes=settings.session_ttl_minutes,
+    )
+
+
+@router.post(
+    "/invitations/accept", response_model=InvitationAccepted, summary="Accept a one-time organization invitation"
+)
+def accept_invitation(
+    payload: InvitationAcceptRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> InvitationAccepted:
+    enforce(f"invite:ip:{_client_ip(request)}", 10, 3600)
+    normalized = str(payload.token).strip()
+    invitation = db.execute(
+        select(Invitation).where(Invitation.token_hash == token_hash(normalized)).with_for_update()
+    ).scalar_one_or_none()
+    if invitation is None:
+        raise NotFound("Invitation")
+    if invitation.status == "consumed":
+        raise AppError("invite_consumed", "Invitation has already been used", 410)
+    if invitation.status == "revoked":
+        raise AppError("invite_revoked", "Invitation was revoked", 410)
+    if invitation.status != "pending" or invitation.expires_at <= utcnow():
+        invitation.status = "expired"
+        db.commit()
+        raise AppError("invite_expired", "Invitation has expired", 410)
+
+    org = db.get(Organization, invitation.org_id)
+    if org is None or org.deleted_at is not None:
+        raise NotFound("Organization")
+    user = db.execute(select(User).where(User.email == invitation.email)).scalar_one_or_none()
+    already_member = False
+    if user is None:
+        try:
+            validate_password_strength(payload.password, email=invitation.email)
+        except PasswordPolicyError as exc:
+            raise ValidationFailure([{"field": "password", "message": "; ".join(exc.violations)}]) from exc
+        user = User(
+            email=invitation.email,
+            full_name=(payload.full_name or invitation.email.split("@", 1)[0])[:200],
+            password_hash=hash_password(payload.password),
+            status="active",
+        )
+        db.add(user)
+        db.flush()
+    else:
+        if not verify_password(payload.password, user.password_hash):
+            raise Unauthorized("Invalid credentials for the invited account")
+        if user.status != "active":
+            raise Forbidden("The invited account is not active")
+
+    membership = db.execute(
+        select(Membership).where(Membership.org_id == org.id, Membership.user_id == user.id)
+    ).scalar_one_or_none()
+    if membership is not None and membership.status == "active":
+        already_member = True
+    elif membership is not None:
+        membership.status = "active"
+        membership.role = invitation.role
+    else:
+        db.add(
+            Membership(
+                org_id=org.id,
+                user_id=user.id,
+                role=invitation.role,
+                status="active",
+                invited_by=invitation.invited_by,
+            )
+        )
+
+    invitation.status = "consumed"
+    invitation.consumed_at = utcnow()
+    if invitation.invited_by:
+        db.add(
+            Notification(
+                org_id=org.id,
+                user_id=invitation.invited_by,
+                kind="invitation",
+                title=f"Invitation accepted by {user.email}"[:240],
+                body=f"Role {invitation.role} in {org.name}",
+                resource_type="user",
+                resource_id=str(user.id),
+            )
+        )
+    append_audit(
+        db,
+        org_id=org.id,
+        action="organization.invitation.accept",
+        resource_type="membership",
+        resource_id=str(user.id),
+        actor_type="user",
+        actor_id=str(user.id),
+        actor_email=user.email,
+        payload={"role": invitation.role, "already_member": already_member},
+        request_id=getattr(request.state, "request_id", None),
+        ip_address=_client_ip(request),
+        user_agent=(request.headers.get("user-agent") or "")[:400],
+    )
+    db.commit()
+    return InvitationAccepted(
+        user_id=user.id,
+        email=user.email,
+        organization_id=org.id,
+        organization_slug=org.slug,
+        role=invitation.role,
+        already_member=already_member,
+    )
 
 
 @router.post(

@@ -453,3 +453,10 @@ def mark_notification_read(
     item.read_at = utcnow()
     ctx.db.commit()
     return {"id": str(item.id), "read_at": item.read_at}
+
+
+@router.get("/outbox/stats", summary="Tenant outbox backlog and dead-letter counters")
+def outbox_statistics(ctx: RequestContext = Depends(require_permission("org:read"))) -> dict[str, Any]:
+    from app.services.outbox import outbox_stats
+
+    return outbox_stats(ctx.db, org_id=ctx.org.id)

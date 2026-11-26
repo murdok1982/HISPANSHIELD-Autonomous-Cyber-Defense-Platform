@@ -17,6 +17,10 @@ os.environ.setdefault("HS_COOKIE_SECURE", "false")
 os.environ.setdefault("HS_ALLOWED_ORIGINS", "http://testserver")
 os.environ.setdefault("HS_SEED_DEMO", "false")
 os.environ.setdefault("HS_FRONTEND_DIST", "/nonexistent-dist")
+# Audit HMAC is production behaviour; the shared suite asserts the v1/v2
+# compatibility paths. HMAC-specific tests opt in with monkeypatch.
+os.environ.setdefault("HS_AUDIT_HMAC_KEY", "")
+os.environ.setdefault("HS_AUDIT_HMAC_PREVIOUS_KEYS", "")
 
 import pytest  # noqa: E402
 from alembic import command  # noqa: E402

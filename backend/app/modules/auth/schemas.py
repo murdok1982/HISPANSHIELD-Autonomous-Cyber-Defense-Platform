@@ -32,6 +32,17 @@ class ChangePasswordRequest(StrictModel):
     new_password: str = Field(min_length=12, max_length=128)
 
 
+class PasswordPolicyOut(StrictModel):
+    min_length: int
+    max_length: int
+    required_classes: int
+    classes: list[str]
+    denylist_entries: int
+    mfa_recovery_codes: int
+    session_idle_minutes: int
+    session_ttl_minutes: int
+
+
 class MfaEnrollRequest(StrictModel):
     password: str = Field(min_length=1, max_length=128)
 
@@ -53,6 +64,21 @@ class RecoveryLoginRequest(StrictModel):
 
 class RecoveryCodesRequest(StrictModel):
     password: str = Field(min_length=1, max_length=128)
+
+
+class InvitationAcceptRequest(StrictModel):
+    token: str = Field(min_length=20, max_length=500)
+    password: str = Field(min_length=12, max_length=128)
+    full_name: str | None = Field(default=None, min_length=2, max_length=200)
+
+
+class InvitationAccepted(StrictModel):
+    user_id: UUID
+    email: str
+    organization_id: UUID
+    organization_slug: str
+    role: str
+    already_member: bool = False
 
 
 class OrgSummary(ORMModel):

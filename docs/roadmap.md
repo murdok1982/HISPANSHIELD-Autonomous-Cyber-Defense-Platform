@@ -10,7 +10,8 @@
 
 | Release | Contenido | Criterio de salida | Estado |
 | :--- | :--- | :--- | :--- |
-| `1.0` MVP operativo | 12 dominios, 23 pantallas, autonomía A0-A4, cumplimiento UE, air-gap | Exit Gate completo | `SPECIFIED` |
+| `0.1.2` RC | 12 dominios, 23 pantallas de navegación, autonomía A0-A3 (A4 reservado), cumplimiento UE, outbox/SSE/auditoría HMAC | Gate de release con E2E/seguridad/despliegue | `RELEASE_CANDIDATE` |
+| `1.0` MVP operativo | 12 dominios, 23 pantallas, autonomía A0-A3, cumplimiento UE, air-gap verificado | Exit Gate completo | `SPECIFIED` |
 | `1.1` Endurecimiento | Mejoras de rendimiento, más conectores, OIDC experimental | 1.0 en producción ≥3 meses | `PLANNED` |
 | `1.2` Escala | pgvector/Qdrant opcional, HA documentada, más frameworks | Demanda de clientes | `PLANNED` |
 | `2.0` Federación | OIDC/SAML, multi-instancia, analítica avanzada | Requisito de mercado | `EXPLORATION` |

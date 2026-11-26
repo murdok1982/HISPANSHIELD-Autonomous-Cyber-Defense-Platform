@@ -76,6 +76,14 @@ const SECURE_COPY: Record<Lang, Record<string, string>> = {
     "secure.organization": "Organización",
     "secure.permissions": "Permisos",
     "secure.sessionExpires": "La sesión expira",
+    "secure.sessionsTitle": "Sesiones activas",
+    "secure.sessionsSub": "Dispositivos con sesión válida. Revoca cualquiera que no reconozcas.",
+    "secure.current": "Actual",
+    "secure.revoked": "Sesión revocada",
+    "secure.noSessions": "No hay otras sesiones activas",
+    "secure.device": "Dispositivo",
+    "secure.lastSeen": "Último uso",
+    "secure.sessionIp": "IP",
     "secure.mfa": "Verificación en dos pasos",
     "secure.locale": "Idioma y zona horaria",
     "secure.apiTokens": "Tokens de API",
@@ -159,6 +167,14 @@ const SECURE_COPY: Record<Lang, Record<string, string>> = {
     "secure.organization": "Organization",
     "secure.permissions": "Permissions",
     "secure.sessionExpires": "Session expires",
+    "secure.sessionsTitle": "Active sessions",
+    "secure.sessionsSub": "Devices with a valid session. Revoke anything you do not recognise.",
+    "secure.current": "Current",
+    "secure.revoked": "Session revoked",
+    "secure.noSessions": "No other active sessions",
+    "secure.device": "Device",
+    "secure.lastSeen": "Last seen",
+    "secure.sessionIp": "IP",
     "secure.mfa": "Two-step verification",
     "secure.locale": "Locale and timezone",
     "secure.apiTokens": "API tokens",
@@ -764,6 +780,104 @@ export function SessionSummary() {
   );
 }
 
+/* --------------------------------------------------------- active sessions */
+
+interface ActiveSession {
+  id: string;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  ip_address: string | null;
+  user_agent: string | null;
+  mfa_verified: boolean;
+  is_current: boolean;
+}
+
+export function ActiveSessionsPanel() {
+  const { lang } = useI18n();
+  const t = useGovernCopy(SECURE_COPY);
+  const toast = useToast();
+  const queryClient = useQueryClient();
+  const [revoking, setRevoking] = useState<ActiveSession | null>(null);
+
+  const sessionsQuery = useQuery({
+    queryKey: ["auth", "sessions"],
+    queryFn: () => api.get<ActiveSession[]>("/auth/sessions"),
+  });
+
+  const revoke = useMutation({
+    mutationFn: (id: string) => api.delete<{ message?: string }>(`/auth/sessions/${id}`),
+    onSuccess: () => {
+      toast.push(t("secure.revoked"), "success");
+      setRevoking(null);
+      void queryClient.invalidateQueries({ queryKey: ["auth", "sessions"] });
+    },
+    onError: (error) => toast.push(errorMessage(error), "error"),
+  });
+
+  const columns: Column<ActiveSession>[] = [
+    {
+      key: "device",
+      header: t("secure.device"),
+      render: (row) => (
+        <div className="stack" style={{ gap: 2 }}>
+          <span style={{ fontSize: 12.5 }}>{row.user_agent?.slice(0, 70) || "—"}</span>
+          <span className="dim mono" style={{ fontSize: 11 }}>{row.ip_address || "—"}</span>
+        </div>
+      ),
+    },
+    {
+      key: "last_seen",
+      header: t("secure.lastSeen"),
+      width: "130px",
+      render: (row) => <span className="mono" style={{ fontSize: 11 }}>{relativeTime(row.last_seen_at, lang)}</span>,
+    },
+    {
+      key: "expires",
+      header: t("secure.expires"),
+      width: "150px",
+      render: (row) => <span className="mono" style={{ fontSize: 11 }}>{formatDateTime(row.expires_at, lang)}</span>,
+    },
+    {
+      key: "state",
+      header: "",
+      width: "150px",
+      render: (row) =>
+        row.is_current ? (
+          <Badge tone="success">{t("secure.current")}</Badge>
+        ) : (
+          <Button size="sm" variant="ghost" icon={Trash2} onClick={() => setRevoking(row)}>
+            {t("secure.revoke")}
+          </Button>
+        ),
+    },
+  ];
+
+  return (
+    <Card title={t("secure.sessionsTitle")} subtitle={t("secure.sessionsSub")}>
+      <DataTable
+        columns={columns}
+        rows={sessionsQuery.data}
+        rowKey={(row) => row.id}
+        loading={sessionsQuery.isLoading}
+        error={sessionsQuery.isError ? <ErrorBanner message={errorMessage(sessionsQuery.error)} onRetry={() => void sessionsQuery.refetch()} /> : undefined}
+        empty={<EmptyState title={t("secure.noSessions")} />}
+      />
+      <ConfirmDialog
+        open={revoking !== null}
+        onClose={() => setRevoking(null)}
+        onConfirm={() => revoking && revoke.mutate(revoking.id)}
+        title={t("secure.revoke")}
+        description={revoking?.user_agent || revoking?.ip_address || ""}
+        confirmLabel={t("secure.revoke")}
+        cancelLabel={lang === "es" ? "Cancelar" : "Cancel"}
+        busy={revoke.isPending}
+        tone="danger"
+      />
+    </Card>
+  );
+}
+
 /* ------------------------------------------------------------- API tokens */
 
 interface TokenFormState {
@@ -1117,6 +1231,7 @@ export function SecurityCards() {
       <Card title={t("secure.password")} subtitle={t("secure.passwordSub")}>
         <ChangePasswordPanel />
       </Card>
+      <ActiveSessionsPanel />
     </div>
   );
 }

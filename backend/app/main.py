@@ -27,7 +27,7 @@ from app.core.logging import (
     get_logger,
 )
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 logger = get_logger("hispanshield")
 
 REQUESTS = Counter("hs_http_requests_total", "HTTP requests", ["method", "path", "status"])
@@ -178,6 +178,12 @@ def create_app() -> FastAPI:
                 queue_depth = db.execute(
                     text("SELECT count(*) FROM playbook_executions WHERE status IN ('pending', 'running', 'waiting')")
                 ).scalar_one()
+                outbox_pending = db.execute(
+                    text("SELECT count(*) FROM outbox_events WHERE status IN ('pending', 'processing')")
+                ).scalar_one()
+                outbox_dead = db.execute(
+                    text("SELECT count(*) FROM outbox_events WHERE status = 'dead_letter'")
+                ).scalar_one()
             head = _migration_head()
             up_to_date = bool(head) and current == head
             body = {
@@ -186,6 +192,7 @@ def create_app() -> FastAPI:
                 "database": "ok",
                 "migrations": {"current": current, "head": head, "up_to_date": up_to_date},
                 "queue_depth": int(queue_depth or 0),
+                "outbox": {"pending": int(outbox_pending or 0), "dead_letter": int(outbox_dead or 0)},
             }
             return JSONResponse(body, status_code=200 if up_to_date else 503)
         except Exception as exc:  # pragma: no cover - exercised only during outages

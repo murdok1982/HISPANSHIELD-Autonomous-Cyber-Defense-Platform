@@ -194,6 +194,8 @@ export interface PageMeta {
   page_size: number;
   pages: number;
   has_next: boolean;
+  next_cursor?: string | null;
+  total_estimate?: number | null;
 }
 
 export interface Page<T> {

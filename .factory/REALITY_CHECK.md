@@ -13,18 +13,18 @@ RC1 is a **real, runnable platform** (FastAPI + PostgreSQL + React SPA + edge ag
 
 | # | Claim | Reality at baseline | Evidence | Status in this wave |
 | --- | --- | --- | --- | --- |
-| R-01 | Transactional outbox + `jobs` + `LISTEN/NOTIFY` | Does not exist; synchronous processing + durable rows | `grep -ri outbox backend/app` = 0; `ARCHITECTURE.md:362-381` | **OPEN** (documented as roadmap, not claimed in README anymore) |
+| R-01 | Transactional outbox + `jobs` + `LISTEN/NOTIFY` | Outbox + leases/retries/DLQ + notification consumer now exist; LISTEN/NOTIFY and separate jobs table do not | `app/services/outbox.py`, `0012_outbox.py`, `test_outbox.py` | **PARTIAL** (`TASK-008` in progress) |
 | R-02 | Workers deployed (`hispanshield-worker-*`) | Compose/k8s only started the API; SOAR/sync/syslog were manual scripts | `deploy/compose/docker-compose.yml`, `deploy/k8s/manifests.yaml` | **FIXED** — `app/workers/runtime.py`, compose `worker`, k8s `hispanshield-worker` + NetworkPolicy + test |
-| R-03 | SSE `/events/stream` | No SSE endpoint/client; polling only | `grep EventSource frontend/src` = 0 | **OPEN** (P2; see `ARCHITECTURE_GAP_ANALYSIS.md`) |
-| R-04 | Recovery codes MFA | Not implemented despite `SPEC.md` and compatibility matrix | `grep recovery_code backend/app` = 0 | **OPEN** (planned SEC-FIX) |
+| R-03 | SSE `/events/stream` | SSE endpoint + EventSource hook implemented, with polling fallback | `app/modules/events/stream.py`, `useEventStream.ts`, `test_sse.py` | **FIXED** |
+| R-04 | Recovery codes MFA | Implemented (Argon2id hashes, single use, regeneration) | `0009_recovery_codes.py`, `test_http_hardening.py` | **FIXED** |
 | R-05 | Fresh clone can seed compliance | `backend/app/data/**` ignored by `.gitignore` rule `data/`; clean worktree raises "Built-in framework directory is missing" | `git check-ignore -v backend/app/data/frameworks/nis2.yaml`; reproduced in `/tmp/opencode/hs-baseline` | **FIXED** — ignore rules narrowed, reference data tracked |
-| R-06 | Cursor pagination / `Idempotency-Key` / API error shape as specced | Offset pagination, no idempotency key, `details` vs `fields` | `core/schemas.py`, `main.py:80-90` | **OPEN** (contract decision required; not silently renamed) |
+| R-06 | Cursor pagination / `Idempotency-Key` / API error shape as specced | Additive cursor + Idempotency-Key implemented; error envelope remains `details` (documented contract) | `test_cursor_pagination.py`, `test_idempotency.py` | **PARTIAL** (error envelope decision documented) |
 | R-07 | Cloud/CSPM module | No `/cloud/*` module; only derived posture | `modules/posture/router.py` | **OPEN** (P2, stated as not implemented) |
 | R-08 | Nessus/OpenVAS/Trivy importers | Only JSON CVE/KEV/EPSS import | `modules/vulnerabilities/router.py` | **OPEN** (P2) |
 | R-09 | Asset soft delete + restore | Physical delete, no `deleted_at` | `modules/assets/router.py` | **OPEN** (P2) |
 | R-10 | `patch.apply` / `configuration.restore` actions | Catalogue entries without adapter | `services/actions.py` + adapters | **OPEN** (actions now fail closed; no fake execution) |
-| R-11 | OpenAPI snapshot 283 ops | 284 ops / 215 paths | `docs/openapi.json` vs AST | **DOC FIX PENDING** |
-| R-12 | 515 tests / 109 tasks | 519 tests; 106 `[x]` + 44 `[!]` | `implementation-status.md` vs `TASKS.md` | **DOC FIX PENDING** (this wave re-measures) |
+| R-11 | OpenAPI snapshot 283 ops | 305 ops / 233 paths | `scripts/factory_metrics.py` | **FIXED** (snapshot must be regenerated) |
+| R-12 | 650 tests / 138 tasks | 650 collected; 138 `[x]` + 37 `[!]` + 1 `[~]` | `.factory/EVIDENCE/METRICS.json` | **FIXED** |
 
 ## 3. Security claims that were not true at baseline
 

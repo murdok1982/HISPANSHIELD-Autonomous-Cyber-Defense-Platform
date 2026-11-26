@@ -50,6 +50,7 @@ import {
   useDocumentVisible,
 } from "../components/features/detect/shared";
 import type { EventStats, IngestSource, SecurityEvent, SecurityEventDetail } from "../components/features/detect/types";
+import { useEventStream } from "../components/features/detect/useEventStream";
 
 const COPY = {
   es: {
@@ -57,6 +58,7 @@ const COPY = {
     "monitoring.title": "Monitorización en vivo",
     "monitoring.subtitle": "Flujo normalizado OCSF con filtros operativos, correlación ATT&CK y detalle forense del evento.",
     "monitoring.live": "EN VIVO · 10 s",
+    "monitoring.liveSse": "EN VIVO · SSE",
     "monitoring.paused": "EN PAUSA",
     "monitoring.manual": "MANUAL",
     "monitoring.pause": "Pausar",
@@ -136,6 +138,7 @@ const COPY = {
     "monitoring.title": "Live monitoring",
     "monitoring.subtitle": "Normalized OCSF stream with operational filters, ATT&CK correlation and forensic event detail.",
     "monitoring.live": "LIVE · 10 s",
+    "monitoring.liveSse": "LIVE · SSE",
     "monitoring.paused": "PAUSED",
     "monitoring.manual": "MANUAL",
     "monitoring.pause": "Pause",
@@ -243,6 +246,8 @@ export function MonitoringPage() {
 
   const documentVisible = useDocumentVisible();
   const polling = autoRefresh && !paused && documentVisible;
+  const live = useEventStream({ enabled: polling });
+  const streamLive = polling && live.status === "open";
 
   const sourcesQuery = useQuery({
     queryKey: ["ingest-sources", "options"],
@@ -451,8 +456,27 @@ export function MonitoringPage() {
         actions={
           <>
             <span className="live-dot" style={paused || !autoRefresh ? { color: "var(--warning)" } : undefined}>
-              {paused ? c("monitoring.paused") : autoRefresh ? c("monitoring.live") : c("monitoring.manual")}
+              {paused
+                ? c("monitoring.paused")
+                : autoRefresh
+                  ? streamLive
+                    ? c("monitoring.liveSse")
+                    : c("monitoring.live")
+                  : c("monitoring.manual")}
             </span>
+            {live.received > 0 ? (
+              <Button
+                variant="default"
+                onClick={() => {
+                  live.reset();
+                  void eventsQuery.refetch();
+                  void statsQuery.refetch();
+                }}
+                data-testid="monitoring-new-events"
+              >
+                {lang === "es" ? `${live.received} nuevos` : `${live.received} new`}
+              </Button>
+            ) : null}
             <Button icon={paused ? Play : Pause} onClick={() => setPaused((value) => !value)} data-testid="toggle-pause">
               {paused ? c("monitoring.resume") : c("monitoring.pause")}
             </Button>

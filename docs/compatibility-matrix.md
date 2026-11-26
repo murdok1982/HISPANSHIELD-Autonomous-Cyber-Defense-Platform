@@ -1,7 +1,7 @@
 # MATRIZ DE COMPATIBILIDAD (RESUMEN DE PRODUCTO)
 
 - **Documento:** `docs/compatibility-matrix.md`
-- **Estado:** `APPROVED` v1.0
+- **Estado:** `APPROVED` v1.1 (reconciliado con código; las filas ✅ implican prueba o implementación real, no solo una interfaz)
 - **Detalle técnico completo:** `specs/integrations/compatibility-matrix.md`
 - **Regla:** `unsupported` es una exclusión declarada; la plataforma responde con error explícito, nunca con fallback silencioso.
 
@@ -19,8 +19,8 @@
 | Python | 3.12.x | 3.12.16 verificado |
 | PostgreSQL | 16, 17, 18 | 18.6 verificado |
 | Node (build) | 20.11 LTS, 22.x | 22.14 verificado |
-| Kubernetes | 1.28+ | Manifiestos incluidos |
-| Docker Engine | 24+ | Manifiestos incluidos; no validado en este entorno |
+| Kubernetes | 1.28+ | Plantilla renderizable + validación estática; sin ejecución en clúster en este entorno |
+| Docker Engine | 24+ | Compose incluido; build/runtime **no ejecutado** en este entorno |
 
 ---
 
@@ -28,9 +28,9 @@
 
 | Navegador | Versión mínima | Estado |
 | :--- | :--- | :--- |
-| Chrome / Edge (Chromium) | 120 | ✅ |
-| Firefox | 115 ESR | ✅ |
-| Safari / WebKit | 17 | ✅ |
+| Chrome / Edge (Chromium) | 120 | ✅ (suite E2E existe; no re-ejecutada en esta ola) |
+| Firefox | 115 ESR | ⚠️ No verificado (proyecto Playwright definido, no ejecutado) |
+| Safari / WebKit | 17 | ⚠️ No verificado (proyecto Playwright definido, no ejecutado) |
 | IE 11 | — | ❌ |
 
 **Nota de accesibilidad:** el diseñador de playbooks tiene edición sin arrastrar para teclado y navegadores restrictivos.
@@ -42,9 +42,9 @@
 | Modo | Estado | Limitación |
 | :--- | :--- | :--- |
 | Single-node systemd | ✅ | Sin HA |
-| Docker Compose | ✅ (manifiesto) | No ejecutado en este entorno |
-| Kubernetes on-prem | ✅ (manifiesto) | Sin operador propio |
-| Air-gapped | ✅ | Requiere bundle offline |
+| Docker Compose | ⚠️ Manifiesto | Build/runtime no ejecutado en este entorno |
+| Kubernetes on-prem | ⚠️ Plantilla | `render.sh` + `validate_deploy.py`; sin clúster real |
+| Air-gapped | ❌ No verificado | Requiere bundle offline y prueba `--no-index` |
 | Multi-región activo/activo | ❌ | Fuera de alcance 1.0 |
 
 ---
@@ -57,8 +57,8 @@
 | Aplicaciones | Webhook JSON/NDJSON firmado | ✅ |
 | Sedes remotas | Edge gateway mTLS | ✅ |
 | OCSF nativo | HTTPS | ✅ |
-| CEF / LEEF | Syslog | ⚠️ Experimental |
-| Splunk HEC | HTTPS | ⚠️ Experimental |
+| CEF / LEEF | Syslog | ✅ (parser y tests) |
+| Splunk HEC | HTTPS | ❌ No implementado (solo conector genérico) |
 | Kafka | — | ❌ |
 | SNMP traps / NetFlow | — | ❌ (fase 2) |
 | gRPC streaming | — | ❌ (fase 2) |
@@ -80,10 +80,10 @@
 
 | Proveedor | Estado | Credencial |
 | :--- | :--- | :--- |
-| AWS | ✅ | Rol cross-account read-only |
-| Azure | ✅ | Service Principal |
-| GCP | ✅ | Service Account |
-| OpenStack | ⚠️ Experimental | API parcial |
+| AWS | ❌ | Sin cuentas cloud/CSPM; `/cloud` deriva postura del inventario |
+| Azure | ❌ | Sin cuentas cloud/CSPM |
+| GCP | ❌ | Sin cuentas cloud/CSPM |
+| OpenStack | ❌ | Sin cuentas cloud/CSPM |
 | vSphere | ❌ | Fase 2 |
 
 ---
@@ -94,9 +94,9 @@
 | :--- | :--- | :--- |
 | Ollama (local) | ✅ | Recomendado air-gap |
 | vLLM (local, OpenAI-compatible) | ✅ | GPU |
-| llama.cpp server | ⚠️ Experimental | — |
-| OpenAI / Azure OpenAI | ✅ (opt-in) | Requiere habilitación y región |
-| Anthropic | ⚠️ Experimental | Adaptador específico |
+| llama.cpp server | ✅ | Endpoint OpenAI-compatible |
+| OpenAI-compatible externo | ✅ (opt-in) | Requiere habilitación, HTTPS y región EU |
+| Anthropic | ❌ | Sin adaptador específico |
 | Sin IA | ✅ | Producto funcional; estado `UNAVAILABLE` |
 
 ---
@@ -106,10 +106,11 @@
 | Mecanismo | Estado |
 | :--- | :--- |
 | Password local + Argon2id | ✅ |
-| TOTP + recovery codes | ✅ |
+| TOTP + recovery codes | ✅ (single-use, Argon2id, rotación) |
 | PAT con scopes | ✅ |
-| OIDC | ⚠️ Experimental (interfaz) |
-| SAML2 / LDAP / SCIM | ❌ / ❌ / ⚠️ |
+| Invitaciones single-use (72 h) | ✅ |
+| OIDC | ❌ (el adaptador Keycloak es de conector, no login SSO) |
+| SAML2 / LDAP / SCIM | ❌ / ❌ / ❌ |
 
 ---
 
@@ -119,12 +120,12 @@
 | :--- | :--- | :--- | :--- |
 | CSV | Activos/observaciones | ✅ | 10 MB |
 | JSON | Import/export | ✅ | 10 MB |
-| Nessus `.nessus` | Vulnerabilidades | ✅ | 50 MB |
-| OpenVAS XML | Vulnerabilidades | ✅ | 50 MB |
-| Trivy JSON | Vulnerabilidades | ✅ | 50 MB |
+| Nessus `.nessus` | Vulnerabilidades | ❌ No implementado | — |
+| OpenVAS XML | Vulnerabilidades | ❌ No implementado | — |
+| Trivy JSON | Vulnerabilidades | ❌ No implementado | — |
 | STIX 2.1 | CTI | ✅ | 50 MB |
 | PDF / PNG / JPEG | Evidencias | ✅ | 50 MB |
-| ZIP | Export forense (salida) | ✅ | — |
+| ZIP | Export forense (salida) | ❌ No implementado (export JSON/CSV) | — |
 | PCAP | — | ❌ | Sin analizador |
 
 ---
@@ -133,8 +134,8 @@
 
 | Versión | Soporte completo | Parches de seguridad | Fin de soporte |
 | :--- | :--- | :--- | :--- |
-| 1.0.x | 12 meses | 36 meses | Publicado por release |
-| 1.1.x | 12 meses | 36 meses | — |
+| 0.1.x | Sin compromiso GA | 36 meses tras GA | Release candidate |
+| 1.0.x | 12 meses | 36 meses | No publicado |
 | N-2 | Migración asistida | — | — |
 
 **CRA:** la fecha de fin de soporte de cada release se publica en `SECURITY.md` y en las notas de release.

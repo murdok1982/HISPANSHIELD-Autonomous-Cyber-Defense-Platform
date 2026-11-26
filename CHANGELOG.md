@@ -4,7 +4,56 @@ All notable changes to HISPANSHIELD are documented here. The format follows
 Keep a Changelog and the project uses Semantic Versioning once a stable API is
 declared.
 
-## [Unreleased] — 2026-11-26 — Security remediation wave 2
+## [0.1.2] — 2026-11-26 — Evolution wave 1: evidence, durability and contract
+
+### Added
+
+- **Transactional outbox** (`outbox_events`) with atomic enqueue, `SKIP LOCKED`
+  leases, exponential backoff, dead-letter state and a tenant-scoped
+  notification consumer; wired to alert creation, incident creation and SOAR
+  terminal states. Worker role `outbox` included in `--role all`.
+- **SSE** `GET /api/v1/events/stream` with `Last-Event-ID`, heartbeat, bounded
+  batches and tenant filtering; frontend `useEventStream` hook with polling
+  fallback and a "N new events" refresh affordance.
+- **Audit integrity v3**: HMAC-SHA256 with key id and rotation, signed
+  checkpoints, verification of v1/v2/v3 chains. Production now requires
+  `HS_AUDIT_REQUIRE_HMAC=true` and a key held outside PostgreSQL.
+- **Idempotency-Key** ledger (tenant+actor scoped, payload/path binding,
+  replay, stale takeover, 24 h TTL) on incident creation, asset import and CVE
+  import.
+- **Cursor pagination** (`meta.next_cursor`, additive to offset) for assets and
+  events.
+- **Setup and invitations**: public first-run `POST /setup` (A0 by default,
+  race-free, 409 after first org) and single-use 72 h invitations with role
+  binding, revocation and password proof for existing accounts.
+- **Password policy endpoint** `GET /auth/password-policy`; idle session
+  default aligned to 30 min.
+- **Active sessions UI** with per-session revocation.
+- **Kubernetes render/validate gate**: template, required values, CI job and
+  `scripts/validate_deploy.py` that rejects placeholders, `:latest`, missing
+  security contexts and unrendered variables.
+- Recomputable metrics and AC traceability (`scripts/factory_metrics.py`,
+  `scripts/ac_traceability.py`).
+
+### Changed
+
+- `PageMeta` adds `next_cursor` and `total_estimate`; existing offset clients
+  keep working.
+- `/readyz` reports outbox pending/dead-letter counters.
+- README/compatibility matrix no longer advertise unimplemented adapters,
+  cloud CSPM, Nessus/OpenVAS/Trivy importers, OIDC/SAML or A4 actions.
+
+### Known limitations
+
+- Outbox `LISTEN/NOTIFY` and a separate `jobs` table remain open (`TASK-008`).
+- Cloud/CSPM, Nessus/OpenVAS/Trivy importers, legal hold, event partitions, A4
+  actions and durable agent runtime are not implemented.
+- Playwright E2E, pip-audit/bandit/gitleaks, Docker/K8s runtime and backup
+  restore were **not executed in this environment**; see
+  `docs/implementation-status.md`.
+- FTS GIN is not used by search queries; cursor p95 benchmarks are not run.
+
+## [0.1.1] — 2026-11-26 — Security remediation wave 2
 
 ### Security
 

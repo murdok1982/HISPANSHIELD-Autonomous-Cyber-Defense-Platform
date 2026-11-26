@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Header, Query, Response, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.core.db import utcnow
 from app.core.deps import RequestContext, require_permission
 from app.core.errors import Conflict, Forbidden, NotFound, ValidationFailure
+from app.core.idempotency import execute as execute_idempotent
 from app.core.schemas import Page, paginate
 from app.models.assets import Asset
 from app.models.events import Alert
@@ -180,37 +181,54 @@ def list_incidents(
 
 @router.post("", response_model=IncidentDetail, status_code=201, summary="Create an incident")
 def create_incident(
-    payload: IncidentCreate, ctx: RequestContext = Depends(require_permission("incident:write"))
+    payload: IncidentCreate,
+    response: Response,
+    ctx: RequestContext = Depends(require_permission("incident:write")),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> IncidentDetail:
-    severity = normalize_severity(payload.severity)
-    asset_ids = validate_asset_ids(ctx.db, ctx.org.id, payload.affected_asset_ids)
-    validate_assignee(ctx.db, ctx.org.id, payload.assignee_id, "assignee_id")
-    validate_assignee(ctx.db, ctx.org.id, payload.commander_id, "commander_id")
-    incident = create_incident_core(
-        ctx.db,
-        ctx.org,
-        title=payload.title,
-        severity=severity,
-        description=payload.description,
-        priority=payload.priority,
-        assignee_id=payload.assignee_id,
-        commander_id=payload.commander_id,
-        detected_at=payload.detected_at,
-        mitre=payload.mitre,
-        affected_asset_ids=asset_ids,
-        sla_due_at=payload.sla_due_at,
-        created_by=ctx.actor_id,
-        actor=ctx.actor_email or ctx.actor_id,
+    def run() -> IncidentDetail:
+        severity = normalize_severity(payload.severity)
+        asset_ids = validate_asset_ids(ctx.db, ctx.org.id, payload.affected_asset_ids)
+        validate_assignee(ctx.db, ctx.org.id, payload.assignee_id, "assignee_id")
+        validate_assignee(ctx.db, ctx.org.id, payload.commander_id, "commander_id")
+        incident = create_incident_core(
+            ctx.db,
+            ctx.org,
+            title=payload.title,
+            severity=severity,
+            description=payload.description,
+            priority=payload.priority,
+            assignee_id=payload.assignee_id,
+            commander_id=payload.commander_id,
+            detected_at=payload.detected_at,
+            mitre=payload.mitre,
+            affected_asset_ids=asset_ids,
+            sla_due_at=payload.sla_due_at,
+            created_by=ctx.actor_id,
+            actor=ctx.actor_email or ctx.actor_id,
+        )
+        ctx.audit(
+            action="incident.create",
+            resource_type="incident",
+            resource_id=str(incident.id),
+            payload={"ref": incident.ref, "severity": incident.severity, "title": incident.title},
+        )
+        ctx.db.commit()
+        ctx.db.refresh(incident)
+        return _incident_detail(ctx.db, incident)
+
+    body, replayed = execute_idempotent(
+        ctx,
+        idempotency_key,
+        method="POST",
+        path="/api/v1/incidents",
+        payload=payload,
+        fn=run,
+        replay_status=201,
     )
-    ctx.audit(
-        action="incident.create",
-        resource_type="incident",
-        resource_id=str(incident.id),
-        payload={"ref": incident.ref, "severity": incident.severity, "title": incident.title},
-    )
-    ctx.db.commit()
-    ctx.db.refresh(incident)
-    return _incident_detail(ctx.db, incident)
+    if replayed:
+        response.headers["Idempotent-Replayed"] = "true"
+    return body  # type: ignore[return-value]
 
 
 @router.get("/{incident_id}", response_model=IncidentDetail, summary="Read an incident with related records")

@@ -1,3 +1,8 @@
+# HISPANSHIELD Kubernetes manifest TEMPLATE.
+# This file is not deployable as-is: run deploy/k8s/render.sh with an
+# operator-owned values file, then validate the rendered output:
+#   ./deploy/k8s/render.sh values.production.env > rendered.yaml
+#   python3 scripts/validate_deploy.py rendered.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -16,7 +21,7 @@ data:
   HS_DEBUG: "false"
   HS_LOG_LEVEL: "INFO"
   HS_COOKIE_SECURE: "true"
-  HS_ALLOWED_ORIGINS: "https://shield.example.eu"
+  HS_ALLOWED_ORIGINS: "https://${HS_DOMAIN}"
   HS_FRONTEND_DIST: "/app/frontend/dist"
   HS_EVIDENCE_DIR: "/app/data/evidence"
   HS_RUN_MIGRATIONS: "false"
@@ -25,8 +30,11 @@ data:
   HS_RATE_LIMIT_PER_MINUTE: "240"
   HS_LOGIN_RATE_LIMIT_PER_MINUTE: "10"
   HS_CONNECTOR_ALLOW_PRIVATE_NETWORKS: "false"
+  HS_SESSION_IDLE_MINUTES: "30"
+  HS_AUDIT_REQUIRE_HMAC: "true"
+  HS_AUDIT_HMAC_KEY_ID: "k1"
   HS_SEED_DEMO: "false"
-  HS_PUBLIC_URL: "https://shield.example.eu"
+  HS_PUBLIC_URL: "https://${HS_DOMAIN}"
 ---
 apiVersion: v1
 kind: Secret
@@ -35,13 +43,17 @@ metadata:
   namespace: hispanshield
 type: Opaque
 stringData:
-  # REPLACE EVERY VALUE. Prefer External Secrets / Vault; never commit real keys.
-  HS_DATABASE_URL: "postgresql+psycopg://hispanshield:CHANGE_ME@postgres.example.internal:5432/hispanshield?sslmode=require"
-  HS_SECRET_KEY: "CHANGE_ME_64_BYTES_RANDOM"
-  HS_ENCRYPTION_KEY: "CHANGE_ME_FERNET_KEY"
-  HS_METRICS_TOKEN: "CHANGE_ME_METRICS_TOKEN"
-  HS_BOOTSTRAP_ADMIN_EMAIL: "admin@example.eu"
-  HS_BOOTSTRAP_ADMIN_PASSWORD: "CHANGE_ME_STRONG_PASSWORD"
+  # Values are injected by deploy/k8s/render.sh. Prefer External Secrets / Vault;
+  # never commit real keys or a rendered manifest produced with production keys.
+  HS_DATABASE_URL: "postgresql+psycopg://hispanshield:${HS_DB_PASSWORD}@${HS_DB_HOST}:5432/hispanshield?sslmode=require"
+  HS_SECRET_KEY: "${HS_SECRET_KEY}"
+  HS_ENCRYPTION_KEY: "${HS_ENCRYPTION_KEY}"
+  HS_AUDIT_HMAC_KEY: "${HS_AUDIT_HMAC_KEY}"
+  HS_SETUP_TOKEN: "${HS_SETUP_TOKEN}"
+  HS_AUDIT_HMAC_PREVIOUS_KEYS: "${HS_AUDIT_HMAC_PREVIOUS_KEYS}"
+  HS_METRICS_TOKEN: "${HS_METRICS_TOKEN}"
+  HS_BOOTSTRAP_ADMIN_EMAIL: "${HS_BOOTSTRAP_ADMIN_EMAIL}"
+  HS_BOOTSTRAP_ADMIN_PASSWORD: "${HS_BOOTSTRAP_ADMIN_PASSWORD}"
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -53,7 +65,7 @@ spec:
   resources:
     requests:
       storage: 50Gi
-  # storageClassName: encrypted-rwx
+  storageClassName: ${HS_STORAGE_CLASS}
 ---
 apiVersion: batch/v1
 kind: Job
@@ -76,7 +88,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: migrate
-          image: ghcr.io/example/hispanshield:0.1.0
+          image: ${HS_IMAGE}
           command: ["python", "-m", "alembic", "upgrade", "head"]
           workingDir: /app/backend
           envFrom:
@@ -123,7 +135,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: app
-          image: ghcr.io/example/hispanshield:0.1.0
+          image: ${HS_IMAGE}
           imagePullPolicy: IfNotPresent
           ports:
             - { name: http, containerPort: 8080 }
@@ -193,7 +205,7 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: worker
-          image: ghcr.io/example/hispanshield:0.1.0
+          image: ${HS_IMAGE}
           imagePullPolicy: IfNotPresent
           command: ["python", "-m", "app.workers.runtime", "--role", "all"]
           envFrom:
@@ -328,10 +340,10 @@ metadata:
 spec:
   ingressClassName: nginx
   tls:
-    - hosts: ["shield.example.eu"]
+    - hosts: ["${HS_DOMAIN}"]
       secretName: hispanshield-tls
   rules:
-    - host: shield.example.eu
+    - host: ${HS_DOMAIN}
       http:
         paths:
           - path: /

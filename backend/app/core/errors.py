@@ -38,8 +38,14 @@ class Unauthorized(AppError):
 
 
 class Conflict(AppError):
-    def __init__(self, message: str, code: str = "conflict") -> None:
-        super().__init__(code, message, 409)
+    def __init__(
+        self,
+        message: str,
+        code: str = "conflict",
+        details: list[dict[str, Any]] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        super().__init__(code, message, 409, details=details, headers=headers)
 
 
 class ValidationFailure(AppError):

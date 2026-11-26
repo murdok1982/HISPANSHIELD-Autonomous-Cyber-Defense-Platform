@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response
-from sqlalchemy import String, cast, func, or_, select
+from fastapi import APIRouter, Depends, Header, Query, Response
+from sqlalchemy import String, and_, cast, func, or_, select
 
 from app.core.db import utcnow
 from app.core.deps import RequestContext, require_permission
 from app.core.errors import Conflict, NotFound, PolicyDenied, ValidationFailure
-from app.core.schemas import Page, paginate
+from app.core.idempotency import execute as execute_idempotent
+from app.core.schemas import Page, decode_cursor, encode_cursor, paginate
 from app.models.assets import Asset, AssetIdentity, AssetRelationship
 from app.modules.assets import service
 from app.modules.assets.schemas import (
@@ -57,6 +60,7 @@ def list_assets(
     q: str | None = Query(default=None, max_length=200),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=200),
+    cursor: str | None = Query(default=None, max_length=700, description="Opaque keyset cursor from meta.next_cursor"),
     sort: str = Query(default="last_seen", pattern="^(" + "|".join(ASSET_SORTS) + ")$"),
     order: str = Query(default="desc", pattern="^(asc|desc)$"),
 ) -> Page[AssetOut]:
@@ -86,31 +90,93 @@ def list_assets(
             )
         )
     column = ASSET_SORTS[sort]
-    stmt = stmt.order_by(column.asc() if order == "asc" else column.desc(), Asset.id.asc())
+    next_cursor: str | None = None
+    if cursor:
+        try:
+            payload = decode_cursor(cursor)
+            if payload.get("kind") != "assets" or payload.get("sort") != sort or payload.get("order") != order:
+                raise ValueError("Cursor scope mismatch")
+            cursor_id = UUID(str(payload["id"]))
+            raw_value = payload["v"]
+            if sort in {"last_seen", "created_at", "updated_at"}:
+                cursor_value: Any = datetime.fromisoformat(str(raw_value))
+                if cursor_value.tzinfo is None:
+                    cursor_value = cursor_value.replace(tzinfo=UTC)
+            elif sort in {"criticality", "confidence"}:
+                cursor_value = int(raw_value)
+            else:
+                cursor_value = str(raw_value)
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ValidationFailure([{"field": "cursor", "message": "Invalid or expired cursor"}]) from exc
+        if order == "desc":
+            stmt = stmt.where(or_(column < cursor_value, and_(column == cursor_value, Asset.id < cursor_id))).order_by(
+                column.desc(), Asset.id.desc()
+            )
+        else:
+            stmt = stmt.where(or_(column > cursor_value, and_(column == cursor_value, Asset.id > cursor_id))).order_by(
+                column.asc(), Asset.id.asc()
+            )
+        page = 1
+    else:
+        stmt = stmt.order_by(
+            column.asc() if order == "asc" else column.desc(), Asset.id.asc() if order == "asc" else Asset.id.desc()
+        )
     total = ctx.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
     rows = list(ctx.db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars())
-    return Page[AssetOut](**paginate([AssetOut.model_validate(row) for row in rows], int(total), page, page_size))
+    if rows and len(rows) == page_size:
+        last = rows[-1]
+        value = getattr(last, sort)
+        encoded_value = value.astimezone(UTC).isoformat() if isinstance(value, datetime) else value
+        next_cursor = encode_cursor(
+            {"kind": "assets", "sort": sort, "order": order, "v": encoded_value, "id": str(last.id)}
+        )
+    return Page[AssetOut](
+        **paginate(
+            [AssetOut.model_validate(row) for row in rows],
+            int(total),
+            page,
+            page_size,
+            next_cursor=next_cursor,
+        )
+    )
 
 
 @assets_router.post("/import", response_model=ImportResult, summary="Idempotent bulk asset import (max 500 rows)")
 def import_assets(
-    payload: AssetImportRequest, ctx: RequestContext = Depends(require_permission("asset:write"))
+    payload: AssetImportRequest,
+    response: Response,
+    ctx: RequestContext = Depends(require_permission("asset:write")),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> ImportResult:
-    result = service.import_assets(ctx.db, ctx.org.id, payload)
-    ctx.audit(
-        action="asset.import",
-        resource_type="asset",
-        payload={
-            "total": result.total,
-            "created": result.created,
-            "updated": result.updated,
-            "skipped": result.skipped,
-            "errors": len(result.errors),
-            "source": payload.source,
-        },
+    def run() -> ImportResult:
+        result = service.import_assets(ctx.db, ctx.org.id, payload)
+        ctx.audit(
+            action="asset.import",
+            resource_type="asset",
+            payload={
+                "total": result.total,
+                "created": result.created,
+                "updated": result.updated,
+                "skipped": result.skipped,
+                "errors": len(result.errors),
+                "source": payload.source,
+            },
+        )
+        ctx.db.commit()
+        return result
+
+    body, replayed = execute_idempotent(
+        ctx,
+        idempotency_key,
+        method="POST",
+        path="/api/v1/assets/import",
+        payload=payload,
+        fn=run,
+        replay_status=200,
     )
-    ctx.db.commit()
-    return result
+    if replayed:
+        response.headers["Idempotent-Replayed"] = "true"
+    return body  # type: ignore[return-value]
 
 
 @assets_router.get(

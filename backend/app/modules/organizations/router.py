@@ -2,25 +2,30 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
-from app.core.audit import verify_audit_chain
-from app.core.crypto import hash_password
+from app.core.audit import create_audit_checkpoint, verify_audit_chain, verify_audit_checkpoint
+from app.core.crypto import generate_token, hash_password, token_hash
 from app.core.db import utcnow
 from app.core.deps import RequestContext, get_context, require_permission
 from app.core.errors import Conflict, Forbidden, NotFound, ValidationFailure
+from app.core.rbac import ROLE_PERMISSIONS
 from app.core.schemas import Page, PasswordPolicyError, paginate, validate_password_strength
 from app.models.connectors import Connector
-from app.models.core import Approval, AuditRecord, KillSwitch, Membership, Organization, Policy, User
+from app.models.core import Approval, AuditRecord, Invitation, KillSwitch, Membership, Organization, Policy, User
 from app.modules.auth.service import user_organizations
 from app.modules.organizations.schemas import (
     ApprovalDecision,
     ApprovalOut,
     AuditOut,
+    InvitationCreate,
+    InvitationCreated,
+    InvitationOut,
     KillSwitchCreate,
     KillSwitchOut,
     MemberCreate,
@@ -269,6 +274,104 @@ def remove_member(membership_id: UUID, ctx: RequestContext = Depends(require_per
     return Response(status_code=204)
 
 
+@router.get("/current/invitations", response_model=Page[InvitationOut], summary="List organization invitations")
+def list_invitations(
+    ctx: RequestContext = Depends(require_permission("user:manage")),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+) -> Page[InvitationOut]:
+    stmt = select(Invitation).where(Invitation.org_id == ctx.org.id).order_by(Invitation.created_at.desc())
+    total = ctx.db.execute(select(func.count()).select_from(stmt.subquery())).scalar_one()
+    rows = list(ctx.db.execute(stmt.offset((page - 1) * page_size).limit(page_size)).scalars())
+    return Page[InvitationOut](
+        **paginate([InvitationOut.model_validate(row) for row in rows], int(total), page, page_size)
+    )
+
+
+@router.post(
+    "/current/invitations",
+    response_model=InvitationCreated,
+    status_code=201,
+    summary="Invite an email address (token revealed once; deliver it out of band)",
+)
+def create_invitation(
+    payload: InvitationCreate,
+    ctx: RequestContext = Depends(require_permission("user:manage")),
+) -> InvitationCreated:
+    allowed_roles = set(ROLE_PERMISSIONS) - {"platform_admin"}
+    if payload.role not in allowed_roles:
+        raise ValidationFailure([{"field": "role", "message": "Unsupported organization role"}])
+    email = str(payload.email).strip().lower()
+    existing_user = ctx.db.execute(select(User).where(User.email == email)).scalar_one_or_none()
+    if existing_user is not None:
+        membership = ctx.db.execute(
+            select(Membership).where(
+                Membership.org_id == ctx.org.id,
+                Membership.user_id == existing_user.id,
+                Membership.status == "active",
+            )
+        ).scalar_one_or_none()
+        if membership is not None:
+            raise Conflict("This account is already an active member of the organization")
+    pending = ctx.db.execute(
+        select(Invitation).where(
+            Invitation.org_id == ctx.org.id,
+            Invitation.email == email,
+            Invitation.status == "pending",
+        )
+    ).scalar_one_or_none()
+    if pending is not None:
+        raise Conflict("A pending invitation already exists for this email")
+    token = generate_token(32)
+    invitation = Invitation(
+        org_id=ctx.org.id,
+        email=email,
+        role=payload.role,
+        token_hash=token_hash(token),
+        invited_by=ctx.user.id if ctx.user else None,
+        status="pending",
+        expires_at=utcnow() + timedelta(hours=72),
+    )
+    ctx.db.add(invitation)
+    ctx.db.flush()
+    ctx.audit(
+        action="organization.invitation.create",
+        resource_type="invitation",
+        resource_id=str(invitation.id),
+        payload={"email": email, "role": payload.role},
+    )
+    ctx.db.commit()
+    ctx.db.refresh(invitation)
+    data = InvitationOut.model_validate(invitation).model_dump()
+    return InvitationCreated(**data, token=token)
+
+
+@router.delete(
+    "/current/invitations/{invitation_id}",
+    status_code=204,
+    response_class=Response,
+    summary="Revoke a pending invitation",
+)
+def revoke_invitation(
+    invitation_id: UUID,
+    ctx: RequestContext = Depends(require_permission("user:manage")),
+) -> Response:
+    invitation = ctx.db.get(Invitation, invitation_id)
+    if invitation is None or invitation.org_id != ctx.org.id:
+        raise NotFound("Invitation")
+    if invitation.status != "pending":
+        raise Conflict(f"Invitation is already {invitation.status}")
+    invitation.status = "revoked"
+    invitation.revoked_at = utcnow()
+    ctx.audit(
+        action="organization.invitation.revoke",
+        resource_type="invitation",
+        resource_id=str(invitation.id),
+    )
+    ctx.db.commit()
+    return Response(status_code=204)
+
+
 @router.get("/current/policies", response_model=list[PolicyOut], summary="List applicable policies")
 def list_policies(ctx: RequestContext = Depends(require_permission("policy:read"))) -> list[Policy]:
     return list(
@@ -492,6 +595,72 @@ def verify_audit(ctx: RequestContext = Depends(require_permission("audit:verify"
     org_result = verify_audit_chain(ctx.db, ctx.org.id)
     global_result = verify_audit_chain(ctx.db, None)
     return {"organization": org_result, "global_tail": global_result, "verified_at": utcnow()}
+
+
+@router.post("/current/audit/checkpoints", status_code=201, summary="Create a signed audit checkpoint")
+def create_audit_checkpoint_endpoint(
+    ctx: RequestContext = Depends(require_permission("audit:verify")),
+) -> dict:
+    checkpoint, chain = create_audit_checkpoint(ctx.db, ctx.org.id)
+    if checkpoint is None:
+        if not chain.get("valid", False):
+            ctx.audit(
+                action="audit.checkpoint.refused",
+                resource_type="audit",
+                outcome="failure",
+                payload={"reason": chain.get("reason")},
+            )
+            ctx.db.commit()
+            return {"created": False, "chain": chain}
+        ctx.db.commit()
+        return {"created": False, "chain": chain}
+    ctx.audit(
+        action="audit.checkpoint.create",
+        resource_type="audit_checkpoint",
+        resource_id=str(checkpoint.id),
+        payload={"head_hash": checkpoint.head_hash, "record_count": checkpoint.record_count},
+    )
+    ctx.db.commit()
+    return {
+        "created": True,
+        "id": str(checkpoint.id),
+        "head_hash": checkpoint.head_hash,
+        "record_count": checkpoint.record_count,
+        "key_id": checkpoint.key_id,
+        "signature": checkpoint.signature,
+        "created_at": checkpoint.created_at,
+    }
+
+
+@router.get("/current/audit/checkpoints", summary="List and verify signed audit checkpoints")
+def list_audit_checkpoints(
+    ctx: RequestContext = Depends(require_permission("audit:verify")),
+    limit: int = Query(default=20, ge=1, le=100),
+) -> dict:
+    from app.models.core import AuditCheckpoint
+
+    rows = list(
+        ctx.db.execute(
+            select(AuditCheckpoint)
+            .where(AuditCheckpoint.org_id == ctx.org.id)
+            .order_by(AuditCheckpoint.created_at.desc())
+            .limit(limit)
+        ).scalars()
+    )
+    return {
+        "items": [
+            {
+                "id": str(row.id),
+                "head_hash": row.head_hash,
+                "record_count": row.record_count,
+                "key_id": row.key_id,
+                "signature_valid": verify_audit_checkpoint(row),
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+        "count": len(rows),
+    }
 
 
 @router.get("/{org_id}", response_model=OrganizationOut, summary="Read an organization")

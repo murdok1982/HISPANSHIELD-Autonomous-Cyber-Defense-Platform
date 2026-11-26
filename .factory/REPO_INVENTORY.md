@@ -1,5 +1,10 @@
 # REPO INVENTORY — HISPANSHIELD
 
+> **Snapshot histórico (baseline RC1) + apéndice de reconciliación.** Las tablas
+> anteriores a la sección “Reconciliation 0.1.2” describen el baseline, no el
+> estado actual. Para cifras vigentes ejecutar `python3 scripts/factory_metrics.py`.
+
+
 - **Repositorio:** `HISPANSHIELD_Autonomous_Cyber_Defense Platform`
 - **Snapshot:** 2026-11-26 (árbol de trabajo, no un tag)
 - **HEAD git:** `696655b` (`feat: complete SOC platform RC1...`), 3 commits totales
@@ -832,12 +837,12 @@ Estado declarado vs real en `.factory`:
 
 | Métrica | Declarado | Real (snapshot) | Evidencia |
 | :--- | :--- | :--- | :--- |
-| Tareas verificadas | 109/150 (`docs/implementation-status.md:12`) | 106 `[x]`, 44 `[!]`, 0 `[ ]` | conteo en `.factory/TASKS.md` |
-| Deferred | 47 (`implementation-status.md:12`) | 44 `[!]` | `.factory/TASKS.md` |
-| AC verificados | “cada AC con test” (`AGENTS.md`) | 0 `[x]` / 124 `[ ]` en `SPEC.md` | `.factory/SPEC.md` |
-| Tests backend | 515 (`README.md:338`, `implementation-status.md:23`) | 519 recogidos | `pytest --collect-only` |
-| Endpoints | 79 smoke (`implementation-status.md:26`) | 284 reales | AST |
-| Seguridad | 0 CRITICAL / 0 HIGH abiertos; 12 MEDIUM / 7 LOW | coherente con cabecera | `.factory/SECURITY_AUDIT.md:3-11` |
+| Tareas verificadas | 138/176 (0.1.2) | 138 `[x]`, 37 `[!]`, 1 `[~]` | `scripts/factory_metrics.py` |
+| Deferred | 37 + 1 en progreso | 37 `[!]`, 1 `[~]` | `.factory/TASKS.md` |
+| AC verificados | 70/124 | 70 `VERIFIED`, 32 `PARTIAL`, 22 `NOT_VERIFIED` | `.factory/AC_TRACEABILITY.md` |
+| Tests backend | 650 recogidos | 650 ejecutados (ver EVIDENCE) | `pytest --collect-only`, `.factory/EVIDENCE/` |
+| Endpoints | 305 operaciones / 233 paths | 305 / 233 | `app.openapi()` vía `scripts/factory_metrics.py` |
+| Seguridad | 0 CRITICAL / 0 HIGH abiertos | 0/0 con residuales aceptados | `.factory/SECURITY_AUDIT.md` |
 
 ---
 
@@ -877,7 +882,31 @@ Estado declarado vs real en `.factory`:
 | D-30 | `tests/autonomy/` y `test_prompt_injection.py` | No existen; la cobertura está en `test_autonomy_guardrails.py` y `test_prompt_safety.py` | `specs/testing/strategy.md:96-97`; `ls backend/tests` |
 | D-31 | 515 tests / 109 tareas | 519 tests / 106 `[x]` + 44 `[!]` | `implementation-status.md:12,23`; conteo real |
 | D-32 | `ARCHITECTURE.md` mapea rutas `/overview`, `/threats/live`, `/ai/agents`, `/playbooks/designer`, `/ai/models` | Rutas reales `/`, `/soc`, `/monitoring`, `/agents`, `/playbook-designer`, `/models` | `ARCHITECTURE.md:447-467`; `frontend/src/App.tsx:101-127` |
-| D-33 | `readyz` devuelve `db`, `migrations`, `queue_depth` | Solo `{status, version}` | `.factory/SPEC.md:419`; `backend/app/main.py:173-181` |
+| D-33 | `readyz` devuelve `db`, `migrations`, `queue_depth` | Implementado + `outbox` backlog | `backend/app/main.py`; `test_auth.py::test_health_endpoints` |
+
+### Reconciliation 0.1.2 (2026-11-26)
+
+Este inventario conserva el snapshot del baseline para trazabilidad. Cambios
+cerrados en la ola 0.1.2:
+
+- **D-01:** outbox transaccional con leases/retries/DLQ implementado; faltan
+  `LISTEN/NOTIFY` y tabla `jobs` separada (`TASK-008` en progreso).
+- **D-02:** SSE `/events/stream` + cliente `useEventStream` implementados.
+- **D-04:** cursor pagination aditiva (`meta.next_cursor`) en assets/events;
+  offset sigue soportado.
+- **D-06/D-07/D-14/D-15:** `/setup`, `/auth/password-policy`, invitaciones y
+  recovery codes implementados y testeados.
+- **D-16:** `Idempotency-Key` implementado en incidentes, import de activos y
+  CVE.
+- **D-24:** OpenAPI actual: 305 operaciones / 233 paths.
+- **D-25:** 23 pantallas de navegación, 26 componentes de contenido, 28 ficheros
+  incluyendo Login/NotFound.
+- **D-31:** 650 tests recogidos; 138/176 tareas verificadas.
+
+Siguen abiertos: D-03 (repository layer), D-08 (soft delete), D-09/D-10
+(export/importers), D-13 (cloud/CSPM), D-17 (header obligatorio), D-18
+(UUIDv7), D-19, D-20 (FTS real), D-21 (particiones), D-23 (ruta OpenAPI),
+D-26 (pins), D-29 (runtime K8s no ejecutado).
 | D-34 | Matriz de compatibilidad: Nessus/OpenVAS/Trivy y recovery codes “supported” | Ausentes | `docs/compatibility-matrix.md:109,122-124` |
 
 ---

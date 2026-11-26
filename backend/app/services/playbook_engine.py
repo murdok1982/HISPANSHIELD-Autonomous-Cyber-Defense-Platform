@@ -58,6 +58,7 @@ from app.services.connectors.base import (
     record_connector_run,
 )
 from app.services.connectors.runtime import circuit_breaker, instantiate_adapter, select_connector
+from app.services.outbox import enqueue
 from app.services.policy_engine import active_policy_snapshot, evaluate
 
 FINAL_STATUSES = {"succeeded", "completed_with_errors", "failed", "compensated", "denied", "simulated", "cancelled"}
@@ -811,6 +812,22 @@ def _terminate(
         if status in {"succeeded", "completed_with_errors", "compensated", "simulated"}
         else "failure",
         payload={"status": status, "error": error[:500]},
+    )
+    event_type = "soar.execution.failed" if status in {"failed", "denied", "cancelled"} else "soar.execution.completed"
+    enqueue(
+        db,
+        org_id=org.id,
+        event_type=event_type,
+        aggregate_type="playbook_execution",
+        aggregate_id=str(execution.id),
+        dedupe_key=f"soar.finished:{execution.id}",
+        payload={
+            "title": f"Playbook execution {status}",
+            "body": error[:500] if error else f"Execution {execution.id} finished with status {status}",
+            "status": status,
+            "execution_id": str(execution.id),
+            "incident_id": str(execution.incident_id) if execution.incident_id else None,
+        },
     )
     db.commit()
     return execution
